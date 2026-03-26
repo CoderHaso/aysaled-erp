@@ -1,342 +1,168 @@
 import React, { useState } from 'react';
-import axios from 'axios';
-import { motion } from 'framer-motion';
-import {
-  Menu, Search, Bell, Plus, ArrowUpRight, ArrowDownRight,
-  Package, Users, FileText, CreditCard, ShoppingCart, RefreshCcw, Zap
-} from 'lucide-react';
-import Sidebar from './components/Sidebar';
+import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from './contexts/ThemeContext';
+import Sidebar from './components/Sidebar';
+import { Menu, Bell, Plus, Search } from 'lucide-react';
+import Dashboard from './pages/Dashboard';
+import Stock from './pages/Stock';
 
-// ─── Metrik kartları ───────────────────────────────────────────────────────────
-const METRICS = [
-  { name: 'Toplam Stok',   value: '1,248',   change: '+12%', up: true,  icon: Package,    bg: '#3b82f6' },
-  { name: 'Aktif Cariler', value: '42',       change: '+3',   up: true,  icon: Users,      bg: '#10b981' },
-  { name: 'Aylık Satış',   value: '₺84.200', change: '-5%',  up: false, icon: FileText,   bg: '#8b5cf6' },
-  { name: 'Kasa Dengesi',  value: '$12.450', change: '+₺2k', up: true,  icon: CreditCard, bg: '#f59e0b' },
-];
+// ─── Sayfa meta bilgileri ──────────────────────────────────────────────────────
+const PAGES = {
+  '/':          { title: 'Dashboard',      sub: 'Genel Bakış' },
+  '/stock':     { title: 'Stok Merkezi',   sub: 'Ürün & Hammadde' },
+  '/contacts':  { title: 'Cari Takip',     sub: 'Müşteri & Tedarikçi' },
+  '/invoices':  { title: 'Faturalar',      sub: 'Gelen & Giden' },
+  '/sales':     { title: 'Satış Paneli',   sub: 'Yeni Satış & Sipariş' },
+  '/reports':   { title: 'Raporlar',       sub: 'Finans & Analiz' },
+};
 
-// ─── Hızlı Aksiyonlar ─────────────────────────────────────────────────────────
-const QUICK_ACTIONS = [
-  { n: 'Satış Yap',     icon: ShoppingCart, color: '#3b82f6' },
-  { n: 'Stok Ekle',     icon: Plus,         color: '#f59e0b' },
-  { n: 'Cari Ara',      icon: Search,       color: '#10b981' },
-  { n: 'Gelen Kutusu',  icon: FileText,     color: '#8b5cf6' },
-];
+// Route → Sidebar id eşleştirme
+const ROUTE_TO_ID = {
+  '/':         'dashboard',
+  '/stock':    'stock',
+  '/contacts': 'contacts',
+  '/invoices': 'invoices',
+  '/sales':    'sales',
+  '/reports':  'reports',
+};
 
-export default function App() {
-  const [invoices, setInvoices]   = useState(null);
-  const [loading, setLoading]     = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+function AppShell() {
   const { effectiveMode, currentColor } = useTheme();
-
   const isDark = effectiveMode === 'dark';
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const location = useLocation();
+  const navigate = useNavigate();
 
-  // ── Renk şemaları  ────────────────────────────────────────────────────────
+  const page = PAGES[location.pathname] || { title: 'A-ERP', sub: '' };
+  const activeId = ROUTE_TO_ID[location.pathname] || 'dashboard';
+
   const c = {
-    // Genel zemin
-    pageBg:        'var(--bg-app)',
-    cardBg:        'var(--bg-card)',
-    headerBg:      'var(--bg-header)',
-    border:        'var(--border)',
-    // Metin
-    textBase:      'var(--text-base)',
-    textMuted:     'var(--text-muted)',
-    // Arama
-    searchBg:      isDark ? 'rgba(30,41,59,0.8)'  : 'rgba(241,245,249,0.9)',
-    searchBorder:  isDark ? 'rgba(71,85,105,0.5)'  : '#e2e8f0',
-    // Input gibi alanlar
-    subBg:         isDark ? 'rgba(30,41,59,0.6)'   : 'rgba(255,255,255,0.8)',
-    // Hover
-    hoverBg:       isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-    // Tablo satır hover
-    rowHover:      isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
-    // Badge arkaplanları
-    badgeUp:       isDark ? 'rgba(16,185,129,0.2)'  : '#dcfce7',
-    badgeUpText:   isDark ? '#4ade80'                : '#15803d',
-    badgeDown:     isDark ? 'rgba(239,68,68,0.2)'   : '#fee2e2',
-    badgeDownText: isDark ? '#f87171'                : '#dc2626',
-    // Tablo bölücüler
-    divider:       isDark ? 'rgba(148,163,184,0.1)'  : '#f1f5f9',
-    // Hızlı aksiyonlar arkaplan
-    actionBg:      isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-    actionHover:   isDark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.06)',
-    // Kurumsal banner
-    bannerBg:      `linear-gradient(135deg, ${currentColor} 0%, color-mix(in srgb, ${currentColor} 60%, #000) 100%)`,
+    bg:         isDark ? '#0f172a' : '#f8fafc',
+    header:     isDark ? 'rgba(15,23,42,0.9)' : 'rgba(255,255,255,0.9)',
+    border:     isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0',
+    text:       isDark ? '#f1f5f9' : '#0f172a',
+    muted:      isDark ? '#94a3b8' : '#64748b',
+    searchBg:   isDark ? 'rgba(30,41,59,0.8)' : 'rgba(241,245,249,0.9)',
+    hoverBg:    isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)',
   };
 
-  const fetchInvoices = async () => {
-    setLoading(true);
-    try {
-      const response = await axios.post('/api/get-invoices');
-      setInvoices(response.data);
-    } catch (err) {
-      console.error(err);
-      alert("Backend bağlantı hatası!");
-    } finally {
-      setLoading(false);
-    }
+  const handleNavigate = (id) => {
+    const routes = { dashboard: '/', stock: '/stock', contacts: '/contacts', invoices: '/invoices', sales: '/sales', reports: '/reports' };
+    navigate(routes[id] || '/');
   };
 
   return (
-    <div className="flex min-h-screen transition-colors duration-300"
-      style={{ background: c.pageBg, color: c.textBase }}>
-
+    <div className="flex h-screen overflow-hidden" style={{ background: c.bg }}>
       <Sidebar
         isOpen={sidebarOpen}
-        toggle={() => setSidebarOpen(!sidebarOpen)}
+        toggle={() => setSidebarOpen(v => !v)}
+        activeId={activeId}
+        onNavigate={handleNavigate}
       />
 
-      <main className={`flex-1 transition-all duration-300 ${sidebarOpen ? 'ml-[260px]' : 'ml-0 lg:ml-[72px]'}`}>
+      {/* Ana alan */}
+      <div className={`flex flex-col flex-1 transition-all duration-300 overflow-hidden
+        ${sidebarOpen ? 'lg:ml-[260px]' : 'lg:ml-[72px]'}`}>
 
-        {/* ── Header ─────────────────────────────────────────────────────────── */}
-        <header className="sticky top-0 z-30 border-b px-6 py-3.5 flex items-center justify-between"
-          style={{ background: c.headerBg, backdropFilter: 'blur(14px)', borderColor: c.border }}>
-
-          {/* Sol: hamburger + arama */}
-          <div className="flex items-center gap-3">
+        {/* ── Header ──────────────────────────────────────────────────────── */}
+        <header className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b z-30"
+          style={{
+            background: c.header,
+            backdropFilter: 'blur(14px)',
+            borderColor: c.border,
+          }}>
+          <div className="flex items-center gap-4">
+            {/* Hamburger */}
             <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
+              onClick={() => setSidebarOpen(v => !v)}
               className="p-2 rounded-xl transition-colors"
-              style={{ color: c.textMuted }}
+              style={{ color: c.muted }}
               onMouseEnter={e => e.currentTarget.style.background = c.hoverBg}
-              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-            >
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
               <Menu size={20} />
             </button>
 
-            <div className="hidden md:flex items-center gap-2.5 px-4 py-2 rounded-2xl border transition-all"
-              style={{ background: c.searchBg, borderColor: c.searchBorder }}>
-              <Search size={16} style={{ color: c.textMuted }} />
-              <input
-                type="text"
-                placeholder="Evrak, ürün veya cari ara..."
-                className="bg-transparent border-none outline-none text-sm w-56"
-                style={{ color: c.textBase }}
-              />
+            {/* Breadcrumb */}
+            <div>
+              <h2 className="font-bold text-base leading-none" style={{ color: c.text }}>
+                {page.title}
+              </h2>
+              {page.sub && (
+                <p className="text-xs mt-0.5" style={{ color: c.muted }}>{page.sub}</p>
+              )}
             </div>
           </div>
 
-          {/* Sağ: bildirim + yeni işlem */}
           <div className="flex items-center gap-2">
-            <button
-              className="relative p-2.5 rounded-xl transition-colors"
-              style={{ color: c.textMuted }}
+            {/* Arama */}
+            <div className="hidden md:flex items-center gap-2 px-3 py-2 rounded-xl border"
+              style={{ background: c.searchBg, borderColor: c.border }}>
+              <Search size={15} style={{ color: c.muted }} />
+              <input
+                type="text"
+                placeholder="Ara..."
+                className="bg-transparent border-none outline-none text-sm w-44"
+                style={{ color: c.text }}
+              />
+            </div>
+
+            {/* Bildirim */}
+            <button className="relative p-2 rounded-xl transition-colors"
+              style={{ color: c.muted }}
               onMouseEnter={e => e.currentTarget.style.background = c.hoverBg}
-              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-            >
-              <Bell size={20} />
-              <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border-2"
-                style={{ borderColor: c.headerBg }} />
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              <Bell size={19} />
+              <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-red-500 border-2"
+                style={{ borderColor: c.header }} />
             </button>
-            <button className="btn-primary">
-              <Plus size={17} />
-              <span>Yeni İşlem</span>
+
+            {/* Yeni İşlem */}
+            <button className="btn-primary hidden sm:flex">
+              <Plus size={16} />
+              Yeni İşlem
             </button>
           </div>
         </header>
 
-        {/* ── İçerik ─────────────────────────────────────────────────────────── */}
-        <div className="p-6 lg:p-8 max-w-7xl mx-auto space-y-8">
-
-          {/* Karşılama + senkronize */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-2">
-            <div>
-              <h1 className="text-2xl lg:text-3xl font-bold tracking-tight" style={{ color: c.textBase }}>
-                Hoş Geldin, Efe 👋
-              </h1>
-              <p className="mt-1 font-medium" style={{ color: c.textMuted }}>
-                A-ERP Sistem Özetin ve Hızlı Aksiyonlar
-              </p>
-            </div>
-
-            <button
-              onClick={fetchInvoices}
-              className="flex items-center gap-2.5 px-5 py-2.5 rounded-2xl border text-sm font-semibold transition-all"
-              style={{
-                background: c.subBg, borderColor: c.border, color: c.textMuted,
-              }}
-            >
-              <RefreshCcw size={15} className={loading ? 'animate-spin' : ''} style={{ color: currentColor }} />
-              Uyumsoft Senkronizasyonu
-            </button>
-          </div>
-
-          {/* ── Metrik Kartlar ──────────────────────────────────────────────── */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {METRICS.map((m, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, y: 18 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.08 }}
-                className="glass-card p-6 group cursor-pointer"
-                style={{ transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
-                onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-3px)'}
-                onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="p-3 rounded-2xl text-white shadow-lg"
-                    style={{ background: m.bg }}>
-                    <m.icon size={22} />
-                  </div>
-                  <div className="flex items-center gap-0.5 text-xs font-bold px-2 py-1 rounded-lg"
-                    style={{
-                      background: m.up ? c.badgeUp : c.badgeDown,
-                      color:      m.up ? c.badgeUpText : c.badgeDownText,
-                    }}>
-                    {m.up ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
-                    {m.change}
-                  </div>
-                </div>
-                <div className="mt-4">
-                  <p className="text-xs font-bold uppercase tracking-widest" style={{ color: c.textMuted }}>
-                    {m.name}
-                  </p>
-                  <p className="text-2xl font-bold mt-1" style={{ color: c.textBase }}>
-                    {m.value}
-                  </p>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-
-          {/* ── 2 Kolon Alt ─────────────────────────────────────────────────── */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-            {/* Gelen Faturalar */}
-            <div className="lg:col-span-2 glass-card p-6 lg:p-8 min-h-[380px]">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h3 className="text-lg font-bold" style={{ color: c.textBase }}>
-                    Son Gelen Faturalar
-                  </h3>
-                  <p className="text-sm mt-0.5" style={{ color: c.textMuted }}>
-                    Uyumsoft API'den çekilen kayıtlar
-                  </p>
-                </div>
-                <button className="text-sm font-bold"
-                  style={{ color: currentColor }}>
-                  Tümünü Gör
-                </button>
-              </div>
-
-              {!invoices && !loading && (
-                <div className="flex flex-col items-center justify-center py-16" style={{ color: c.textMuted }}>
-                  <FileText size={44} strokeWidth={1} />
-                  <p className="mt-3 text-sm font-medium">Senkronize et butonuna basınız.</p>
-                </div>
-              )}
-
-              {loading && (
-                <div className="flex items-center justify-center py-16 gap-3" style={{ color: c.textMuted }}>
-                  <RefreshCcw size={18} className="animate-spin" style={{ color: currentColor }} />
-                  <span className="font-medium text-sm">Veriler çekiliyor...</span>
-                </div>
-              )}
-
-              {invoices && (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead>
-                      <tr className="text-xs font-bold uppercase tracking-widest"
-                        style={{ color: c.textMuted, borderBottom: `1px solid ${c.divider}` }}>
-                        <th className="pb-3">Gönderici</th>
-                        <th className="pb-3">Tarih</th>
-                        <th className="pb-3">Tutar</th>
-                        <th className="pb-3">Durum</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr style={{ borderBottom: `1px solid ${c.divider}` }}
-                        onMouseEnter={e => e.currentTarget.style.background = c.rowHover}
-                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                        <td className="py-4 font-semibold" style={{ color: c.textBase }}>Uyumsoft Test Müşterisi</td>
-                        <td className="py-4" style={{ color: c.textMuted }}>26.03.2026</td>
-                        <td className="py-4 font-bold" style={{ color: c.textBase }}>₺15.450,00</td>
-                        <td className="py-4">
-                          <span className="badge badge-success">Onaylandı</span>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-
-                  <div className="p-4 rounded-2xl mt-4"
-                    style={{ background: c.actionBg, border: `1px solid ${c.border}` }}>
-                    <pre className="text-[10px] overflow-x-auto" style={{ color: c.textMuted }}>
-                      {JSON.stringify(invoices, null, 2).substring(0, 400)}...
-                    </pre>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Sağ kolon */}
-            <div className="space-y-5">
-              {/* Premium Banner */}
-              <div className="rounded-2xl p-6 overflow-hidden relative"
-                style={{ background: c.bannerBg }}>
-                <div className="relative z-10">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Zap size={18} color="rgba(255,255,255,0.9)" />
-                    <span className="text-xs font-bold uppercase tracking-widest text-white/70">Pro</span>
-                  </div>
-                  <h3 className="text-lg font-bold text-white leading-snug">
-                    Premium ERP
-                  </h3>
-                  <p className="text-white/70 text-sm mt-1">
-                    Uyumsoft entegrasyonu aktif.
-                  </p>
-                  <button className="mt-5 font-bold text-sm px-5 py-2 rounded-xl transition-all"
-                    style={{
-                      background: 'rgba(255,255,255,0.15)',
-                      color: 'white',
-                      border: '1px solid rgba(255,255,255,0.25)',
-                      backdropFilter: 'blur(8px)',
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.25)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.15)'}>
-                    Abonelik Yönetimi
-                  </button>
-                </div>
-                {/* Dekoratif daireler */}
-                <div className="absolute -top-6 -right-6 w-32 h-32 rounded-full"
-                  style={{ background: 'rgba(255,255,255,0.1)', filter: 'blur(20px)' }} />
-                <div className="absolute bottom-0 left-0 w-20 h-20 rounded-full"
-                  style={{ background: 'rgba(255,255,255,0.06)', filter: 'blur(12px)' }} />
-              </div>
-
-              {/* Hızlı Aksiyonlar */}
-              <div className="glass-card p-6">
-                <h3 className="font-bold mb-4 text-sm uppercase tracking-widest" style={{ color: c.textMuted }}>
-                  Hızlı Aksiyonlar
-                </h3>
-                <div className="grid grid-cols-2 gap-2.5">
-                  {QUICK_ACTIONS.map((act, i) => (
-                    <button key={i}
-                      className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border transition-all text-center"
-                      style={{
-                        background: c.actionBg,
-                        borderColor: c.border,
-                        color: act.color,
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.background = c.actionHover}
-                      onMouseLeave={e => e.currentTarget.style.background = c.actionBg}
-                    >
-                      <div className="p-2 rounded-xl" style={{ background: `${act.color}20` }}>
-                        <act.icon size={18} />
-                      </div>
-                      <span className="text-xs font-bold" style={{ color: c.textBase }}>
-                        {act.n}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </main>
+        {/* ── Sayfa İçeriği ──────────────────────────────────────────────── */}
+        <main className="flex-1 overflow-y-auto" style={{ background: c.bg, color: c.text }}>
+          <Routes>
+            <Route path="/"        element={<Dashboard />} />
+            <Route path="/stock"   element={<Stock />} />
+            {/* Yakında:  */}
+            <Route path="/contacts"  element={<ComingSoon title="Cari Takip" />} />
+            <Route path="/invoices"  element={<ComingSoon title="Faturalar" />} />
+            <Route path="/sales"     element={<ComingSoon title="Satış Paneli" />} />
+            <Route path="/reports"   element={<ComingSoon title="Raporlar" />} />
+          </Routes>
+        </main>
+      </div>
     </div>
+  );
+}
+
+// ─── Geçici placeholder ───────────────────────────────────────────────────────
+function ComingSoon({ title }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
+  return (
+    <div className="flex flex-col items-center justify-center h-full py-24 gap-4">
+      <div className="text-6xl">🚧</div>
+      <h2 className="text-xl font-bold" style={{ color: isDark ? '#f1f5f9' : '#0f172a' }}>
+        {title}
+      </h2>
+      <p className="text-sm" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+        Bu modül yakında aktif olacak.
+      </p>
+    </div>
+  );
+}
+
+// ─── Root Export ──────────────────────────────────────────────────────────────
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppShell />
+    </BrowserRouter>
   );
 }
