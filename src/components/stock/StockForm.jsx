@@ -122,7 +122,8 @@ export default function StockForm({ item, defaultType, onBack, onSave, onDelete,
   const stockPct = form.critical_limit > 0
     ? Math.min(100, (form.stock_count / (form.critical_limit * 3)) * 100) : 80;
 
-  const qrValue     = item?.id ? `${window.location.origin}/stock/${item.id}` : 'aerp://new';
+  // Yeni oluşturulan (veya eski) barkodlarda PWA uyumu için HashRouter formatı:
+  const qrValue     = item?.id ? `${window.location.origin}/#/stock/${item.id}` : 'aerp://new';
   const visibleTabs = FORM_TABS.filter(t => {
     if (t.productOnly && !isProduct) return false; // Sadece Hammadde için BOM tamamen gizlenir
     if (t.editOnly && !isEdit) return false;

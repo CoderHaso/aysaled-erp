@@ -133,6 +133,7 @@ function AppShell() {
           <Routes>
             <Route path="/"           element={<Dashboard />} />
             <Route path="/stock"      element={<Stock />} />
+            <Route path="/stock/:id"  element={<Stock />} />
             <Route path="/suppliers"  element={<Suppliers />} />
             <Route path="/settings"   element={<Settings />} />
             <Route path="/contacts"   element={<ComingSoon title="Cari Takip" icon="👥" />} />

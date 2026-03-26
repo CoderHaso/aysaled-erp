@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, AlertTriangle, RefreshCcw, AlertCircle,
@@ -20,6 +21,9 @@ function stockColor(c, l) {
 }
 
 export default function Stock() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+
   const { effectiveMode, currentColor } = useTheme();
   const isDark = effectiveMode === 'dark';
 
@@ -37,12 +41,27 @@ export default function Stock() {
   const [formType, setFormType] = useState(() => sessionStorage.getItem('aerp_formType') || 'raw');
   const [activeTab, setActiveTab] = useState(() => sessionStorage.getItem('aerp_activeTab') || 'raw');
 
-  React.useEffect(() => {
+  useEffect(() => {
     sessionStorage.setItem('aerp_view', view);
     sessionStorage.setItem('aerp_editing', JSON.stringify(editing));
     sessionStorage.setItem('aerp_formType', formType);
     sessionStorage.setItem('aerp_activeTab', activeTab);
   }, [view, editing, formType, activeTab]);
+
+  // URL'den gelen QR ID açılışı
+  useEffect(() => {
+    if (id && !loading) {
+      const item = [...rawItems, ...productItems].find(x => x.id === id);
+      if (item) {
+        setEditing(item);
+        setFormType(item.item_type);
+        setActiveTab(item.item_type);
+      } else {
+        // ID veritabanında yoksa URL'i temizle
+        navigate('/stock', { replace: true });
+      }
+    }
+  }, [id, loading, rawItems, productItems, navigate]);
 
   const [quickAdd,  setQuickAdd]  = useState(false);
   const [toast,     setToast]     = useState(null);

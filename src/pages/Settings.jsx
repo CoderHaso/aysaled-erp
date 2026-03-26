@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Settings as SettingsIcon, Save, Server, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
+import { supabase } from '../lib/supabaseClient';
 
 export default function Settings() {
   const { effectiveMode, currentColor } = useTheme();
@@ -13,20 +14,29 @@ export default function Settings() {
   const [testResult, setTestResult] = useState(null);
 
   useEffect(() => {
-    const s = localStorage.getItem('aerp_uyumsoft');
-    if (s) { try { setForm(JSON.parse(s)); } catch(e){} }
+    async function loadSettings() {
+      const { data, error } = await supabase.from('app_settings').select('value').eq('id', 'uyumsoft').single();
+      if (!error && data?.value) {
+        setForm({ username: data.value.username || '', password: data.value.password || '' });
+      }
+    }
+    loadSettings();
   }, []);
 
   const handleChange = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setSaving(true);
-    setTimeout(() => {
-      localStorage.setItem('aerp_uyumsoft', JSON.stringify(form));
-      setSaving(false);
-      // Basit bir geri bildirim
-      alert('Ayarlar güvenle kaydedildi!');
-    }, 600);
+    const { error } = await supabase
+      .from('app_settings')
+      .upsert({ id: 'uyumsoft', value: form, updated_at: new Date().toISOString() });
+      
+    setSaving(false);
+    if (error) {
+      alert('Ayarlar kaydedilirken hata oluştu: ' + error.message);
+    } else {
+      alert('Ayarlar sunucuya güvenle kaydedildi!');
+    }
   };
 
   const handleTest = async () => {
