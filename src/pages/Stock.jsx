@@ -1,45 +1,43 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Package, Plus, Search, AlertTriangle, QrCode,
-  Edit2, Trash2, ChevronUp, ChevronDown, RefreshCcw,
-  TrendingUp, TrendingDown, Boxes, AlertCircle, SlidersHorizontal
+  Plus, Search, AlertTriangle, RefreshCcw,
+  AlertCircle, Zap, TrendingUp, Boxes, Package,
+  ChevronUp, ChevronDown, Edit2, QrCode, Trash2
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useStock } from '../hooks/useStock';
-import StockModal from '../components/stock/StockModal';
-import QRModal from '../components/stock/QRModal';
-import Select from '../components/ui/Select';
+import StockDrawer from '../components/stock/StockDrawer';
+import QuickAddModal from '../components/stock/QuickAddModal';
 
-const CURRENCY_SYMBOL = { TRY: '₺', USD: '$', EUR: '€' };
-const UNITS = ['Tümü', 'pcs', 'kg', 'm', 'lt', 'm²', 'm³', 'adet', 'kutu', 'rulo'];
-const CATS  = ['Tümü', 'Hammadde', 'Mamül', 'Yarı Mamül', 'Sarf Malzeme', 'Ambalaj', 'Diğer'];
+const CURRENCY_SYM = { TRY: '₺', USD: '$', EUR: '€' };
 
 function stockColor(count, limit) {
-  if (!limit || limit <= 0) return '#10b981';
-  if (count <= 0)           return '#ef4444';
-  if (count <= limit)       return '#f59e0b';
+  if (count <= 0)     return '#ef4444';
+  if (limit > 0 && count <= limit) return '#f59e0b';
   return '#10b981';
 }
 
 export default function Stock() {
   const { effectiveMode, currentColor } = useTheme();
   const isDark = effectiveMode === 'dark';
-  const { items, loading, error, saving, addItem, updateItem, deleteItem, criticalItems, totalValue, refetch } = useStock();
+  const {
+    rawItems, productItems, loading, error, saving,
+    addItem, updateItem, deleteItem,
+    criticalRaw, criticalProd, totalValue,
+    refetch,
+  } = useStock();
 
-  // Modals
-  const [modalItem,  setModalItem]  = useState(null);   // null=kapalı | {}=yeni | item=düzenle
-  const [qrItem,     setQrItem]     = useState(null);
-  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  // ── UI state ──────────────────────────────────────────────────────────────
+  const [activeTab,    setActiveTab]    = useState('raw');   // 'raw' | 'product' | 'summary'
+  const [drawer,       setDrawer]       = useState(null);    // null | { item, defaultType }
+  const [quickAdd,     setQuickAdd]     = useState(false);
+  const [toast,        setToast]        = useState(null);
+  const [search,       setSearch]       = useState('');
+  const [sortKey,      setSortKey]      = useState('name');
+  const [sortDir,      setSortDir]      = useState('asc');
 
-  // Filtreler
-  const [search,     setSearch]     = useState('');
-  const [unitFilter, setUnitFilter] = useState('Tümü');
-  const [catFilter,  setCatFilter]  = useState('Tümü');
-  const [onlyCrit,   setOnlyCrit]   = useState(false);
-  const [sortKey,    setSortKey]    = useState('name');
-  const [sortDir,    setSortDir]    = useState('asc');
-  const [toast,      setToast]      = useState(null);
+  const isDarkStr = isDark;
 
   const c = {
     bg:       isDark ? '#0f172a' : '#f8fafc',
@@ -50,111 +48,133 @@ export default function Stock() {
     inputBg:  isDark ? 'rgba(30,41,59,0.8)' : 'rgba(241,245,249,0.9)',
     rowHover: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
     critBg:   isDark ? 'rgba(245,158,11,0.1)' : '#fffbeb',
-    critBorder: isDark ? 'rgba(245,158,11,0.25)' : '#fde68a',
+    critBdr:  isDark ? 'rgba(245,158,11,0.25)' : '#fde68a',
   };
 
-  // Sıralama
-  const toggleSort = (key) => {
-    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortKey(key); setSortDir('asc'); }
-  };
-
-  // Filtrelenmiş + sıralanmış liste
-  const filtered = useMemo(() => {
-    let list = [...items];
-    if (search)               list = list.filter(i => i.name?.toLowerCase().includes(search.toLowerCase()) || i.sku?.toLowerCase().includes(search.toLowerCase()));
-    if (unitFilter !== 'Tümü') list = list.filter(i => i.unit === unitFilter);
-    if (catFilter  !== 'Tümü') list = list.filter(i => i.category === catFilter);
-    if (onlyCrit)             list = list.filter(i => i.stock_count <= i.critical_limit);
-
-    list.sort((a, b) => {
-      let va = a[sortKey], vb = b[sortKey];
-      if (typeof va === 'string') va = va?.toLowerCase() ?? '';
-      if (typeof vb === 'string') vb = vb?.toLowerCase() ?? '';
-      if (va < vb) return sortDir === 'asc' ? -1 : 1;
-      if (va > vb) return sortDir === 'asc' ? 1  : -1;
-      return 0;
-    });
-    return list;
-  }, [items, search, unitFilter, catFilter, onlyCrit, sortKey, sortDir]);
-
-  // Toast
+  // ── Yardımcılar ───────────────────────────────────────────────────────────
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
   };
 
-  // CRUD handlers
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+
+  // ── Filtreli + sıralı liste ──────────────────────────────────────────────
+  const baseList = activeTab === 'raw' ? rawItems : productItems;
+  const filtered = useMemo(() => {
+    let list = [...baseList];
+    if (search) {
+      const q = search.toLowerCase();
+      list = list.filter(i =>
+        i.name?.toLowerCase().includes(q) ||
+        i.sku?.toLowerCase().includes(q) ||
+        i.supplier_name?.toLowerCase().includes(q)
+      );
+    }
+    list.sort((a, b) => {
+      let va = a[sortKey] ?? '', vb = b[sortKey] ?? '';
+      if (typeof va === 'string') va = va.toLowerCase();
+      if (typeof vb === 'string') vb = vb.toLowerCase();
+      if (va < vb) return sortDir === 'asc' ? -1 : 1;
+      if (va > vb) return sortDir === 'asc' ?  1 : -1;
+      return 0;
+    });
+    return list;
+  }, [baseList, search, sortKey, sortDir]);
+
+  // ── CRUD handlers ─────────────────────────────────────────────────────────
   const handleSave = async (formData) => {
     try {
-      if (modalItem?.id) await updateItem(modalItem.id, formData);
-      else               await addItem(formData);
-      setModalItem(null);
-      showToast(modalItem?.id ? 'Ürün güncellendi ✓' : 'Ürün eklendi ✓');
-    } catch (e) {
-      showToast(e.message, 'error');
-    }
+      if (drawer?.item?.id) await updateItem(drawer.item.id, formData);
+      else                  await addItem(formData);
+      setDrawer(null);
+      showToast(drawer?.item?.id ? 'Kayıt güncellendi ✓' : 'Yeni kayıt eklendi ✓');
+    } catch (e) { showToast(e.message, 'error'); }
   };
 
-  const handleDelete = async (item) => {
+  const handleDelete = async (id) => {
     try {
-      await deleteItem(item.id);
-      setDeleteConfirm(null);
-      showToast('Ürün silindi ✓');
-    } catch (e) {
-      showToast(e.message, 'error');
-    }
+      await deleteItem(id);
+      setDrawer(null);
+      showToast('Kayıt silindi ✓');
+    } catch (e) { showToast(e.message, 'error'); }
   };
 
-  const SortIcon = ({ col }) => (
+  const handleQuickSave = async (formData) => {
+    try {
+      await addItem(formData);
+      setQuickAdd(false);
+      showToast('Hızlı kayıt eklendi ✓');
+    } catch (e) { showToast(e.message, 'error'); }
+  };
+
+  // ── Sıralama ikonu ────────────────────────────────────────────────────────
+  const SortIcon = ({ col }) =>
     sortKey === col
-      ? (sortDir === 'asc' ? <ChevronUp size={13} /> : <ChevronDown size={13} />)
-      : <ChevronUp size={13} className="opacity-20" />
+      ? sortDir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />
+      : <ChevronUp size={12} style={{ opacity: 0.2 }} />;
+
+  // ── Sekme tanımları ───────────────────────────────────────────────────────
+  const TABS = [
+    { id: 'raw',     label: '🔩 Hammaddeler',   count: rawItems.length,     critical: criticalRaw.length },
+    { id: 'product', label: '⚡ Mamüller',       count: productItems.length, critical: criticalProd.length },
+    { id: 'summary', label: '📊 Özet',          count: null },
+  ];
+
+  // ── İstatistik kartları (`raw` veya `product` sekmesi için) ───────────────
+  const currentCritical = activeTab === 'raw' ? criticalRaw : criticalProd;
+  const currentItems    = activeTab === 'raw' ? rawItems    : productItems;
+  const currentValue    = currentItems.reduce((sum, i) =>
+    sum + (i.purchase_price || 0) * (i.stock_count || 0), 0
   );
 
-  // ── İstatistik Kartları ───────────────────────────────────────────────────
-  const stats = [
+  const stats = activeTab !== 'summary' ? [
     {
-      label: 'Toplam Ürün',
-      value: items.length,
+      label: activeTab === 'raw' ? 'Toplam Hammadde' : 'Toplam Mamül',
+      value: currentItems.length,
       icon: Boxes,
       color: '#3b82f6',
       sub: `${filtered.length} gösteriliyor`,
     },
     {
-      label: 'Kritik Seviye',
-      value: criticalItems.length,
+      label: '⚠ Kritik Seviye',
+      value: currentCritical.length,
       icon: AlertTriangle,
-      color: criticalItems.length > 0 ? '#f59e0b' : '#10b981',
-      sub: criticalItems.length > 0 ? 'Acil sipariş gerekiyor' : 'Stok sağlıklı',
+      color: currentCritical.length > 0 ? '#f59e0b' : '#10b981',
+      sub: currentCritical.length > 0 ? 'Sipariş gerekiyor' : 'Stok sağlıklı',
     },
     {
-      label: 'Toplam Stok Değeri',
-      value: `₺${totalValue.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}`,
+      label: 'Stok Değeri',
+      value: `₺${currentValue.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}`,
       icon: TrendingUp,
       color: '#10b981',
       sub: 'Alış fiyatı bazlı',
     },
     {
-      label: 'Aktif Ürün',
-      value: items.filter(i => i.is_active !== false).length,
+      label: 'Aktif Kayıt',
+      value: currentItems.filter(i => i.is_active !== false).length,
       icon: Package,
       color: currentColor,
-      sub: `${items.filter(i => i.is_active === false).length} pasif`,
+      sub: `${currentItems.filter(i => i.is_active === false).length} pasif`,
     },
-  ];
+  ] : [];
 
   return (
-    <div className="p-6 lg:p-8 max-w-7xl mx-auto space-y-8">
+    <div className="p-6 lg:p-8 space-y-6 max-w-[1400px] mx-auto">
 
-      {/* ── Başlık ─────────────────────────────────────────────────────── */}
+      {/* ── Başlık ────────────────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight" style={{ color: c.text }}>
-            Stok Merkezi
+            Üretim & Stok Merkezi
           </h1>
           <p className="text-sm mt-1" style={{ color: c.muted }}>
-            {items.length} ürün · {criticalItems.length > 0 && `⚠ ${criticalItems.length} kritik`}
+            {rawItems.length} hammadde · {productItems.length} mamül
+            {(criticalRaw.length + criticalProd.length) > 0 &&
+              ` · ⚠ ${criticalRaw.length + criticalProd.length} kritik`}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -163,364 +183,384 @@ export default function Stock() {
             style={{ borderColor: c.border, color: c.muted, background: c.inputBg }}>
             <RefreshCcw size={16} className={loading ? 'animate-spin' : ''} />
           </button>
-          <button onClick={() => setModalItem({})}
+          <button onClick={() => setQuickAdd(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-bold transition-all"
+            style={{ borderColor: c.border, color: c.muted, background: c.inputBg }}>
+            <Zap size={15} style={{ color: currentColor }} />
+            Hızlı Ekle
+          </button>
+          <button
+            onClick={() => setDrawer({ item: null, defaultType: activeTab === 'product' ? 'product' : 'raw' })}
             className="btn-primary">
-            <Plus size={17} />
-            Yeni Ürün
+            <Plus size={16} />
+            Detaylı Kayıt
           </button>
         </div>
       </div>
 
-      {/* ── İstatistikler ──────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((s, i) => (
-          <motion.div key={i}
-            initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}
-            className="rounded-2xl p-5" style={{ background: c.card, border: `1px solid ${c.border}` }}>
-            <div className="flex items-center justify-between mb-3">
-              <div className="p-2.5 rounded-xl text-white" style={{ background: s.color }}>
-                <s.icon size={18} />
-              </div>
-            </div>
-            <p className="text-2xl font-bold" style={{ color: c.text }}>{s.value}</p>
-            <p className="text-xs font-semibold mt-0.5" style={{ color: c.muted }}>{s.label}</p>
-            <p className="text-[10px] mt-1" style={{ color: s.color }}>{s.sub}</p>
-          </motion.div>
+      {/* ── Tab Bar ───────────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-1 border-b" style={{ borderColor: c.border }}>
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setActiveTab(t.id)}
+            className="flex items-center gap-2 px-5 py-3 text-sm font-semibold transition-all"
+            style={{
+              color:        activeTab === t.id ? currentColor : c.muted,
+              borderBottom: activeTab === t.id ? `2px solid ${currentColor}` : '2px solid transparent',
+            }}>
+            {t.label}
+            {t.count !== null && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold"
+                style={{
+                  background: activeTab === t.id ? `${currentColor}20` : c.inputBg,
+                  color:      activeTab === t.id ? currentColor : c.muted,
+                }}>
+                {t.count}
+              </span>
+            )}
+            {t.critical > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold"
+                style={{ background: '#f59e0b20', color: '#d97706' }}>
+                ⚠{t.critical}
+              </span>
+            )}
+          </button>
         ))}
       </div>
 
-      {/* ── Kritik Stok Uyarısı ────────────────────────────────────────── */}
-      <AnimatePresence>
-        {criticalItems.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-            className="rounded-2xl p-4 flex items-start gap-3"
-            style={{ background: c.critBg, border: `1px solid ${c.critBorder}` }}>
-            <AlertTriangle size={18} className="mt-0.5 shrink-0" style={{ color: '#d97706' }} />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold" style={{ color: isDark ? '#fbbf24' : '#92400e' }}>
-                {criticalItems.length} ürün kritik stok seviyesinde!
+      {/* ── ÖZET SEKMESİ ─────────────────────────────────────────────────── */}
+      {activeTab === 'summary' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {[
+            { label: 'Toplam Hammadde', value: rawItems.length,     color: '#f59e0b', icon: '🔩' },
+            { label: 'Toplam Mamül',    value: productItems.length, color: '#3b82f6', icon: '⚡' },
+            { label: 'Kritik Hammadde', value: criticalRaw.length,  color: '#ef4444', icon: '⚠' },
+            { label: 'Kritik Mamül',    value: criticalProd.length, color: '#ef4444', icon: '⚠' },
+            { label: 'Toplam Değer',    value: `₺${totalValue.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}`, color: '#10b981', icon: '💰' },
+            { label: 'Aktif Kayıt',     value: [...rawItems, ...productItems].filter(i => i.is_active !== false).length, color: currentColor, icon: '✓' },
+          ].map((s, i) => (
+            <motion.div key={i}
+              initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
+              className="rounded-2xl p-5 flex items-center gap-4"
+              style={{ background: c.card, border: `1px solid ${c.border}` }}>
+              <div className="text-3xl">{s.icon}</div>
+              <div>
+                <p className="text-2xl font-bold" style={{ color: s.color }}>{s.value}</p>
+                <p className="text-xs font-semibold" style={{ color: c.muted }}>{s.label}</p>
+              </div>
+            </motion.div>
+          ))}
+
+          {/* Kritik kalemler */}
+          {[...criticalRaw, ...criticalProd].length > 0 && (
+            <div className="md:col-span-2 lg:col-span-3 rounded-2xl p-5"
+              style={{ background: c.critBg, border: `1px solid ${c.critBdr}` }}>
+              <p className="text-sm font-bold mb-3" style={{ color: '#d97706' }}>
+                ⚠ Kritik Stok Kalemleri
               </p>
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {criticalItems.slice(0, 6).map(i => (
-                  <span key={i.id}
-                    className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                    style={{ background: isDark ? 'rgba(245,158,11,0.2)' : '#fde68a', color: '#92400e' }}>
-                    {i.name} ({i.stock_count} {i.unit})
-                  </span>
+              <div className="flex flex-wrap gap-2">
+                {[...criticalRaw, ...criticalProd].map(i => (
+                  <button key={i.id}
+                    onClick={() => { setActiveTab(i.item_type === 'product' ? 'product' : 'raw'); setDrawer({ item: i, defaultType: i.item_type }); }}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-full cursor-pointer transition-all"
+                    style={{ background: '#f59e0b25', color: '#92400e' }}
+                    onMouseEnter={e => e.currentTarget.style.background = '#f59e0b40'}
+                    onMouseLeave={e => e.currentTarget.style.background = '#f59e0b25'}>
+                    {i.name} — {i.stock_count} {i.unit}
+                  </button>
                 ))}
-                {criticalItems.length > 6 && (
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                    style={{ background: '#fde68a', color: '#92400e' }}>
-                    +{criticalItems.length - 6} daha
-                  </span>
-                )}
               </div>
             </div>
-            <button onClick={() => setOnlyCrit(true)}
-              className="text-xs font-bold shrink-0 px-3 py-1.5 rounded-lg"
-              style={{ background: '#d97706', color: 'white' }}>
-              Hepsini Gör
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Filtre Toolbar ─────────────────────────────────────────────── */}
-      <div className="rounded-2xl p-4 flex flex-wrap items-center gap-3"
-        style={{ background: c.card, border: `1px solid ${c.border}` }}>
-
-        {/* Arama */}
-        <div className="flex items-center gap-2 flex-1 min-w-[180px] px-3 py-2 rounded-xl border"
-          style={{ background: c.inputBg, borderColor: c.border }}>
-          <Search size={15} style={{ color: c.muted }} />
-          <input
-            value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Ürün adı veya SKU ara..."
-            className="bg-transparent border-none outline-none text-sm flex-1"
-            style={{ color: c.text }} />
+          )}
         </div>
+      )}
 
-        {/* Birim */}
-        <div className="w-36">
-          <Select
-            value={unitFilter}
-            onChange={setUnitFilter}
-            options={UNITS}
-            size="sm"
-          />
-        </div>
-
-        {/* Kategori */}
-        <div className="w-40">
-          <Select
-            value={catFilter}
-            onChange={setCatFilter}
-            options={CATS}
-            size="sm"
-          />
-        </div>
-
-        {/* Kritik toggle */}
-        <button onClick={() => setOnlyCrit(v => !v)}
-          className="flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-semibold transition-all"
-          style={{
-            background:  onlyCrit ? '#f59e0b20' : c.inputBg,
-            borderColor: onlyCrit ? '#f59e0b'   : c.border,
-            color:       onlyCrit ? '#d97706'    : c.muted,
-          }}>
-          <AlertTriangle size={14} />
-          Sadece Kritik
-        </button>
-
-        {/* Temizle */}
-        {(search || unitFilter !== 'Tümü' || catFilter !== 'Tümü' || onlyCrit) && (
-          <button onClick={() => { setSearch(''); setUnitFilter('Tümü'); setCatFilter('Tümü'); setOnlyCrit(false); }}
-            className="text-xs font-bold px-3 py-2 rounded-xl"
-            style={{ color: c.muted, background: c.inputBg }}>
-            Temizle
-          </button>
-        )}
-      </div>
-
-      {/* ── Tablo ──────────────────────────────────────────────────────── */}
-      <div className="rounded-2xl overflow-hidden" style={{ background: c.card, border: `1px solid ${c.border}` }}>
-
-        {/* Tablo Header */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr style={{ borderBottom: `1px solid ${c.border}` }}>
-                {[
-                  { key: null,          label: '',            w: '40px' },
-                  { key: 'sku',         label: 'SKU',         w: '110px' },
-                  { key: 'name',        label: 'Ürün Adı' },
-                  { key: 'category',    label: 'Kategori',    w: '110px' },
-                  { key: 'unit',        label: 'Birim',       w: '70px' },
-                  { key: 'stock_count', label: 'Stok',        w: '160px' },
-                  { key: 'sale_price',  label: 'Satış Fiyatı',w: '120px' },
-                  { key: null,          label: 'İşlemler',    w: '100px' },
-                ].map((col, i) => (
-                  <th key={i}
-                    className="px-4 py-3 text-left font-bold text-[10px] uppercase tracking-widest"
-                    style={{ color: c.muted, width: col.w, cursor: col.key ? 'pointer' : 'default' }}
-                    onClick={() => col.key && toggleSort(col.key)}>
-                    <div className="flex items-center gap-1">
-                      {col.label}
-                      {col.key && <SortIcon col={col.key} />}
-                    </div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-
-            <tbody className="divide-y" style={{ '--tw-divide-color': c.border }}>
-              {loading && (
-                <tr>
-                  <td colSpan={8} className="text-center py-16" style={{ color: c.muted }}>
-                    <RefreshCcw size={24} className="animate-spin mx-auto mb-2" style={{ color: currentColor }} />
-                    <p className="text-sm">Stok verisi yükleniyor...</p>
-                  </td>
-                </tr>
-              )}
-
-              {!loading && error && (
-                <tr>
-                  <td colSpan={8} className="text-center py-16">
-                    <AlertCircle size={28} className="mx-auto mb-2" style={{ color: '#ef4444' }} />
-                    <p className="text-sm font-semibold" style={{ color: '#ef4444' }}>{error}</p>
-                    <p className="text-xs mt-1" style={{ color: c.muted }}>Supabase bağlantısını ve .env.local dosyasını kontrol et</p>
-                  </td>
-                </tr>
-              )}
-
-              {!loading && !error && filtered.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="text-center py-16" style={{ color: c.muted }}>
-                    <Package size={36} strokeWidth={1} className="mx-auto mb-3 opacity-40" />
-                    <p className="font-semibold">Ürün bulunamadı</p>
-                    <p className="text-xs mt-1">Filtreleri değiştirin veya yeni ürün ekleyin</p>
-                  </td>
-                </tr>
-              )}
-
-              {!loading && filtered.map((item, idx) => {
-                const color = stockColor(item.stock_count, item.critical_limit);
-                const pct   = item.critical_limit > 0
-                  ? Math.min(100, (item.stock_count / (item.critical_limit * 3)) * 100)
-                  : 100;
-                const sym   = CURRENCY_SYMBOL[item.base_currency] || item.base_currency;
-
-                return (
-                  <motion.tr key={item.id}
-                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: idx * 0.02 }}
-                    style={{ borderBottom: `1px solid ${c.border}` }}
-                    onMouseEnter={e => e.currentTarget.style.background = c.rowHover}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-
-                    {/* Status dot */}
-                    <td className="px-4 py-3">
-                      <div className="w-2.5 h-2.5 rounded-full" style={{ background: color }} />
-                    </td>
-
-                    {/* SKU */}
-                    <td className="px-4 py-3">
-                      {item.sku
-                        ? <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-lg"
-                            style={{ background: `${currentColor}20`, color: currentColor }}>
-                            {item.sku}
-                          </span>
-                        : <span style={{ color: c.muted }}>—</span>
-                      }
-                    </td>
-
-                    {/* İsim + açıklama */}
-                    <td className="px-4 py-3">
-                      <p className="font-semibold" style={{ color: c.text }}>{item.name}</p>
-                      {item.description && (
-                        <p className="text-xs truncate max-w-xs" style={{ color: c.muted }}>{item.description}</p>
-                      )}
-                    </td>
-
-                    {/* Kategori */}
-                    <td className="px-4 py-3">
-                      <span className="text-xs" style={{ color: c.muted }}>{item.category || '—'}</span>
-                    </td>
-
-                    {/* Birim */}
-                    <td className="px-4 py-3">
-                      <span className="text-xs font-bold" style={{ color: c.text }}>{item.unit}</span>
-                    </td>
-
-                    {/* Stok + Progress */}
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold" style={{ color }}>
-                          {item.stock_count}
-                        </span>
-                        <div className="flex-1 h-1.5 rounded-full overflow-hidden"
-                          style={{ background: c.border, minWidth: '60px' }}>
-                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
-                        </div>
-                        {item.critical_limit > 0 && (
-                          <span className="text-[10px]" style={{ color: c.muted }}>/{item.critical_limit}</span>
-                        )}
-                      </div>
-                    </td>
-
-                    {/* Fiyat */}
-                    <td className="px-4 py-3">
-                      <span className="font-bold text-sm" style={{ color: c.text }}>
-                        {item.sale_price > 0 ? `${sym}${item.sale_price}` : '—'}
-                      </span>
-                    </td>
-
-                    {/* Aksiyonlar */}
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1">
-                        <ActionBtn icon={QrCode}  title="QR Kod"   color={currentColor}           onClick={() => setQrItem(item)} />
-                        <ActionBtn icon={Edit2}    title="Düzenle"  color={currentColor}           onClick={() => setModalItem(item)} />
-                        <ActionBtn icon={Trash2}   title="Sil"      color="#ef4444"                onClick={() => setDeleteConfirm(item)} />
-                      </div>
-                    </td>
-                  </motion.tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Tablo footer */}
-        {filtered.length > 0 && (
-          <div className="px-4 py-3 flex items-center justify-between border-t"
-            style={{ borderColor: c.border }}>
-            <span className="text-xs" style={{ color: c.muted }}>
-              {filtered.length} ürün listelendi
-            </span>
-            <span className="text-xs font-semibold" style={{ color: c.muted }}>
-              Toplam stok değeri: <span style={{ color: currentColor }}>
-                ₺{totalValue.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}
-              </span>
-            </span>
+      {/* ── HAMMADDE / MAMÜL SEKMELERİ ───────────────────────────────────── */}
+      {activeTab !== 'summary' && (
+        <>
+          {/* İstatistikler */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {stats.map((s, i) => (
+              <motion.div key={i}
+                initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}
+                className="rounded-2xl p-4"
+                style={{ background: c.card, border: `1px solid ${c.border}` }}>
+                <div className="p-2.5 w-9 h-9 rounded-xl text-white mb-3" style={{ background: s.color }}>
+                  <s.icon size={16} />
+                </div>
+                <p className="text-xl font-bold" style={{ color: c.text }}>{s.value}</p>
+                <p className="text-xs font-semibold" style={{ color: c.muted }}>{s.label}</p>
+                <p className="text-[10px] mt-0.5" style={{ color: s.color }}>{s.sub}</p>
+              </motion.div>
+            ))}
           </div>
-        )}
-      </div>
 
-      {/* ── Modals ─────────────────────────────────────────────────────── */}
-      {modalItem !== null && (
-        <StockModal
-          item={modalItem?.id ? modalItem : null}
-          onClose={() => setModalItem(null)}
+          {/* Kritik uyarı */}
+          <AnimatePresence>
+            {currentCritical.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                className="rounded-2xl p-4 flex items-start gap-3"
+                style={{ background: c.critBg, border: `1px solid ${c.critBdr}` }}>
+                <AlertTriangle size={17} className="mt-0.5 shrink-0" style={{ color: '#d97706' }} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-bold" style={{ color: isDark ? '#fbbf24' : '#92400e' }}>
+                    {currentCritical.length} kalem kritik seviyede
+                  </p>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {currentCritical.slice(0, 5).map(i => (
+                      <button key={i.id}
+                        onClick={() => setDrawer({ item: i, defaultType: i.item_type })}
+                        className="text-xs font-semibold px-2.5 py-1 rounded-full"
+                        style={{ background: '#f59e0b25', color: '#92400e' }}>
+                        {i.name} ({i.stock_count} {i.unit})
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Arama toolbar */}
+          <div className="flex items-center gap-3 flex-wrap"
+            style={{ background: c.card, border: `1px solid ${c.border}`, borderRadius: '1rem', padding: '12px 16px' }}>
+            <div className="flex items-center gap-2 flex-1 min-w-[180px] px-3 py-2 rounded-xl border"
+              style={{ background: c.inputBg, borderColor: c.border }}>
+              <Search size={15} style={{ color: c.muted }} />
+              <input
+                value={search} onChange={e => setSearch(e.target.value)}
+                placeholder={activeTab === 'raw' ? 'Ad, SKU veya tedarikçi ara...' : 'Mamül adı veya SKU ara...'}
+                className="bg-transparent border-none outline-none text-sm flex-1"
+                style={{ color: c.text }}
+              />
+            </div>
+            {search && (
+              <button onClick={() => setSearch('')}
+                className="text-xs px-3 py-2 rounded-xl font-semibold"
+                style={{ color: c.muted, background: c.inputBg }}>
+                Temizle
+              </button>
+            )}
+          </div>
+
+          {/* Tablo */}
+          <div className="rounded-2xl overflow-hidden" style={{ background: c.card, border: `1px solid ${c.border}` }}>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr style={{ borderBottom: `1px solid ${c.border}` }}>
+                    {[
+                      { key: null,          label: '',              w: '36px' },
+                      { key: 'sku',         label: 'SKU',           w: '120px' },
+                      { key: 'name',        label: activeTab === 'raw' ? 'Hammadde Adı' : 'Mamül Adı' },
+                      { key: 'supplier_name', label: activeTab === 'raw' ? 'Tedarikçi' : 'Seri', w: '120px' },
+                      { key: 'unit',        label: 'Birim',         w: '70px' },
+                      { key: 'stock_count', label: 'Stok',          w: '160px' },
+                      { key: 'purchase_price', label: 'Alış Fiyatı', w: '110px' },
+                      { key: null,          label: 'İşlemler',      w: '100px' },
+                    ].map((col, i) => (
+                      <th key={i}
+                        className="px-4 py-3 text-left font-bold text-[10px] uppercase tracking-widest"
+                        style={{ color: c.muted, width: col.w, cursor: col.key ? 'pointer' : 'default' }}
+                        onClick={() => col.key && toggleSort(col.key)}>
+                        <div className="flex items-center gap-1">
+                          {col.label}
+                          {col.key && <SortIcon col={col.key} />}
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading && (
+                    <tr>
+                      <td colSpan={8} className="text-center py-16" style={{ color: c.muted }}>
+                        <RefreshCcw size={22} className="animate-spin mx-auto mb-2" style={{ color: currentColor }} />
+                        <p className="text-sm">Yükleniyor...</p>
+                      </td>
+                    </tr>
+                  )}
+                  {!loading && error && (
+                    <tr>
+                      <td colSpan={8} className="text-center py-16">
+                        <AlertCircle size={28} className="mx-auto mb-2" style={{ color: '#ef4444' }} />
+                        <p className="text-sm font-semibold" style={{ color: '#ef4444' }}>{error}</p>
+                        <p className="text-xs mt-1" style={{ color: c.muted }}>
+                          .env.local dosyasındaki Supabase ayarlarını kontrol edin.
+                        </p>
+                      </td>
+                    </tr>
+                  )}
+                  {!loading && !error && filtered.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="text-center py-16" style={{ color: c.muted }}>
+                        <Package size={36} strokeWidth={1} className="mx-auto mb-3 opacity-40" />
+                        <p className="font-semibold">Kayıt bulunamadı</p>
+                        <p className="text-xs mt-1">Arayı değiştirin veya yeni kayıt ekleyin.</p>
+                        <button
+                          onClick={() => setDrawer({ item: null, defaultType: activeTab === 'product' ? 'product' : 'raw' })}
+                          className="mt-4 btn-primary text-xs px-4 py-2">
+                          + İlk Kaydı Ekle
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+
+                  {!loading && filtered.map((item, idx) => {
+                    const clr  = stockColor(item.stock_count, item.critical_limit);
+                    const pct  = item.critical_limit > 0
+                      ? Math.min(100, (item.stock_count / (item.critical_limit * 3)) * 100)
+                      : 80;
+                    const sym  = CURRENCY_SYM[item.base_currency] || '';
+                    const seriesOrSupplier = activeTab === 'product'
+                      ? (item.specs?.series || '—')
+                      : (item.supplier_name || '—');
+
+                    return (
+                      <motion.tr key={item.id}
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: idx * 0.015 }}
+                        style={{ borderBottom: `1px solid ${c.border}`, cursor: 'pointer' }}
+                        onClick={() => setDrawer({ item, defaultType: item.item_type })}
+                        onMouseEnter={e => e.currentTarget.style.background = c.rowHover}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+
+                        {/* Status dot */}
+                        <td className="px-4 py-3.5">
+                          <div className="w-2.5 h-2.5 rounded-full" style={{ background: clr }} />
+                        </td>
+
+                        {/* SKU */}
+                        <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
+                          {item.sku
+                            ? <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg"
+                                style={{ background: `${currentColor}18`, color: currentColor }}>
+                                {item.sku}
+                              </span>
+                            : <span style={{ color: c.muted }}>—</span>
+                          }
+                        </td>
+
+                        {/* İsim */}
+                        <td className="px-4 py-3.5">
+                          <p className="font-semibold" style={{ color: c.text }}>{item.name}</p>
+                          {item.location && (
+                            <p className="text-[10px] mt-0.5" style={{ color: c.muted }}>📍 {item.location}</p>
+                          )}
+                        </td>
+
+                        {/* Tedarikçi / Seri */}
+                        <td className="px-4 py-3.5">
+                          <span className="text-xs" style={{ color: c.muted }}>{seriesOrSupplier}</span>
+                        </td>
+
+                        {/* Birim */}
+                        <td className="px-4 py-3.5">
+                          <span className="text-xs font-bold" style={{ color: c.text }}>{item.unit}</span>
+                        </td>
+
+                        {/* Stok + progress */}
+                        <td className="px-4 py-3.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold w-8 text-right" style={{ color: clr }}>
+                              {item.stock_count}
+                            </span>
+                            <div className="flex-1 h-1.5 rounded-full overflow-hidden min-w-[50px]"
+                              style={{ background: c.border }}>
+                              <div className="h-full rounded-full" style={{ width: `${pct}%`, background: clr }} />
+                            </div>
+                            {item.critical_limit > 0 && (
+                              <span className="text-[10px] text-right" style={{ color: c.muted }}>
+                                /{item.critical_limit}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Alış fiyatı */}
+                        <td className="px-4 py-3.5">
+                          <span className="text-sm font-semibold" style={{ color: c.text }}>
+                            {item.purchase_price > 0 ? `${sym}${item.purchase_price}` : '—'}
+                          </span>
+                        </td>
+
+                        {/* Aksiyonlar */}
+                        <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
+                          <div className="flex items-center gap-1">
+                            <ActionBtn icon={Edit2}  color={currentColor} title="Düzenle"
+                              onClick={() => setDrawer({ item, defaultType: item.item_type })} />
+                            <ActionBtn icon={Trash2} color="#ef4444" title="Sil"
+                              onClick={async () => {
+                                if (window.confirm(`"${item.name}" silinsin mi?`)) await handleDelete(item.id);
+                              }} />
+                          </div>
+                        </td>
+                      </motion.tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {!loading && filtered.length > 0 && (
+              <div className="px-4 py-3 flex items-center justify-between border-t"
+                style={{ borderColor: c.border }}>
+                <span className="text-xs" style={{ color: c.muted }}>
+                  {filtered.length}/{currentItems.length} kayıt
+                </span>
+                <span className="text-xs font-semibold" style={{ color: c.muted }}>
+                  Stok değeri: <span style={{ color: currentColor }}>
+                    ₺{currentValue.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}
+                  </span>
+                </span>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ── Modeller ─────────────────────────────────────────────────────── */}
+      {drawer !== null && (
+        <StockDrawer
+          item={drawer.item}
+          defaultType={drawer.defaultType}
+          onClose={() => setDrawer(null)}
           onSave={handleSave}
+          onDelete={handleDelete}
           saving={saving}
         />
       )}
 
-      {qrItem && <QRModal item={qrItem} onClose={() => setQrItem(null)} />}
-
-      {/* Silme onay dialog */}
-      <AnimatePresence>
-        {deleteConfirm && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
-            style={{ background: 'rgba(0,0,0,0.5)' }}
-            onClick={() => setDeleteConfirm(null)}>
-            <motion.div
-              initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }}
-              onClick={e => e.stopPropagation()}
-              className="rounded-2xl p-6 max-w-sm w-full shadow-2xl"
-              style={{ background: c.card, border: `1px solid ${c.border}` }}>
-              <Trash2 size={28} className="mb-3" style={{ color: '#ef4444' }} />
-              <h3 className="font-bold text-base mb-1" style={{ color: c.text }}>
-                "{deleteConfirm.name}" silinsin mi?
-              </h3>
-              <p className="text-sm mb-5" style={{ color: c.muted }}>
-                Bu işlem geri alınamaz. Stok hareketleri korunacak.
-              </p>
-              <div className="flex gap-3">
-                <button onClick={() => setDeleteConfirm(null)}
-                  className="flex-1 py-2 rounded-xl border font-semibold text-sm"
-                  style={{ borderColor: c.border, color: c.muted }}>
-                  İptal
-                </button>
-                <button onClick={() => handleDelete(deleteConfirm)}
-                  className="flex-1 py-2 rounded-xl text-white font-bold text-sm"
-                  style={{ background: '#ef4444' }}>
-                  Sil
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {quickAdd && (
+        <QuickAddModal
+          onClose={() => setQuickAdd(false)}
+          onSave={handleQuickSave}
+          saving={saving}
+        />
+      )}
 
       {/* Toast */}
       <AnimatePresence>
         {toast && (
           <motion.div
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
-            className="fixed bottom-6 right-6 z-50 px-5 py-3 rounded-2xl shadow-xl text-white font-semibold text-sm"
+            className="fixed bottom-6 right-6 z-[300] px-5 py-3 rounded-2xl shadow-xl text-white font-semibold text-sm"
             style={{ background: toast.type === 'error' ? '#ef4444' : currentColor }}>
             {toast.msg}
           </motion.div>
         )}
       </AnimatePresence>
-
-      <style>{`.divide-y > tr { border-bottom: 1px solid var(--border); }`}</style>
     </div>
   );
 }
 
-// ─── Küçük aksiyon butonu ─────────────────────────────────────────────────────
-function ActionBtn({ icon: Icon, title, color, onClick }) {
+function ActionBtn({ icon: Icon, color, title, onClick }) {
   return (
     <button title={title} onClick={onClick}
       className="p-1.5 rounded-lg transition-all"
       style={{ color }}
       onMouseEnter={e => e.currentTarget.style.background = `${color}20`}
       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-      <Icon size={15} />
+      <Icon size={14} />
     </button>
   );
 }
