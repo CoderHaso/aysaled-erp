@@ -148,11 +148,11 @@ export default function Stock() {
   const currentValue    = currentItems.reduce((s, i) => s + (i.purchase_price || 0) * (i.stock_count || 0), 0);
 
   const TABS = [
-    { id: 'raw',       label: '🔩 Hammaddeler', count: rawItems.length,     critical: criticalRaw.length },
-    { id: 'product',   label: '⚡ Mamüller',     count: productItems.length, critical: criticalProd.length },
-    { id: 'suppliers', label: '🏢 Tedarikçiler', count: suppliers.length },
-    { id: 'summary',   label: '📊 Özet' },
+    { id: 'raw',     label: '🔩 Hammaddeler', count: rawItems.length,     critical: criticalRaw.length },
+    { id: 'product', label: '⚡ Mamüller',     count: productItems.length, critical: criticalProd.length },
+    { id: 'summary', label: '📊 Özet' },
   ];
+
 
   const filteredSuppliers = suppliers.filter(s =>
     !supSearch || s.name.toLowerCase().includes(supSearch.toLowerCase())
@@ -161,16 +161,14 @@ export default function Stock() {
   // ── Render: FORM VIEW ─────────────────────────────────────────────────────
   if (view === 'form') {
     return (
-      <div className="h-[calc(100vh-64px)] overflow-hidden flex flex-col">
-        <StockForm
-          item={editing}
-          defaultType={formType}
-          onBack={() => setView('list')}
-          onSave={handleSave}
-          onDelete={handleDelete}
-          saving={saving}
-        />
-      </div>
+      <StockForm
+        item={editing}
+        defaultType={formType}
+        onBack={() => setView('list')}
+        onSave={handleSave}
+        onDelete={handleDelete}
+        saving={saving}
+      />
     );
   }
 

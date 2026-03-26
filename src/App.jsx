@@ -2,57 +2,67 @@ import React, { useState } from 'react';
 import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from './contexts/ThemeContext';
 import Sidebar from './components/Sidebar';
-import { Menu, Bell, Plus, Search } from 'lucide-react';
-import Dashboard from './pages/Dashboard';
-import Stock from './pages/Stock';
+import { Menu, Bell, Search } from 'lucide-react';
+import Dashboard  from './pages/Dashboard';
+import Stock      from './pages/Stock';
+import Suppliers  from './pages/Suppliers';
 
-// ─── Sayfa meta bilgileri ──────────────────────────────────────────────────────
 const PAGES = {
-  '/':          { title: 'Dashboard',      sub: 'Genel Bakış' },
-  '/stock':     { title: 'Stok Merkezi',   sub: 'Ürün & Hammadde' },
-  '/contacts':  { title: 'Cari Takip',     sub: 'Müşteri & Tedarikçi' },
-  '/invoices':  { title: 'Faturalar',      sub: 'Gelen & Giden' },
-  '/sales':     { title: 'Satış Paneli',   sub: 'Yeni Satış & Sipariş' },
-  '/reports':   { title: 'Raporlar',       sub: 'Finans & Analiz' },
+  '/':           { title: 'Dashboard',     sub: 'Genel Bakış' },
+  '/stock':      { title: 'Stok Merkezi',  sub: 'Hammadde & Mamül' },
+  '/suppliers':  { title: 'Tedarikçiler',  sub: 'Tedarikçi Yönetimi' },
+  '/contacts':   { title: 'Cari Takip',    sub: 'Müşteri & Tedarikçi' },
+  '/invoices':   { title: 'Faturalar',     sub: 'Gelen & Giden' },
+  '/sales':      { title: 'Satış',         sub: 'Sipariş & Satış' },
+  '/reports':    { title: 'Raporlar',      sub: 'Finans & Analiz' },
 };
 
-// Route → Sidebar id eşleştirme
 const ROUTE_TO_ID = {
-  '/':         'dashboard',
-  '/stock':    'stock',
-  '/contacts': 'contacts',
-  '/invoices': 'invoices',
-  '/sales':    'sales',
-  '/reports':  'reports',
+  '/':          'dashboard',
+  '/stock':     'stock',
+  '/suppliers': 'suppliers',
+  '/contacts':  'contacts',
+  '/invoices':  'invoices',
+  '/sales':     'sales',
+  '/reports':   'reports',
 };
 
 function AppShell() {
   const { effectiveMode, currentColor } = useTheme();
   const isDark = effectiveMode === 'dark';
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const location = useLocation();
-  const navigate = useNavigate();
 
-  const page = PAGES[location.pathname] || { title: 'A-ERP', sub: '' };
+  // Desktop: sidebar açık/kapalı; Mobile: overlay ile açılır
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const location  = useLocation();
+  const navigate  = useNavigate();
+
+  const page     = PAGES[location.pathname] || { title: 'A-ERP', sub: '' };
   const activeId = ROUTE_TO_ID[location.pathname] || 'dashboard';
 
   const c = {
-    bg:         isDark ? '#0f172a' : '#f8fafc',
-    header:     isDark ? 'rgba(15,23,42,0.9)' : 'rgba(255,255,255,0.9)',
-    border:     isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0',
-    text:       isDark ? '#f1f5f9' : '#0f172a',
-    muted:      isDark ? '#94a3b8' : '#64748b',
-    searchBg:   isDark ? 'rgba(30,41,59,0.8)' : 'rgba(241,245,249,0.9)',
-    hoverBg:    isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)',
+    bg:       isDark ? '#0f172a' : '#f8fafc',
+    header:   isDark ? 'rgba(15,23,42,0.95)' : 'rgba(255,255,255,0.95)',
+    border:   isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0',
+    text:     isDark ? '#f1f5f9' : '#0f172a',
+    muted:    isDark ? '#94a3b8' : '#64748b',
+    searchBg: isDark ? 'rgba(30,41,59,0.8)' : 'rgba(241,245,249,0.9)',
+    hoverBg:  isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.04)',
   };
 
   const handleNavigate = (id) => {
-    const routes = { dashboard: '/', stock: '/stock', contacts: '/contacts', invoices: '/invoices', sales: '/sales', reports: '/reports' };
+    const routes = {
+      dashboard: '/', stock: '/stock', suppliers: '/suppliers',
+      contacts: '/contacts', invoices: '/invoices', sales: '/sales', reports: '/reports',
+    };
     navigate(routes[id] || '/');
+    // Mobilde gezindikten sonra sidebar kapat
+    if (window.innerWidth < 1024) setSidebarOpen(false);
   };
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: c.bg }}>
+
+      {/* ── Sidebar ─────────────────────────────────────────────────────── */}
       <Sidebar
         isOpen={sidebarOpen}
         toggle={() => setSidebarOpen(v => !v)}
@@ -60,80 +70,68 @@ function AppShell() {
         onNavigate={handleNavigate}
       />
 
-      {/* Ana alan */}
-      <div className={`flex flex-col flex-1 transition-all duration-300 overflow-hidden
-        ${sidebarOpen ? 'lg:ml-[260px]' : 'lg:ml-[72px]'}`}>
+      {/* ── Sağ ana alan ────────────────────────────────────────────────── */}
+      <div
+        className="flex flex-col flex-1 min-w-0 overflow-hidden transition-all duration-300"
+        style={{ marginLeft: sidebarOpen ? 'var(--sidebar-w, 260px)' : 'var(--sidebar-collapsed, 72px)' }}
+      >
 
-        {/* ── Header ──────────────────────────────────────────────────────── */}
-        <header className="flex-shrink-0 flex items-center justify-between px-6 py-3 border-b z-30"
-          style={{
-            background: c.header,
-            backdropFilter: 'blur(14px)',
-            borderColor: c.border,
-          }}>
-          <div className="flex items-center gap-4">
-            {/* Hamburger */}
+        {/* ── Header ──────────────────────────────────────────────────── */}
+        <header
+          className="flex-shrink-0 flex items-center justify-between px-3 sm:px-5 py-3 border-b z-30"
+          style={{ background: c.header, backdropFilter: 'blur(14px)', borderColor: c.border }}
+        >
+          {/* Sol: hamburger + başlık */}
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <button
               onClick={() => setSidebarOpen(v => !v)}
-              className="p-2 rounded-xl transition-colors"
+              className="p-2 rounded-xl flex-shrink-0 transition-colors"
               style={{ color: c.muted }}
               onMouseEnter={e => e.currentTarget.style.background = c.hoverBg}
-              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
               <Menu size={20} />
             </button>
-
-            {/* Breadcrumb */}
-            <div>
-              <h2 className="font-bold text-base leading-none" style={{ color: c.text }}>
+            <div className="min-w-0">
+              <h2 className="font-bold text-sm sm:text-base leading-none truncate" style={{ color: c.text }}>
                 {page.title}
               </h2>
               {page.sub && (
-                <p className="text-xs mt-0.5" style={{ color: c.muted }}>{page.sub}</p>
+                <p className="text-[10px] sm:text-xs mt-0.5 truncate" style={{ color: c.muted }}>{page.sub}</p>
               )}
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Arama */}
+          {/* Sağ: arama + bildirim */}
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
             <div className="hidden md:flex items-center gap-2 px-3 py-2 rounded-xl border"
               style={{ background: c.searchBg, borderColor: c.border }}>
-              <Search size={15} style={{ color: c.muted }} />
-              <input
-                type="text"
-                placeholder="Ara..."
-                className="bg-transparent border-none outline-none text-sm w-44"
-                style={{ color: c.text }}
-              />
+              <Search size={14} style={{ color: c.muted }} />
+              <input type="text" placeholder="Ara..."
+                className="bg-transparent border-none outline-none text-sm w-36 lg:w-44"
+                style={{ color: c.text }} />
             </div>
-
-            {/* Bildirim */}
-            <button className="relative p-2 rounded-xl transition-colors"
+            <button className="relative p-2 rounded-xl transition-colors flex-shrink-0"
               style={{ color: c.muted }}
               onMouseEnter={e => e.currentTarget.style.background = c.hoverBg}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-              <Bell size={19} />
-              <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-red-500 border-2"
+              <Bell size={18} />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500 border-2"
                 style={{ borderColor: c.header }} />
-            </button>
-
-            {/* Yeni İşlem */}
-            <button className="btn-primary hidden sm:flex">
-              <Plus size={16} />
-              Yeni İşlem
             </button>
           </div>
         </header>
 
-        {/* ── Sayfa İçeriği ──────────────────────────────────────────────── */}
+        {/* ── Sayfa içeriği (tek scroll burası) ───────────────────────── */}
         <main className="flex-1 overflow-y-auto" style={{ background: c.bg, color: c.text }}>
           <Routes>
-            <Route path="/"        element={<Dashboard />} />
-            <Route path="/stock"   element={<Stock />} />
-            {/* Yakında:  */}
-            <Route path="/contacts"  element={<ComingSoon title="Cari Takip" />} />
-            <Route path="/invoices"  element={<ComingSoon title="Faturalar" />} />
-            <Route path="/sales"     element={<ComingSoon title="Satış Paneli" />} />
-            <Route path="/reports"   element={<ComingSoon title="Raporlar" />} />
+            <Route path="/"           element={<Dashboard />} />
+            <Route path="/stock"      element={<Stock />} />
+            <Route path="/suppliers"  element={<Suppliers />} />
+            <Route path="/contacts"   element={<ComingSoon title="Cari Takip" icon="👥" />} />
+            <Route path="/invoices"   element={<ComingSoon title="Faturalar"  icon="🧾" />} />
+            <Route path="/sales"      element={<ComingSoon title="Satış"      icon="🛒" />} />
+            <Route path="/reports"    element={<ComingSoon title="Raporlar"   icon="📊" />} />
           </Routes>
         </main>
       </div>
@@ -141,24 +139,20 @@ function AppShell() {
   );
 }
 
-// ─── Geçici placeholder ───────────────────────────────────────────────────────
-function ComingSoon({ title }) {
+function ComingSoon({ title, icon = '🚧' }) {
   const { effectiveMode } = useTheme();
   const isDark = effectiveMode === 'dark';
   return (
-    <div className="flex flex-col items-center justify-center h-full py-24 gap-4">
-      <div className="text-6xl">🚧</div>
-      <h2 className="text-xl font-bold" style={{ color: isDark ? '#f1f5f9' : '#0f172a' }}>
-        {title}
-      </h2>
-      <p className="text-sm" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 px-4">
+      <div className="text-6xl">{icon}</div>
+      <h2 className="text-xl font-bold" style={{ color: isDark ? '#f1f5f9' : '#0f172a' }}>{title}</h2>
+      <p className="text-sm text-center" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
         Bu modül yakında aktif olacak.
       </p>
     </div>
   );
 }
 
-// ─── Root Export ──────────────────────────────────────────────────────────────
 export default function App() {
   return (
     <BrowserRouter>
