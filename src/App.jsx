@@ -44,12 +44,19 @@ const Dashboard = () => {
   ];
 
   return (
-    <div className="flex min-h-screen bg-[#f8fafc]">
+    <div className="flex min-h-screen" style={{ background: 'var(--bg-app)', color: 'var(--text-base)' }}>
       <Sidebar isOpen={sidebarOpen} toggle={() => setSidebarOpen(!sidebarOpen)} />
       
-      <main className={`flex-1 transition-all duration-300 ${sidebarOpen ? 'ml-[280px]' : 'ml-0 lg:ml-[100px]'}`}>
+      <main className={`flex-1 transition-all duration-300 ${sidebarOpen ? 'ml-[260px]' : 'ml-0 lg:ml-[72px]'}`}>
         {/* Header */}
-        <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-lg border-b border-slate-200 px-8 py-4 flex items-center justify-between">
+        <header
+          className="sticky top-0 z-30 border-b px-6 py-4 flex items-center justify-between"
+          style={{
+            background: 'var(--bg-header)',
+            backdropFilter: 'blur(12px)',
+            borderColor: 'var(--border)',
+          }}
+        >
           <div className="flex items-center gap-4">
             <button 
               onClick={() => setSidebarOpen(!sidebarOpen)}

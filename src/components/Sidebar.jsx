@@ -1,82 +1,135 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
-  LayoutDashboard, 
-  Package, 
-  Users, 
-  FileText, 
-  TrendingUp, 
-  ShoppingCart, 
-  Settings, 
-  Search,
-  Bell,
-  Menu,
-  X
+  LayoutDashboard, Package, Users, FileText,
+  ShoppingCart, TrendingUp, Settings, Palette, X
 } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
+import { AnimatePresence } from 'framer-motion';
+import ThemeSettings from './ThemeSettings';
 
-const Sidebar = ({ isOpen, toggle }) => {
-  const menuItems = [
-    { name: 'Dashboard', icon: LayoutDashboard, active: true },
-    { name: 'Stok Yönetimi', icon: Package },
-    { name: 'Cari Takip', icon: Users },
-    { name: 'Faturalar', icon: FileText },
-    { name: 'Satış Paneli', icon: ShoppingCart },
-    { name: 'Raporlar', icon: TrendingUp },
-  ];
+const MENU = [
+  { name: 'Dashboard',      icon: LayoutDashboard, id: 'dashboard' },
+  { name: 'Stok',           icon: Package,         id: 'stock' },
+  { name: 'Cariler',        icon: Users,           id: 'contacts' },
+  { name: 'Faturalar',      icon: FileText,        id: 'invoices' },
+  { name: 'Satış',          icon: ShoppingCart,    id: 'sales' },
+  { name: 'Raporlar',       icon: TrendingUp,      id: 'reports' },
+];
+
+export default function Sidebar({ isOpen, toggle, activeId = 'dashboard', onNavigate }) {
+  const { effectiveMode, currentColor, theme } = useTheme();
+  const [themeOpen, setThemeOpen] = useState(false);
 
   return (
     <>
-      <aside className={`fixed top-0 left-0 h-full bg-[#1e293b] text-white transition-all duration-300 z-50 overflow-hidden
-        ${isOpen ? 'w-[280px]' : 'w-0 lg:w-[100px]'}`}>
-        
-        <div className="p-6 mb-8 flex items-center gap-3">
-          <div className="w-10 h-10 bg-primary-500 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-primary-500/30">
-            <TrendingUp className="text-white" size={24} />
+      <aside
+        style={{ background: 'var(--bg-sidebar)' }}
+        className={`fixed top-0 left-0 h-full transition-all duration-300 z-50 overflow-visible
+          ${isOpen ? 'w-[260px]' : 'w-0 lg:w-[72px]'}`}
+      >
+        {/* Logo */}
+        <div className="flex items-center gap-3 px-4 py-5 overflow-hidden">
+          <div
+            className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-lg"
+            style={{
+              background: `linear-gradient(135deg, ${currentColor}, ${theme.preset !== 'custom' ? 'var(--color-primary-dark)' : currentColor})`,
+            }}
+          >
+            <TrendingUp size={22} color="white" />
           </div>
-          <span className={`text-xl font-bold tracking-tight whitespace-nowrap transition-opacity ${!isOpen ? 'lg:opacity-0' : 'opacity-100'}`}>
-            A-ERP <span className="text-primary-400">Pro</span>
-          </span>
+          {isOpen && (
+            <div className="overflow-hidden">
+              <span className="text-white font-bold text-lg tracking-tight block leading-none">A-ERP</span>
+              <span className="text-slate-400 text-xs">Pro v1.0</span>
+            </div>
+          )}
         </div>
 
-        <nav className="px-4 space-y-2">
-          {menuItems.map((item, idx) => {
-            const Icon = item.icon;
+        {/* Nav */}
+        <nav className="px-2 space-y-0.5 mt-2">
+          {MENU.map(({ name, icon: Icon, id }) => {
+            const active = activeId === id;
             return (
-              <div 
-                key={idx}
-                className={`flex items-center gap-4 px-4 py-3.5 rounded-2xl cursor-pointer transition-all hover:bg-white/5 group
-                  ${item.active ? 'bg-primary-600 text-white' : 'text-slate-400'}`}
+              <button
+                key={id}
+                onClick={() => onNavigate?.(id)}
+                className="nav-link"
+                style={active ? {
+                  background: `color-mix(in srgb, ${currentColor} 18%, transparent)`,
+                  color: 'var(--color-primary-light)',
+                } : {}}
               >
-                <Icon size={22} className={`${item.active ? 'text-white' : 'group-hover:text-white'}`} />
-                <span className={`font-medium whitespace-nowrap transition-opacity ${!isOpen ? 'lg:hidden' : 'opacity-100'}`}>
-                  {item.name}
-                </span>
-              </div>
+                <Icon size={20} className="shrink-0" />
+                {isOpen && <span>{name}</span>}
+                {active && !isOpen && (
+                  <div
+                    className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full"
+                    style={{ background: currentColor }}
+                  />
+                )}
+              </button>
             );
           })}
         </nav>
 
-        <div className="absolute bottom-8 left-4 right-4 group">
-          <div className={`flex items-center gap-4 px-4 py-4 rounded-3xl bg-slate-800/50 hover:bg-slate-800 transition-all border border-slate-700/50
-             ${!isOpen ? 'lg:px-3 justify-center' : ''}`}>
-            <div className="w-10 h-10 rounded-full bg-slate-600 shrink-0 border-2 border-slate-500"></div>
-            <div className={`${!isOpen ? 'lg:hidden' : 'opacity-100'} transition-opacity overflow-hidden`}>
-              <p className="text-sm font-semibold truncate">Efe Han</p>
-              <p className="text-xs text-slate-500 truncate">Admin</p>
+        {/* Bottom: Tema + Kullanıcı */}
+        <div className="absolute bottom-0 left-0 right-0 p-2 space-y-1">
+          {/* Tema butonu (ThemeSettings paneli açar) */}
+          <div className="relative">
+            <button
+              onClick={() => setThemeOpen(v => !v)}
+              className="nav-link"
+              style={themeOpen ? {
+                background: `color-mix(in srgb, ${currentColor} 15%, transparent)`,
+                color: 'var(--color-primary-light)',
+              } : {}}
+            >
+              <Palette size={20} className="shrink-0" />
+              {isOpen && <span>Tema</span>}
+              {isOpen && (
+                <div
+                  className="ml-auto w-4 h-4 rounded-full border-2 border-slate-600"
+                  style={{ background: currentColor }}
+                />
+              )}
+            </button>
+
+            <AnimatePresence>
+              {themeOpen && (
+                <ThemeSettings onClose={() => setThemeOpen(false)} />
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Settings */}
+          <button className="nav-link">
+            <Settings size={20} className="shrink-0" />
+            {isOpen && <span>Ayarlar</span>}
+          </button>
+
+          {/* User */}
+          <div className="flex items-center gap-3 px-3 py-3 rounded-xl">
+            <div className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-white font-bold text-sm"
+              style={{ background: currentColor }}>
+              E
             </div>
-            <Settings className={`ml-auto text-slate-500 hover:text-white transition-colors ${!isOpen ? 'lg:hidden' : ''}`} size={18} />
+            {isOpen && (
+              <div className="overflow-hidden">
+                <p className="text-white text-sm font-semibold leading-none truncate">Efe Han</p>
+                <p className="text-slate-400 text-xs mt-0.5">Admin</p>
+              </div>
+            )}
           </div>
         </div>
       </aside>
 
-      {/* Overlay for mobile */}
+      {/* Mobile overlay */}
       {isOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/50 backdrop-blur-sm lg:hidden z-40"
           onClick={toggle}
         />
       )}
     </>
   );
-};
-
-export default Sidebar;
+}
