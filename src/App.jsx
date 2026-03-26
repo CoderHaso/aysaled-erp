@@ -7,6 +7,7 @@ import Dashboard  from './pages/Dashboard';
 import Stock      from './pages/Stock';
 import Suppliers  from './pages/Suppliers';
 import Settings   from './pages/Settings';
+import QRDetail from './pages/QRDetail';
 
 const PAGES = {
   '/':           { title: 'Dashboard',     sub: 'Genel Bakış' },
@@ -133,7 +134,7 @@ function AppShell() {
           <Routes>
             <Route path="/"           element={<Dashboard />} />
             <Route path="/stock"      element={<Stock />} />
-            <Route path="/stock/:id"  element={<Stock />} />
+            <Route path="/qr/:id"     element={<QRDetail />} />
             <Route path="/suppliers"  element={<Suppliers />} />
             <Route path="/settings"   element={<Settings />} />
             <Route path="/contacts"   element={<ComingSoon title="Cari Takip" icon="👥" />} />

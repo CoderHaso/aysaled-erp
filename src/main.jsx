@@ -6,7 +6,8 @@ import { ThemeProvider } from './contexts/ThemeContext.jsx'
 
 // Eski QR veya direkt link girişlerini yakalayıp HashRouter formatına çevir (PWA uyumu)
 if (window.location.pathname !== '/' && window.location.pathname !== '/index.html') {
-  const p = window.location.pathname;
+  let p = window.location.pathname;
+  if (p.startsWith('/stock/')) p = p.replace('/stock/', '/qr/');
   // Redirect
   window.location.replace(`${window.location.origin}/#${p}${window.location.search}`);
 }
