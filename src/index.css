@@ -1,0 +1,141 @@
+/* Google Font — TAİLWIND'DEN ÖNCE OLMALI */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@import "tailwindcss";
+
+@theme {
+  --color-primary-50: oklch(0.97 0.02 220);
+  --color-primary-100: oklch(0.94 0.05 220);
+  --color-primary-200: oklch(0.88 0.09 220);
+  --color-primary-300: oklch(0.80 0.13 220);
+  --color-primary-400: oklch(0.70 0.17 220);
+  --color-primary-500: oklch(0.60 0.20 220);
+  --color-primary-600: oklch(0.50 0.20 220);
+  --color-primary-700: oklch(0.42 0.18 220);
+  --color-primary-800: oklch(0.34 0.15 220);
+  --color-primary-900: oklch(0.27 0.12 220);
+
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* PWA: full-screen mobile feel */
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  background-color: #f8fafc;
+  color: #0f172a;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+/* Safe area (iPhone notch / home bar) */
+.safe-top    { padding-top: env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+/* Glass card */
+.glass-card {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 8px 32px rgba(15, 23, 42, 0.06);
+  border-radius: 1.25rem;
+}
+
+/* Primary button */
+.btn-primary {
+  background-color: #0284c7;
+  color: white;
+  padding: 0.65rem 1.5rem;
+  border-radius: 0.875rem;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.875rem;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-shadow: 0 4px 16px -2px rgba(2, 132, 199, 0.35);
+  touch-action: manipulation;
+}
+.btn-primary:hover { background-color: #0369a1; }
+.btn-primary:active { transform: scale(0.96); }
+
+/* Ghost button */
+.btn-ghost {
+  background: transparent;
+  color: #64748b;
+  padding: 0.65rem 1rem;
+  border-radius: 0.875rem;
+  border: 1.5px solid #e2e8f0;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 0.875rem;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  touch-action: manipulation;
+}
+.btn-ghost:hover { background: #f1f5f9; }
+
+/* Input */
+.input-field {
+  width: 100%;
+  background: white;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 0.875rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  transition: all 0.15s ease;
+  outline: none;
+  color: #0f172a;
+  font-family: inherit;
+}
+.input-field:focus {
+  border-color: #0284c7;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.12);
+}
+
+/* Nav links */
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.875rem;
+  color: #94a3b8;
+  font-weight: 500;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+  touch-action: manipulation;
+}
+.nav-link:hover { background: rgba(255,255,255,0.06); color: white; }
+.nav-link.active { background: rgba(2, 132, 199, 0.15); color: #38bdf8; }
+
+/* Badges */
+.badge           { display: inline-flex; align-items: center; padding: 0.2rem 0.6rem; border-radius: 99px; font-size: 0.72rem; font-weight: 700; }
+.badge-success   { background: #dcfce7; color: #15803d; }
+.badge-warning   { background: #fef9c3; color: #a16207; }
+.badge-danger    { background: #fee2e2; color: #dc2626; }
+.badge-info      { background: #dbeafe; color: #1d4ed8; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+
+* { box-sizing: border-box; }
