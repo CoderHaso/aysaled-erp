@@ -9,6 +9,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useStock } from '../hooks/useStock';
 import StockModal from '../components/stock/StockModal';
 import QRModal from '../components/stock/QRModal';
+import Select from '../components/ui/Select';
 
 const CURRENCY_SYMBOL = { TRY: '₺', USD: '$', EUR: '€' };
 const UNITS = ['Tümü', 'pcs', 'kg', 'm', 'lt', 'm²', 'm³', 'adet', 'kutu', 'rulo'];
@@ -241,18 +242,24 @@ export default function Stock() {
         </div>
 
         {/* Birim */}
-        <select value={unitFilter} onChange={e => setUnitFilter(e.target.value)}
-          className="px-3 py-2 rounded-xl border text-sm font-medium"
-          style={{ background: c.inputBg, borderColor: c.border, color: c.text }}>
-          {UNITS.map(u => <option key={u}>{u}</option>)}
-        </select>
+        <div className="w-36">
+          <Select
+            value={unitFilter}
+            onChange={setUnitFilter}
+            options={UNITS}
+            size="sm"
+          />
+        </div>
 
         {/* Kategori */}
-        <select value={catFilter} onChange={e => setCatFilter(e.target.value)}
-          className="px-3 py-2 rounded-xl border text-sm font-medium"
-          style={{ background: c.inputBg, borderColor: c.border, color: c.text }}>
-          {CATS.map(u => <option key={u}>{u}</option>)}
-        </select>
+        <div className="w-40">
+          <Select
+            value={catFilter}
+            onChange={setCatFilter}
+            options={CATS}
+            size="sm"
+          />
+        </div>
 
         {/* Kritik toggle */}
         <button onClick={() => setOnlyCrit(v => !v)}

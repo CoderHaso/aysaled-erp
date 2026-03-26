@@ -357,5 +357,16 @@ textarea.input-field {
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+.custom-scrollbar::-webkit-scrollbar { width: 3px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+
+/* Native select fallback (custom Select kullanıla)madığı yerlerde) */
+select option {
+  background-color: var(--input-bg);
+  color: var(--text-base);
+}
 
 * { box-sizing: border-box; }
