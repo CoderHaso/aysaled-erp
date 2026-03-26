@@ -28,22 +28,12 @@ export default function Sidebar({ isOpen, toggle, activeId = 'dashboard', onNavi
 
   return (
     <>
-      {/* CSS var güncelle */}
-      <style>{`
-        :root {
-          --sidebar-w: ${isOpen ? 260 : 72}px;
-          --sidebar-collapsed: 72px;
-        }
-      `}</style>
-
       <aside
         style={{ background: 'var(--bg-sidebar)', width: `${sidebarWidth}px` }}
         className={`
           fixed top-0 left-0 h-full z-50
           flex flex-col
           transition-all duration-300
-          overflow-hidden
-          ${/* mobil: hem desktop hem mobilde çalışsın */ ''}
           ${mobileSidebarShow ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
       >
@@ -112,7 +102,9 @@ export default function Sidebar({ isOpen, toggle, activeId = 'dashboard', onNavi
           </div>
 
           {/* Settings */}
-          <button className="nav-link w-full">
+          <button onClick={() => onNavigate?.('settings')}
+            className="nav-link w-full"
+            style={activeId === 'settings' ? { background: `color-mix(in srgb, ${currentColor} 18%, transparent)`, color: 'var(--color-primary-light)' } : {}}>
             <Settings size={19} className="shrink-0" />
             {isOpen && <span>Ayarlar</span>}
           </button>

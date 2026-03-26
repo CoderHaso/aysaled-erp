@@ -17,6 +17,8 @@ export default function BOMEditor({
   parentId,
   pendingLines,
   onPendingChange,
+  form,
+  setForm,
 }) {
   const { effectiveMode, currentColor } = useTheme();
   const isDark = effectiveMode === 'dark';
@@ -44,6 +46,12 @@ export default function BOMEditor({
   const [editId,     setEditId]     = useState(null);
   const [editData,   setEditData]   = useState({});
   const debounceRef = useRef(null);
+
+  React.useEffect(() => {
+    if (form && setForm && form.purchase_price !== totalCost) {
+      setForm('purchase_price', totalCost);
+    }
+  }, [totalCost, form?.purchase_price, setForm]);
 
   const doSearch = async (q) => {
     if (!q.trim()) { setResults([]); return; }
@@ -112,21 +120,54 @@ export default function BOMEditor({
 
   return (
     <div className="space-y-4">
-      {/* Maliyet özeti */}
-      <div className="rounded-2xl p-4 flex items-center justify-between"
+      {/* Maliyet ve Fiyat Özeti (Top Card) */}
+      <div className="rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 sm:gap-6"
         style={{ background: isDark ? 'rgba(255,255,255,0.04)' : '#f8fafc', border: `1px solid ${border}` }}>
-        <div>
-          <p className="text-xs font-bold uppercase tracking-widest" style={{ color: muted }}>Reçete Maliyeti</p>
-          <p className="text-2xl font-bold mt-0.5" style={{ color: currentColor }}>₺{fmt(totalCost)}</p>
-          {!liveMode && (
-            <p className="text-[10px] mt-1" style={{ color: muted }}>
-              Kayıt ile birlikte kaydedilecek
-            </p>
+        <div className="flex flex-wrap items-center gap-4 sm:gap-6">
+          {/* 1. BOM Maliyeti */}
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest pl-1 mb-1" style={{ color: muted }}>Ana Maliyet</p>
+            <p className="text-xl sm:text-2xl font-bold" style={{ color: currentColor }}>₺{fmt(totalCost)}</p>
+            {!liveMode && (
+              <p className="text-[10px] mt-1 hidden sm:block" style={{ color: muted }}>Kayıtla kaydedilir</p>
+            )}
+          </div>
+          
+          {/* Eğer form bağlantısı sağlandıysa içine Kar Marjı ve Satış Fiyatı da koy */}
+          {form && setForm && (
+            <>
+              <div className="w-[1px] h-10 hidden sm:block" style={{ background: border }} />
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest pl-1 mb-1" style={{ color: muted }}>Hedef Kâr (%)</p>
+                <div className="relative">
+                  <span className="absolute left-2.5 top-[7px] text-xs font-bold" style={{ color: muted }}>%</span>
+                  <input type="number" min="0" step="1" className="modal-input font-bold"
+                    style={{ background: isDark ? '#0f172a' : '#fff', padding: '6px 10px 6px 26px', width: '70px', fontSize: '13px' }}
+                    value={form.margin_rate || ''} onChange={e => setForm('margin_rate', e.target.value)} />
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center gap-2 mb-1 pl-1">
+                  <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: muted }}>Satış Fiyatı</p>
+                  {totalCost > 0 && form.margin_rate > 0 && (
+                    <span className="text-[9px] font-semibold" style={{ color: currentColor }}>
+                      (Örn: ₺{fmt(totalCost * (1 + parseFloat(form.margin_rate) / 100))})
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
+                  <span className="absolute left-2.5 top-[7px] text-xs font-bold" style={{ color: muted }}>₺</span>
+                  <input type="number" min="0" step="0.01" className="modal-input font-bold outline-none"
+                    style={{ background: isDark ? '#0f172a' : '#fff', padding: '6px 10px 6px 22px', width: '100px', color: '#10b981', fontSize: '13px', borderColor: border }}
+                    value={form.sale_price || ''} onChange={e => setForm('sale_price', e.target.value)} />
+                </div>
+              </div>
+            </>
           )}
         </div>
-        <div className="text-right">
-          <p className="text-sm font-bold" style={{ color: text }}>{lines.length}</p>
-          <p className="text-xs" style={{ color: muted }}>bileşen</p>
+        <div className="text-right flex-shrink-0">
+          <p className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: muted }}>Bileşenler</p>
+          <p className="text-xl font-bold" style={{ color: text }}>{lines.length}</p>
         </div>
       </div>
 

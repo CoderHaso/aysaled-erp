@@ -7,8 +7,8 @@ import Select from '../ui/Select';
 import BOMEditor from './BOMEditor';
 import SupplierAutocomplete from './SupplierAutocomplete';
 import { useCategories } from '../../hooks/useCategories';
+import { useUnits } from '../../hooks/useUnits';
 
-const UNITS        = ['pcs', 'adet', 'kg', 'm', 'lt', 'm²', 'm³', 'kutu', 'rulo'];
 const CURRENCIES   = ['TRY', 'USD', 'EUR'];
 const VAT_OPTS     = [0, 1, 8, 10, 18, 20].map(v => ({ value: v, label: `%${v}` }));
 const IP_OPTS      = ['—', 'IP20', 'IP40', 'IP44', 'IP54', 'IP65', 'IP67', 'IP68'];
@@ -18,8 +18,8 @@ const SERIES_OPTS  = ['—', 'Lineer', 'Simit', 'Davul', 'Magnet', 'Panel', 'Öz
 const COLOR_OPTS   = ['—', 'Beyaz', 'Siyah', 'Antrasit', 'Altın', 'Krom', 'Bakır'];
 
 const EMPTY = {
-  name: '', sku: '', barcode: '', category: '', description: '',
-  supplier_name: '', location: '', item_type: 'raw', is_active: true,
+  name: '', sku: '', category: '', description: '',
+  supplier_name: '', location: '', item_type: 'raw', is_active: true, has_bom: true,
   unit: 'pcs', base_currency: 'TRY',
   purchase_price: '', sale_price: '', vat_rate: 18, margin_rate: 30,
   stock_count: 0, critical_limit: 10,
@@ -31,7 +31,7 @@ const FORM_TABS = [
   { id: 'tech',    label: 'Teknik',   icon: Cpu        },
   { id: 'pricing', label: 'Fiyat',    icon: DollarSign },
   { id: 'stock',   label: 'Stok',     icon: Boxes      },
-  { id: 'bom',     label: 'Reçete',   icon: BookOpen,  productOnly: true },
+  { id: 'bom',     label: 'Reçete',   icon: BookOpen   },
   { id: 'qr',      label: 'QR',       icon: QrCode,    editOnly: true   },
 ];
 
@@ -41,6 +41,11 @@ export default function StockForm({ item, defaultType, onBack, onSave, onDelete,
   const isEdit = !!item?.id;
 
   const [form, setForm] = useState(() => {
+    // F5'ten kurtarma işlemi
+    const draft = sessionStorage.getItem('aerp_stock_draft');
+    if (!isEdit && draft) {
+      try { return JSON.parse(draft); } catch (e) {}
+    }
     const base = item
       ? { ...EMPTY, ...item, specs: { ...EMPTY.specs, ...(item.specs || {}) } }
       : { ...EMPTY };
@@ -49,13 +54,30 @@ export default function StockForm({ item, defaultType, onBack, onSave, onDelete,
   });
   const [tab,        setTab]        = useState('general');
   const [errors,     setErrors]     = useState({});
-  const [pendingBOM, setPendingBOM] = useState([]);
+  const [pendingBOM, setPendingBOM] = useState(() => {
+    const s = sessionStorage.getItem('aerp_pending_bom'); try { return s ? JSON.parse(s) : []; } catch(e){ return []; }
+  });
   const [deleteConf, setDeleteConf] = useState(false);
   const [showCatMgr, setShowCatMgr] = useState(false);
   const [newCatName, setNewCatName] = useState('');
+  const [showUnitMgr, setShowUnitMgr] = useState(false);
+  const [newUnitName, setNewUnitName] = useState('');
 
   const isProduct = form.item_type === 'product';
   const { categories, add: addCat, remove: removeCat } = useCategories(isProduct ? 'product' : 'raw');
+  const { units, addUnit, removeUnit } = useUnits();
+
+  // Form değiştikçe sessionStorage'a yedekle
+  React.useEffect(() => {
+    if (!isEdit) {
+      sessionStorage.setItem('aerp_stock_draft', JSON.stringify(form));
+      sessionStorage.setItem('aerp_pending_bom', JSON.stringify(pendingBOM));
+    }
+  }, [form, pendingBOM, isEdit]);
+
+  const clearDraft = () => { sessionStorage.removeItem('aerp_stock_draft'); sessionStorage.removeItem('aerp_pending_bom'); };
+
+  const onBackClick = () => { clearDraft(); onBack(); };
 
   const bg     = isDark ? '#0f172a' : '#f8fafc';
   const card   = isDark ? 'rgba(30,41,59,0.97)' : '#ffffff';
@@ -88,6 +110,7 @@ export default function StockForm({ item, defaultType, onBack, onSave, onDelete,
       critical_limit: parseFloat(form.critical_limit) || 0,
     };
     await onSave(payload, pendingBOM);
+    clearDraft();
   };
 
   const pp  = parseFloat(form.purchase_price) || 0;
@@ -101,11 +124,12 @@ export default function StockForm({ item, defaultType, onBack, onSave, onDelete,
 
   const qrValue     = item?.id ? `${window.location.origin}/stock/${item.id}` : 'aerp://new';
   const visibleTabs = FORM_TABS.filter(t => {
-    if (t.productOnly && !isProduct) return false;
-    if (t.editOnly   && !isEdit)    return false;
-    return true;
+    if (t.productOnly && !isProduct) return false; // Sadece Hammadde için BOM tamamen gizlenir
+    if (t.editOnly && !isEdit) return false;
+    return true; // Mamül ise pricing de bom da kalır (tab bar'da disabled stili verilecek)
   });
   const catOptions = [{ value: '', label: '— Seç —' }, ...categories.map(c => ({ value: c.name, label: c.name }))];
+  const unitOptions = units.map(u => ({ value: u.name, label: u.name }));
 
   return (
     <motion.div
@@ -119,7 +143,7 @@ export default function StockForm({ item, defaultType, onBack, onSave, onDelete,
         {/* Top bar */}
         <div className="flex items-center justify-between px-3 sm:px-6 py-3 gap-2">
           <div className="flex items-center gap-2 min-w-0 flex-1">
-            <button onClick={onBack}
+            <button onClick={onBackClick}
               className="flex items-center gap-1 sm:gap-1.5 text-xs sm:text-sm font-semibold px-2 sm:px-3 py-1.5 sm:py-2 rounded-xl border transition-all flex-shrink-0"
               style={{ borderColor: border, color: muted, background: tabBg }}>
               <ArrowLeft size={14} />
@@ -177,13 +201,22 @@ export default function StockForm({ item, defaultType, onBack, onSave, onDelete,
         <div className="flex items-center overflow-x-auto border-t" style={{ borderColor: border }}>
           {visibleTabs.map(t => {
             const active = tab === t.id;
+            const disabled = isProduct && (
+              (t.id === 'pricing' && form.has_bom) || 
+              (t.id === 'bom' && !form.has_bom)
+            );
+            
             return (
-              <button key={t.id} onClick={() => setTab(t.id)}
+              <button key={t.id} onClick={() => { if (!disabled) setTab(t.id); }}
                 className="flex items-center gap-1 sm:gap-1.5 px-3 sm:px-4 py-2.5 text-[11px] sm:text-xs font-semibold whitespace-nowrap transition-all"
-                style={{ color: active ? currentColor : muted, borderBottom: active ? `2px solid ${currentColor}` : '2px solid transparent' }}>
+                style={{ 
+                  color: active ? currentColor : disabled ? (isDark ? '#334155' : '#cbd5e1') : muted, 
+                  borderBottom: active ? `2px solid ${currentColor}` : '2px solid transparent',
+                  cursor: disabled ? 'not-allowed' : 'pointer'
+                }}>
                 <t.icon size={12} />
                 {t.label}
-                {t.id === 'bom' && pendingBOM.length > 0 && !isEdit && (
+                {t.id === 'bom' && pendingBOM.length > 0 && !isEdit && !disabled && (
                   <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold"
                     style={{ background: `${currentColor}20`, color: currentColor }}>
                     {pendingBOM.length}
@@ -211,13 +244,28 @@ export default function StockForm({ item, defaultType, onBack, onSave, onDelete,
             </div>
 
             <FF label="SKU / Ürün Kodu" muted={muted}>
-              <input className="modal-input" value={form.sku || ''}
-                onChange={e => set('sku', e.target.value)} placeholder={isProduct ? 'LSU6005X3' : 'AYS-24V-LED-4K'} />
-            </FF>
-
-            <FF label="Barkod" muted={muted}>
-              <input className="modal-input" value={form.barcode || ''}
-                onChange={e => set('barcode', e.target.value)} placeholder="EAN-13 / QR" />
+              <div className="flex gap-2">
+                <input className="modal-input flex-1" value={form.sku || ''}
+                  onChange={e => set('sku', e.target.value)} placeholder={isProduct ? 'LSU6005X3' : 'AYS-24V-LED-4K'} />
+                
+                {/* Reçeteli Üretim Toggle SADECE ÜRÜN (Mamül) İSE ÇIKAR */}
+                {isProduct && (
+                  <button type="button" onClick={() => {
+                    const nextBom = !form.has_bom;
+                    set('has_bom', nextBom);
+                    if (nextBom && tab === 'pricing') setTab('general');
+                    if (!nextBom && tab === 'bom') setTab('general');
+                  }}
+                    className="px-3 sm:px-4 rounded-xl text-[10px] sm:text-xs font-bold transition-all border whitespace-nowrap"
+                    style={{
+                      background: form.has_bom ? currentColor : 'transparent',
+                      color: form.has_bom ? 'white' : muted,
+                      borderColor: form.has_bom ? currentColor : border
+                    }}>
+                    {form.has_bom ? '✓ Reçeteli (BOM)' : 'Al-Sat (BOM Yok)'}
+                  </button>
+                )}
+              </div>
             </FF>
 
             {/* Kategori + yönetim */}
@@ -249,8 +297,8 @@ export default function StockForm({ item, defaultType, onBack, onSave, onDelete,
                     <input className="modal-input flex-1" placeholder="Yeni kategori..."
                       value={newCatName} onChange={e => setNewCatName(e.target.value)}
                       style={{ padding: '5px 10px', fontSize: '12px' }}
-                      onKeyDown={async e => { if (e.key === 'Enter' && newCatName.trim()) { await addCat(newCatName.trim(), isProduct ? 'product' : 'raw'); setNewCatName(''); } }} />
-                    <button onClick={async () => { if (newCatName.trim()) { await addCat(newCatName.trim(), isProduct ? 'product' : 'raw'); setNewCatName(''); } }}
+                      onKeyDown={async e => { if (e.key === 'Enter' && newCatName.trim()) { const cat = newCatName.trim(); await addCat(cat, isProduct ? 'product' : 'raw'); set('category', cat); setNewCatName(''); } }} />
+                    <button onClick={async () => { if (newCatName.trim()) { const cat = newCatName.trim(); await addCat(cat, isProduct ? 'product' : 'raw'); set('category', cat); setNewCatName(''); } }}
                       className="px-3 py-1.5 rounded-lg text-white text-xs font-bold"
                       style={{ background: currentColor }}>
                       Ekle
@@ -261,7 +309,42 @@ export default function StockForm({ item, defaultType, onBack, onSave, onDelete,
             </FF>
 
             <FF label="Birim *" error={errors.unit} muted={muted}>
-              <Select value={form.unit} onChange={v => set('unit', v)} options={UNITS} error={errors.unit} />
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <Select value={form.unit} onChange={v => set('unit', v)} options={unitOptions.length ? unitOptions : ['yükleniyor...']} error={errors.unit} />
+                </div>
+                <button type="button" onClick={() => setShowUnitMgr(v => !v)} title="Birimleri Yönet"
+                  className="p-2 rounded-xl border transition-all flex-shrink-0"
+                  style={{ borderColor: showUnitMgr ? currentColor : border, color: showUnitMgr ? currentColor : muted, background: showUnitMgr ? `${currentColor}15` : 'transparent' }}>
+                  <Settings size={14} />
+                </button>
+              </div>
+              {showUnitMgr && (
+                <div className="mt-2 rounded-xl border p-3 space-y-2"
+                  style={{ borderColor: currentColor, background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc' }}>
+                  <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: muted }}>Birimler</p>
+                  <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto custom-scrollbar">
+                    {units.map(u => (
+                      <span key={u.id} className="flex items-center gap-1 text-xs px-2 py-1 rounded-full border"
+                        style={{ borderColor: border, color: text }}>
+                        {u.name}
+                        <button onClick={() => removeUnit(u.id)} style={{ color: '#ef4444', lineHeight: 0 }}>×</button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <input className="modal-input flex-1" placeholder="Yeni birim (Örn: kg, adet)..."
+                      value={newUnitName} onChange={e => setNewUnitName(e.target.value)}
+                      style={{ padding: '5px 10px', fontSize: '12px' }}
+                      onKeyDown={async e => { if (e.key === 'Enter' && newUnitName.trim()) { const unt = newUnitName.trim(); await addUnit(unt); set('unit', unt); setNewUnitName(''); } }} />
+                    <button onClick={async () => { if (newUnitName.trim()) { const unt = newUnitName.trim(); await addUnit(unt); set('unit', unt); setNewUnitName(''); } }}
+                      className="px-3 py-1.5 rounded-lg text-white text-xs font-bold"
+                      style={{ background: currentColor }}>
+                      Ekle
+                    </button>
+                  </div>
+                </div>
+              )}
             </FF>
 
             <FF label={isProduct ? 'Üretici / Marka' : 'Tedarikçi'} muted={muted}>
@@ -434,12 +517,14 @@ export default function StockForm({ item, defaultType, onBack, onSave, onDelete,
         )}
 
         {/* ── REÇETE (BOM) ───────────────────────────────────────────────── */}
-        {tab === 'bom' && isProduct && (
+        {tab === 'bom' && isProduct && form.has_bom && (
           <div className="sm:col-span-2">
             <BOMEditor
               parentId={isEdit ? item.id : null}
               pendingLines={!isEdit ? pendingBOM : undefined}
               onPendingChange={!isEdit ? setPendingBOM : undefined}
+              form={form}
+              setForm={set}
             />
           </div>
         )}

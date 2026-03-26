@@ -17,15 +17,18 @@ export function useCategories(itemType = 'all') {
   useEffect(() => { fetch(); }, [fetch]);
 
   const add = async (name, type = itemType) => {
-    const { error } = await supabase.from('item_categories').insert({ name, item_type: type });
-    if (error) throw new Error(error.message);
-    await fetch();
+    const newCat = { id: Date.now().toString(), name, item_type: type };
+    setCategories(prev => [...prev, newCat]); // Optimistic
+    const { data, error } = await supabase.from('item_categories').insert({ name, item_type: type }).select().single();
+    if (error) { fetch(); throw new Error(error.message); }
+    setCategories(prev => prev.map(c => c.id === newCat.id ? data : c));
+    return data;
   };
 
   const remove = async (id) => {
+    setCategories(prev => prev.filter(c => c.id !== id)); // Optimistic
     const { error } = await supabase.from('item_categories').delete().eq('id', id);
-    if (error) throw new Error(error.message);
-    await fetch();
+    if (error) { fetch(); throw new Error(error.message); }
   };
 
   return { categories, loading, add, remove, refetch: fetch };

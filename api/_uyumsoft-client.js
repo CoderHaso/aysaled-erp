@@ -11,15 +11,22 @@ const PASSWORD = process.env.UYUMSOFT_PASSWORD || 'Uyumsoft';
 
 /**
  * Uyumsoft SOAP client oluşturur ve WSSecurity uygular.
+ * @param {string} [customUser] - Dinamik api testleri için kullanıcı adı.
+ * @param {string} [customPass] - Dinamik api testleri için şifre.
+ * @param {string} [customWsdlUrl] - Test veya Prod ortam URL'si.
  * @returns {Promise<SoapClient>}
  */
-export function createUyumsoftClient() {
+export function createUyumsoftClient(customUser, customPass, customWsdlUrl) {
+  const user = customUser || USERNAME;
+  const pass = customPass || PASSWORD;
+  const urlParams = customWsdlUrl || WSDL_URL;
+
   return new Promise((resolve, reject) => {
-    soap.createClient(WSDL_URL, (err, client) => {
+    soap.createClient(urlParams, (err, client) => {
       if (err) return reject(new Error(`SOAP bağlantı hatası: ${err.message}`));
 
       client.setSecurity(
-        new soap.WSSecurity(USERNAME, PASSWORD, {
+        new soap.WSSecurity(user, pass, {
           hasTimeStamp: false,
           hasTokenPassword: true,
         })

@@ -12,6 +12,7 @@ export default function QuickAddModal({ onClose, onSave, saving }) {
 
   const [form, setForm] = useState({
     name: '', item_type: 'raw', unit: 'pcs', stock_count: 0,
+    purchase_price: '', sale_price: '', base_currency: 'TRY'
   });
   const [nameError, setNameError] = useState('');
 
@@ -24,7 +25,11 @@ export default function QuickAddModal({ onClose, onSave, saving }) {
 
   const handleSave = async () => {
     if (!form.name.trim()) { setNameError('Ürün adı zorunlu'); return; }
-    await onSave(form);
+    await onSave({
+      ...form,
+      purchase_price: parseFloat(form.purchase_price) || 0,
+      sale_price:     parseFloat(form.sale_price)     || 0,
+    });
   };
 
   return (
@@ -105,6 +110,24 @@ export default function QuickAddModal({ onClose, onSave, saving }) {
                   value={form.stock_count}
                   onChange={e => set('stock_count', e.target.value)}
                 />
+              </div>
+            </div>
+
+            {/* Fiyat Bilgileri */}
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest mb-1.5" style={{ color: muted }}>Para Br.</p>
+                <Select value={form.base_currency} onChange={v => set('base_currency', v)} options={['TRY', 'USD', 'EUR']} size="sm" />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest mb-1.5" style={{ color: muted }}>Alış Fiy.</p>
+                <input type="number" step="0.01" className="modal-input" placeholder="0.00"
+                  value={form.purchase_price} onChange={e => set('purchase_price', e.target.value)} />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest mb-1.5" style={{ color: muted }}>Satış Fiy.</p>
+                <input type="number" step="0.01" className="modal-input" placeholder="0.00"
+                  value={form.sale_price} onChange={e => set('sale_price', e.target.value)} />
               </div>
             </div>
           </div>

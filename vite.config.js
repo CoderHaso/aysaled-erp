@@ -60,8 +60,6 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // Dev'de /api isteklerini şu an için 3001'e ilet
-      // Production'da Vercel doğrudan /api/ fonksiyonlarını çalıştırır
       '/api': {
         target: 'http://localhost:3001',
         changeOrigin: true,

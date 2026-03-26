@@ -125,6 +125,16 @@ body {
   opacity: 0.7;
 }
 
+/* ─── Sayı Giriş Oklarını Gizle (Number Spinners) ─── */
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type=number] {
+  -moz-appearance: textfield;
+}
+
 /* Select özel ok işareti */
 select.modal-input,
 select.input-field {

@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from './contexts/ThemeContext';
 import Sidebar from './components/Sidebar';
 import { Menu, Bell, Search } from 'lucide-react';
 import Dashboard  from './pages/Dashboard';
 import Stock      from './pages/Stock';
 import Suppliers  from './pages/Suppliers';
+import Settings   from './pages/Settings';
 
 const PAGES = {
   '/':           { title: 'Dashboard',     sub: 'Genel Bakış' },
@@ -15,6 +16,7 @@ const PAGES = {
   '/invoices':   { title: 'Faturalar',     sub: 'Gelen & Giden' },
   '/sales':      { title: 'Satış',         sub: 'Sipariş & Satış' },
   '/reports':    { title: 'Raporlar',      sub: 'Finans & Analiz' },
+  '/settings':   { title: 'Ayarlar',       sub: 'Sistem Yapılandırması' },
 };
 
 const ROUTE_TO_ID = {
@@ -25,6 +27,7 @@ const ROUTE_TO_ID = {
   '/invoices':  'invoices',
   '/sales':     'sales',
   '/reports':   'reports',
+  '/settings':  'settings',
 };
 
 function AppShell() {
@@ -52,7 +55,7 @@ function AppShell() {
   const handleNavigate = (id) => {
     const routes = {
       dashboard: '/', stock: '/stock', suppliers: '/suppliers',
-      contacts: '/contacts', invoices: '/invoices', sales: '/sales', reports: '/reports',
+      contacts: '/contacts', invoices: '/invoices', sales: '/sales', reports: '/reports', settings: '/settings',
     };
     navigate(routes[id] || '/');
     // Mobilde gezindikten sonra sidebar kapat
@@ -70,10 +73,13 @@ function AppShell() {
         onNavigate={handleNavigate}
       />
 
-      {/* ── Sağ ana alan ────────────────────────────────────────────────── */}
+      {/* ── Sağ ana alan ─────────────────────────────────────────────────
+           Mobil: Sidebar overlay → margin yok
+           Desktop (lg+): Sidebar inline → margin var
+      ────────────────────────────────────────────────────────────────────── */}
       <div
-        className="flex flex-col flex-1 min-w-0 overflow-hidden transition-all duration-300"
-        style={{ marginLeft: sidebarOpen ? 'var(--sidebar-w, 260px)' : 'var(--sidebar-collapsed, 72px)' }}
+        className={`flex flex-col flex-1 min-w-0 overflow-hidden transition-all duration-300
+          ${sidebarOpen ? 'lg:ml-[260px]' : 'lg:ml-[72px]'}`}
       >
 
         {/* ── Header ──────────────────────────────────────────────────── */}
@@ -128,6 +134,7 @@ function AppShell() {
             <Route path="/"           element={<Dashboard />} />
             <Route path="/stock"      element={<Stock />} />
             <Route path="/suppliers"  element={<Suppliers />} />
+            <Route path="/settings"   element={<Settings />} />
             <Route path="/contacts"   element={<ComingSoon title="Cari Takip" icon="👥" />} />
             <Route path="/invoices"   element={<ComingSoon title="Faturalar"  icon="🧾" />} />
             <Route path="/sales"      element={<ComingSoon title="Satış"      icon="🛒" />} />
@@ -155,8 +162,8 @@ function ComingSoon({ title, icon = '🚧' }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <AppShell />
-    </BrowserRouter>
+    </HashRouter>
   );
 }
