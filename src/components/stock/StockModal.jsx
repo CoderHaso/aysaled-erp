@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { X, Package, Save, Loader2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const UNITS     = ['pcs', 'kg', 'm', 'lt', 'm²', 'm³', 'adet', 'kutu', 'rulo'];
+const UNITS      = ['pcs', 'kg', 'm', 'lt', 'm²', 'm³', 'adet', 'kutu', 'rulo'];
 const CURRENCIES = ['TRY', 'USD', 'EUR'];
 const VAT_RATES  = [0, 1, 8, 10, 18, 20];
 const CATEGORIES = ['Hammadde', 'Mamül', 'Yarı Mamül', 'Sarf Malzeme', 'Ambalaj', 'Diğer'];
@@ -21,47 +21,41 @@ export default function StockModal({ item, onClose, onSave, saving }) {
   const isDark = effectiveMode === 'dark';
   const isEdit = !!item?.id;
 
-  const [form, setForm]   = useState(item ? { ...EMPTY, ...item } : { ...EMPTY });
-  const [tab, setTab]     = useState('general'); // general | pricing | stock
+  const [form, setForm]     = useState(item ? { ...EMPTY, ...item } : { ...EMPTY });
+  const [tab, setTab]       = useState('general');
   const [errors, setErrors] = useState({});
 
-  const c = {
-    bg:      isDark ? '#1e293b' : '#ffffff',
-    border:  isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0',
-    text:    isDark ? '#f1f5f9' : '#0f172a',
-    muted:   isDark ? '#94a3b8' : '#64748b',
-    inputBg: isDark ? '#0f172a' : '#f8fafc',
-    tabBg:   isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9',
-    overlay: isDark ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.4)',
-  };
+  // CSS değişkenleri — modal renkleri
+  const bg      = isDark ? '#1e293b' : '#ffffff';
+  const border  = isDark ? 'rgba(148,163,184,0.14)' : '#e2e8f0';
+  const text    = isDark ? '#f1f5f9' : '#0f172a';
+  const muted   = isDark ? '#94a3b8' : '#64748b';
+  const tabBg   = isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9';
+  const overlay = isDark ? 'rgba(0,0,0,0.72)' : 'rgba(15,23,42,0.45)';
 
-  // Form değiştir
   const set = (key, val) => {
     setForm(f => ({ ...f, [key]: val }));
     if (errors[key]) setErrors(e => ({ ...e, [key]: null }));
   };
 
-  // Validasyon
   const validate = () => {
     const e = {};
-    if (!form.name?.trim())    e.name = 'Ürün adı zorunlu';
-    if (!form.unit)            e.unit = 'Birim seçin';
-    if (!form.base_currency)   e.base_currency = 'Para birimi seçin';
+    if (!form.name?.trim()) e.name = 'Ürün adı zorunlu';
+    if (!form.unit)         e.unit = 'Birim seçin';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
   const handleSave = async () => {
     if (!validate()) return;
-    const payload = {
+    await onSave({
       ...form,
       purchase_price: parseFloat(form.purchase_price) || 0,
-      sale_price:     parseFloat(form.sale_price) || 0,
-      vat_rate:       parseFloat(form.vat_rate) || 0,
-      stock_count:    parseFloat(form.stock_count) || 0,
+      sale_price:     parseFloat(form.sale_price)     || 0,
+      vat_rate:       parseFloat(form.vat_rate)       || 0,
+      stock_count:    parseFloat(form.stock_count)    || 0,
       critical_limit: parseFloat(form.critical_limit) || 0,
-    };
-    await onSave(payload);
+    });
   };
 
   const TABS = [
@@ -70,59 +64,67 @@ export default function StockModal({ item, onClose, onSave, saving }) {
     { id: 'stock',   label: 'Stok & Depo' },
   ];
 
+  /* ---------- Ortak input / select / textarea inline override ------------ *
+   * CSS class 'modal-input' (index.css) full-width, border-radius, padding,
+   * background ve color'u zaten sağlıyor.
+   * Burada sadece validasyon hata kırmızısını override ediyoruz.
+   * -----------------------------------------------------------------------*/
+  const errBorder = (key) => errors[key] ? { borderColor: '#ef4444' } : {};
+
   return (
     <AnimatePresence>
-      {/* Overlay */}
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
         className="fixed inset-0 z-50 flex items-center justify-center p-4"
-        style={{ background: c.overlay }}
+        style={{ background: overlay }}
         onClick={onClose}
       >
-        {/* Modal */}
         <motion.div
           initial={{ scale: 0.95, opacity: 0, y: 12 }}
-          animate={{ scale: 1, opacity: 1, y: 0 }}
-          exit={{ scale: 0.95, opacity: 0, y: 12 }}
-          transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+          animate={{ scale: 1,    opacity: 1, y: 0  }}
+          exit={{    scale: 0.95, opacity: 0, y: 12 }}
+          transition={{ type: 'spring', damping: 26, stiffness: 360 }}
           onClick={e => e.stopPropagation()}
-          className="w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl"
-          style={{ background: c.bg, border: `1px solid ${c.border}` }}
+          className="w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+          style={{ background: bg, border: `1px solid ${border}`, maxHeight: '90vh' }}
         >
-          {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b"
-            style={{ borderColor: c.border }}>
+          {/* ── Başlık ──────────────────────────────────────────────── */}
+          <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0"
+            style={{ borderColor: border }}>
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white"
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white flex-shrink-0"
                 style={{ background: currentColor }}>
                 <Package size={18} />
               </div>
               <div>
-                <h2 className="font-bold text-base" style={{ color: c.text }}>
+                <h2 className="font-bold text-base" style={{ color: text }}>
                   {isEdit ? 'Ürün Düzenle' : 'Yeni Ürün Ekle'}
                 </h2>
                 {isEdit && (
-                  <p className="text-xs" style={{ color: c.muted }}>#{item.sku || item.id?.slice(0,8)}</p>
+                  <p className="text-xs" style={{ color: muted }}>
+                    #{item.sku || item.id?.slice(0, 8)}
+                  </p>
                 )}
               </div>
             </div>
             <button onClick={onClose}
-              className="p-1.5 rounded-lg transition-colors"
-              style={{ color: c.muted }}
-              onMouseEnter={e => e.currentTarget.style.background = c.tabBg}
+              className="p-1.5 rounded-lg transition-colors flex-shrink-0"
+              style={{ color: muted }}
+              onMouseEnter={e => e.currentTarget.style.background = tabBg}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
               <X size={18} />
             </button>
           </div>
 
-          {/* Tabs */}
-          <div className="flex gap-1 px-6 pt-4" style={{ borderBottom: `1px solid ${c.border}` }}>
+          {/* ── Sekmeler ──────────────────────────────────────────── */}
+          <div className="flex gap-1 px-6 pt-3 flex-shrink-0"
+            style={{ borderBottom: `1px solid ${border}` }}>
             {TABS.map(t => (
               <button key={t.id} onClick={() => setTab(t.id)}
                 className="px-4 py-2 text-sm font-semibold rounded-t-lg transition-all"
                 style={{
-                  color:      tab === t.id ? currentColor : c.muted,
-                  background: tab === t.id ? c.tabBg      : 'transparent',
+                  color:        tab === t.id ? currentColor : muted,
+                  background:   tab === t.id ? tabBg        : 'transparent',
                   borderBottom: tab === t.id ? `2px solid ${currentColor}` : '2px solid transparent',
                 }}>
                 {t.label}
@@ -130,84 +132,107 @@ export default function StockModal({ item, onClose, onSave, saving }) {
             ))}
           </div>
 
-          {/* Body */}
-          <div className="px-6 py-5 space-y-4 max-h-[60vh] overflow-y-auto">
+          {/* ── Form gövdesi ──────────────────────────────────────── */}
+          <div className="px-6 py-5 space-y-4 overflow-y-auto flex-1">
 
-            {/* ── GENEL ── */}
+            {/* GENEL */}
             {tab === 'general' && (
               <>
-                <Field label="Ürün Adı *" error={errors.name} c={c}>
-                  <input className="modal-input" value={form.name}
+                <Field label="Ürün Adı *" error={errors.name} muted={muted}>
+                  <input
+                    className="modal-input"
+                    value={form.name}
                     onChange={e => set('name', e.target.value)}
                     placeholder="Örn: Çelik Boru Ø32"
-                    style={{ background: c.inputBg, color: c.text, borderColor: errors.name ? '#ef4444' : c.border }} />
+                    style={errBorder('name')}
+                  />
                 </Field>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <Field label="SKU (Eşleştirme Anahtarı)" c={c}>
-                    <input className="modal-input" value={form.sku || ''}
+                  <Field label="SKU (Eşleştirme Anahtarı)" muted={muted}>
+                    <input
+                      className="modal-input"
+                      value={form.sku || ''}
                       onChange={e => set('sku', e.target.value)}
                       placeholder="Örn: CEL-BOR-32"
-                      style={{ background: c.inputBg, color: c.text, borderColor: c.border }} />
+                    />
                   </Field>
-                  <Field label="Barkod" c={c}>
-                    <input className="modal-input" value={form.barcode || ''}
+                  <Field label="Barkod" muted={muted}>
+                    <input
+                      className="modal-input"
+                      value={form.barcode || ''}
                       onChange={e => set('barcode', e.target.value)}
                       placeholder="EAN-13 / QR"
-                      style={{ background: c.inputBg, color: c.text, borderColor: c.border }} />
+                    />
                   </Field>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <Field label="Kategori" c={c}>
-                    <select className="modal-input"
-                      value={form.category || ''} onChange={e => set('category', e.target.value)}
-                      style={{ background: c.inputBg, color: c.text, borderColor: c.border }}>
+                  <Field label="Kategori" muted={muted}>
+                    <select
+                      className="modal-input"
+                      value={form.category || ''}
+                      onChange={e => set('category', e.target.value)}
+                    >
                       <option value="">— Seç —</option>
-                      {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                      {CATEGORIES.map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
                     </select>
                   </Field>
-                  <Field label="Birim *" error={errors.unit} c={c}>
-                    <select className="modal-input"
-                      value={form.unit} onChange={e => set('unit', e.target.value)}
-                      style={{ background: c.inputBg, color: c.text, borderColor: errors.unit ? '#ef4444' : c.border }}>
-                      {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                  <Field label="Birim *" error={errors.unit} muted={muted}>
+                    <select
+                      className="modal-input"
+                      value={form.unit}
+                      onChange={e => set('unit', e.target.value)}
+                      style={errBorder('unit')}
+                    >
+                      {UNITS.map(u => (
+                        <option key={u} value={u}>{u}</option>
+                      ))}
                     </select>
                   </Field>
                 </div>
 
-                <Field label="Açıklama" c={c}>
-                  <textarea className="modal-input resize-none" rows={3}
+                <Field label="Açıklama" muted={muted}>
+                  <textarea
+                    className="modal-input"
+                    rows={3}
                     value={form.description || ''}
                     onChange={e => set('description', e.target.value)}
                     placeholder="Ürün hakkında notlar, özellikler..."
-                    style={{ background: c.inputBg, color: c.text, borderColor: c.border }} />
+                  />
                 </Field>
 
-                {/* SKU Uyarısı */}
+                {/* SKU Uyarı kutusu */}
                 <div className="rounded-xl p-3 flex items-start gap-2.5"
-                  style={{ background: isDark ? 'rgba(234,179,8,0.1)' : '#fefce8', border: `1px solid ${isDark ? 'rgba(234,179,8,0.2)' : '#fde047'}` }}>
+                  style={{
+                    background: isDark ? 'rgba(234,179,8,0.1)' : '#fefce8',
+                    border: `1px solid ${isDark ? 'rgba(234,179,8,0.22)' : '#fde047'}`,
+                  }}>
                   <AlertCircle size={15} className="mt-0.5 shrink-0" style={{ color: '#d97706' }} />
-                  <p className="text-xs" style={{ color: isDark ? '#fbbf24' : '#92400e' }}>
+                  <p className="text-xs leading-relaxed" style={{ color: isDark ? '#fbbf24' : '#92400e' }}>
                     <strong>SKU = Uyumsoft Eşleştirme Anahtarı</strong><br />
-                    Uyumsoft'tan gelen faturalardaki ürün kodunun aynısını girin. Bu sayede gelen faturalar otomatik stoğa işlenecek.
+                    Uyumsoft'tan gelen faturalardaki ürün kodunun aynısını girin.
+                    Bu sayede gelen faturalar otomatik stoğa işlenecek.
                   </p>
                 </div>
               </>
             )}
 
-            {/* ── FİYATLANDIRMA ── */}
+            {/* FİYATLANDIRMA */}
             {tab === 'pricing' && (
               <>
-                <Field label="Para Birimi *" c={c}>
+                <Field label="Para Birimi" muted={muted}>
                   <div className="flex gap-2">
                     {CURRENCIES.map(cur => (
-                      <button key={cur} onClick={() => set('base_currency', cur)}
+                      <button key={cur}
+                        onClick={() => set('base_currency', cur)}
                         className="flex-1 py-2.5 rounded-xl text-sm font-bold border transition-all"
                         style={{
-                          background:   form.base_currency === cur ? currentColor : c.inputBg,
-                          color:        form.base_currency === cur ? 'white' : c.muted,
-                          borderColor:  form.base_currency === cur ? currentColor : c.border,
+                          background:  form.base_currency === cur ? currentColor : 'var(--input-bg)',
+                          color:       form.base_currency === cur ? 'white' : muted,
+                          borderColor: form.base_currency === cur ? currentColor : border,
                         }}>
                         {cur}
                       </button>
@@ -216,31 +241,36 @@ export default function StockModal({ item, onClose, onSave, saving }) {
                 </Field>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <Field label={`Alış Fiyatı (${form.base_currency})`} c={c}>
-                    <input type="number" min="0" step="0.01" className="modal-input"
+                  <Field label={`Alış Fiyatı (${form.base_currency})`} muted={muted}>
+                    <input
+                      type="number" min="0" step="0.01"
+                      className="modal-input"
                       value={form.purchase_price || ''}
                       onChange={e => set('purchase_price', e.target.value)}
                       placeholder="0.00"
-                      style={{ background: c.inputBg, color: c.text, borderColor: c.border }} />
+                    />
                   </Field>
-                  <Field label={`Satış Fiyatı (${form.base_currency})`} c={c}>
-                    <input type="number" min="0" step="0.01" className="modal-input"
+                  <Field label={`Satış Fiyatı (${form.base_currency})`} muted={muted}>
+                    <input
+                      type="number" min="0" step="0.01"
+                      className="modal-input"
                       value={form.sale_price || ''}
                       onChange={e => set('sale_price', e.target.value)}
                       placeholder="0.00"
-                      style={{ background: c.inputBg, color: c.text, borderColor: c.border }} />
+                    />
                   </Field>
                 </div>
 
-                <Field label="KDV Oranı" c={c}>
+                <Field label="KDV Oranı" muted={muted}>
                   <div className="flex gap-2 flex-wrap">
                     {VAT_RATES.map(v => (
-                      <button key={v} onClick={() => set('vat_rate', v)}
+                      <button key={v}
+                        onClick={() => set('vat_rate', v)}
                         className="px-3 py-2 rounded-xl text-sm font-bold border transition-all"
                         style={{
-                          background:  form.vat_rate === v ? currentColor : c.inputBg,
-                          color:       form.vat_rate === v ? 'white' : c.muted,
-                          borderColor: form.vat_rate === v ? currentColor : c.border,
+                          background:  form.vat_rate === v ? currentColor : 'var(--input-bg)',
+                          color:       form.vat_rate === v ? 'white' : muted,
+                          borderColor: form.vat_rate === v ? currentColor : border,
                         }}>
                         %{v}
                       </button>
@@ -248,17 +278,26 @@ export default function StockModal({ item, onClose, onSave, saving }) {
                   </div>
                 </Field>
 
-                {/* Marj Hesap */}
-                {form.purchase_price > 0 && form.sale_price > 0 && (
+                {/* Anlık kâr hesabı */}
+                {parseFloat(form.purchase_price) > 0 && parseFloat(form.sale_price) > 0 && (
                   <div className="rounded-xl p-3 grid grid-cols-3 gap-3"
-                    style={{ background: c.tabBg, border: `1px solid ${c.border}` }}>
+                    style={{ background: tabBg, border: `1px solid ${border}` }}>
                     {[
-                      { label: 'Kâr', value: `${((form.sale_price - form.purchase_price)).toFixed(2)} ${form.base_currency}` },
-                      { label: 'Kâr Marjı', value: `%${(((form.sale_price - form.purchase_price) / form.purchase_price) * 100).toFixed(1)}` },
-                      { label: 'KDV\'li Satış', value: `${(form.sale_price * (1 + form.vat_rate / 100)).toFixed(2)} ${form.base_currency}` },
+                      {
+                        label: 'Kâr',
+                        value: `${(form.sale_price - form.purchase_price).toFixed(2)} ${form.base_currency}`,
+                      },
+                      {
+                        label: 'Kâr Marjı',
+                        value: `%${(((form.sale_price - form.purchase_price) / form.purchase_price) * 100).toFixed(1)}`,
+                      },
+                      {
+                        label: "KDV'li Satış",
+                        value: `${(form.sale_price * (1 + form.vat_rate / 100)).toFixed(2)} ${form.base_currency}`,
+                      },
                     ].map(({ label, value }) => (
                       <div key={label} className="text-center">
-                        <p className="text-xs font-medium" style={{ color: c.muted }}>{label}</p>
+                        <p className="text-xs font-medium" style={{ color: muted }}>{label}</p>
                         <p className="text-sm font-bold mt-0.5" style={{ color: currentColor }}>{value}</p>
                       </div>
                     ))}
@@ -267,56 +306,65 @@ export default function StockModal({ item, onClose, onSave, saving }) {
               </>
             )}
 
-            {/* ── STOK & DEPO ── */}
+            {/* STOK & DEPO */}
             {tab === 'stock' && (
               <>
                 <div className="grid grid-cols-2 gap-3">
-                  <Field label={`Mevcut Stok (${form.unit})`} c={c}>
-                    <input type="number" min="0" step="0.001" className="modal-input"
+                  <Field label={`Mevcut Stok (${form.unit})`} muted={muted}>
+                    <input
+                      type="number" min="0" step="0.001"
+                      className="modal-input"
                       value={form.stock_count}
                       onChange={e => set('stock_count', e.target.value)}
-                      style={{ background: c.inputBg, color: c.text, borderColor: c.border }} />
+                    />
                   </Field>
-                  <Field label={`Kritik Limit (${form.unit})`} c={c}>
-                    <input type="number" min="0" step="0.001" className="modal-input"
+                  <Field label={`Kritik Limit (${form.unit})`} muted={muted}>
+                    <input
+                      type="number" min="0" step="0.001"
+                      className="modal-input"
                       value={form.critical_limit}
                       onChange={e => set('critical_limit', e.target.value)}
-                      style={{ background: c.inputBg, color: c.text, borderColor: c.border }} />
+                    />
                   </Field>
                 </div>
 
-                {/* Stok Önizleme */}
-                {form.critical_limit > 0 && (
-                  <div className="rounded-xl p-4" style={{ background: c.tabBg, border: `1px solid ${c.border}` }}>
-                    <div className="flex justify-between text-xs font-semibold mb-2" style={{ color: c.muted }}>
+                {/* Stok önizleme */}
+                {parseFloat(form.critical_limit) > 0 && (
+                  <div className="rounded-xl p-4"
+                    style={{ background: tabBg, border: `1px solid ${border}` }}>
+                    <div className="flex justify-between text-xs font-semibold mb-2"
+                      style={{ color: muted }}>
                       <span>Stok Seviyesi</span>
-                      <span style={{ color: getStockColor(form.stock_count, form.critical_limit) }}>
-                        {getStockLabel(form.stock_count, form.critical_limit)}
+                      <span style={{ color: stockColor(form.stock_count, form.critical_limit) }}>
+                        {stockLabel(form.stock_count, form.critical_limit)}
                       </span>
                     </div>
-                    <div className="h-2.5 rounded-full overflow-hidden" style={{ background: c.border }}>
+                    <div className="h-2.5 rounded-full overflow-hidden"
+                      style={{ background: border }}>
                       <div className="h-full rounded-full transition-all"
                         style={{
                           width: `${Math.min(100, (form.stock_count / (form.critical_limit * 3)) * 100)}%`,
-                          background: getStockColor(form.stock_count, form.critical_limit),
+                          background: stockColor(form.stock_count, form.critical_limit),
                         }} />
                     </div>
-                    <p className="text-xs mt-2" style={{ color: c.muted }}>
-                      {form.stock_count} / {form.critical_limit * 3} {form.unit} (Kritik: {form.critical_limit} {form.unit})
+                    <p className="text-xs mt-2" style={{ color: muted }}>
+                      {form.stock_count} / {form.critical_limit * 3} {form.unit}
+                      &nbsp;(Kritik: {form.critical_limit} {form.unit})
                     </p>
                   </div>
                 )}
 
+                {/* Aktif toggle */}
                 <div className="flex items-center justify-between py-3 px-4 rounded-xl border"
-                  style={{ background: c.tabBg, borderColor: c.border }}>
+                  style={{ background: tabBg, borderColor: border }}>
                   <div>
-                    <p className="text-sm font-semibold" style={{ color: c.text }}>Aktif Ürün</p>
-                    <p className="text-xs" style={{ color: c.muted }}>Listede görünsün / gizlensin</p>
+                    <p className="text-sm font-semibold" style={{ color: text }}>Aktif Ürün</p>
+                    <p className="text-xs" style={{ color: muted }}>Listede görünsün / gizlensin</p>
                   </div>
                   <button
                     onClick={() => set('is_active', !form.is_active)}
-                    className="relative w-11 h-6 rounded-full transition-all"
-                    style={{ background: form.is_active ? currentColor : c.border }}>
+                    className="relative w-11 h-6 rounded-full transition-all flex-shrink-0"
+                    style={{ background: form.is_active ? currentColor : border }}>
                     <div className="absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all"
                       style={{ left: form.is_active ? '22px' : '4px' }} />
                   </button>
@@ -325,18 +373,20 @@ export default function StockModal({ item, onClose, onSave, saving }) {
             )}
           </div>
 
-          {/* Footer */}
-          <div className="flex items-center justify-between px-6 py-4 border-t"
-            style={{ borderColor: c.border }}>
+          {/* ── Footer ──────────────────────────────────────────────── */}
+          <div className="flex items-center justify-between px-6 py-4 border-t flex-shrink-0"
+            style={{ borderColor: border }}>
             <button onClick={onClose}
               className="px-5 py-2 rounded-xl text-sm font-semibold border transition-all"
-              style={{ color: c.muted, borderColor: c.border, background: c.tabBg }}>
+              style={{ color: muted, borderColor: border, background: tabBg }}>
               İptal
             </button>
             <button onClick={handleSave} disabled={saving}
               className="px-6 py-2 rounded-xl text-sm font-bold text-white flex items-center gap-2 transition-all"
-              style={{ background: saving ? c.muted : currentColor }}>
-              {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+              style={{ background: saving ? muted : currentColor, opacity: saving ? 0.8 : 1 }}>
+              {saving
+                ? <Loader2 size={15} className="animate-spin" />
+                : <Save size={15} />}
               {saving ? 'Kaydediliyor...' : isEdit ? 'Güncelle' : 'Ekle'}
             </button>
           </div>
@@ -346,27 +396,28 @@ export default function StockModal({ item, onClose, onSave, saving }) {
   );
 }
 
-// ─── Yardımcı bileşen ─────────────────────────────────────────────────────────
-function Field({ label, error, children, c }) {
+/* ── Yardımcı bileşen ──────────────────────────────────────────────────────── */
+function Field({ label, error, children, muted }) {
   return (
-    <div>
+    <div className="w-full">
       <label className="block text-xs font-bold mb-1.5 uppercase tracking-wider"
-        style={{ color: c.muted }}>{label}</label>
+        style={{ color: muted }}>
+        {label}
+      </label>
       {children}
-      {error && <p className="text-xs mt-1 text-red-400">{error}</p>}
+      {error && <p className="text-xs mt-1" style={{ color: '#f87171' }}>{error}</p>}
     </div>
   );
 }
 
-// ─── Stok renk/etiket yardımcıları ───────────────────────────────────────────
-function getStockColor(count, limit) {
-  if (count <= 0)       return '#ef4444';
-  if (count <= limit)   return '#f59e0b';
+/* ── Stok yardımcıları ──────────────────────────────────────────────────────── */
+function stockColor(count, limit) {
+  if (count <= 0)     return '#ef4444';
+  if (count <= limit) return '#f59e0b';
   return '#10b981';
 }
-
-function getStockLabel(count, limit) {
-  if (count <= 0)       return '🔴 Stok Yok';
-  if (count <= limit)   return '🟡 Kritik Seviye';
+function stockLabel(count, limit) {
+  if (count <= 0)     return '🔴 Stok Yok';
+  if (count <= limit) return '🟡 Kritik Seviye';
   return '🟢 Normal';
 }
