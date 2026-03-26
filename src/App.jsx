@@ -35,8 +35,8 @@ function AppShell() {
   const { effectiveMode, currentColor } = useTheme();
   const isDark = effectiveMode === 'dark';
 
-  // Desktop: sidebar açık/kapalı; Mobile: overlay ile açılır
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Desktop: sidebar açık/kapalı; Mobile: varsayılan kapalı (ekran genişliğine göre)
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1024);
   const location  = useLocation();
   const navigate  = useNavigate();
 
@@ -134,6 +134,9 @@ function AppShell() {
           <Routes>
             <Route path="/"           element={<Dashboard />} />
             <Route path="/stock"      element={<Stock />} />
+            {/* Eski hash tabanlı QR kodları (A-ERP.com/#/stock/id) için kurtarma rotası */}
+            <Route path="/stock/:id"  element={<QRDetail />} />
+            {/* Güncel QR kod rotası */}
             <Route path="/qr/:id"     element={<QRDetail />} />
             <Route path="/suppliers"  element={<Suppliers />} />
             <Route path="/settings"   element={<Settings />} />
