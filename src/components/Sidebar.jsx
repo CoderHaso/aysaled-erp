@@ -53,7 +53,7 @@ export default function Sidebar({ isOpen, toggle, activeId = 'dashboard', onNavi
               <button
                 key={id}
                 onClick={() => onNavigate?.(id)}
-                className="nav-link"
+                className="nav-link relative"
                 style={active ? {
                   background: `color-mix(in srgb, ${currentColor} 18%, transparent)`,
                   color: 'var(--color-primary-light)',
