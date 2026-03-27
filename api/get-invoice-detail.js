@@ -94,16 +94,27 @@ export default async function handler(req, res) {
     }
 
     // 2) Uyumsoft'tan çek
-    console.log(`[get-invoice-detail] ${invoiceId} - Uyumsoft'tan çekiliyor...`);
+    console.log(`[get-invoice-detail] ${invoiceId} - Uyumsoft'tan çekiliyor... (type: ${type})`);
     const client = await createUyumsoftClient();
     const method = type === 'outbox' ? 'GetOutboxInvoice' : 'GetInboxInvoice';
     const result = await callSoap(client, method, { invoiceId });
 
+    // Yanıt yapısını tamamen logla (ilk seviye)
+    console.log('[get-invoice-detail] Result keys:', Object.keys(result || {}));
+
     const resultKey = type === 'outbox' ? 'GetOutboxInvoiceResult' : 'GetInboxInvoiceResult';
-    const invoice = result?.[resultKey]?.Value?.Invoice;
+    const resultObj = result?.[resultKey];
+    console.log('[get-invoice-detail] Result IsSucceded:', resultObj?.attributes?.IsSucceded);
+
+    // Birden fazla olası path dene
+    const invoice = resultObj?.Value?.Invoice
+      || resultObj?.Value?.invoice
+      || resultObj?.Value
+      || null;
 
     if (!invoice) {
-      return res.status(404).json({ success: false, error: 'Fatura detayı bulunamadı.' });
+      console.warn('[get-invoice-detail] Invoice nesnesi bulunamadı. resultObj:', JSON.stringify(resultObj)?.slice(0, 500));
+      return res.status(404).json({ success: false, error: 'Fatura detayı bulunamadı.', debug: JSON.stringify(resultObj)?.slice(0, 300) });
     }
 
     // 3) InvoiceLine[] parse et

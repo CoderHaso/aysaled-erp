@@ -281,13 +281,16 @@ function InvoiceDetailDrawer({ invoice, isInbox, onClose }) {
   );
 }
 
-// ─── Ana Sayfa ─────────────────────────────────────────────────────────────────
+// ─── Modül-seviyesi in-memory cache (sayfa yenilenene kadar veri hafizada kalır) ─
+const invoiceCache = new Map(); // key: 'inbox' | 'outbox'
+
+// ─── Ana Sayfa ────────────────────────────────────────────────────────────────
 export default function Invoices({ type = 'inbox' }) {
   const { effectiveMode, currentColor } = useTheme();
   const isDark = effectiveMode === 'dark';
 
-  const [invoices, setInvoices]   = useState([]);
-  const [loading, setLoading]     = useState(false);
+  const [invoices, setInvoices]   = useState(() => invoiceCache.get(type) || []);
+  const [loading, setLoading]     = useState(!invoiceCache.has(type)); // zaten varsa loading yok
   const [syncing, setSyncing]     = useState(false);
   const [error, setError]         = useState(null);
   const [search, setSearch]       = useState('');
@@ -304,7 +307,13 @@ export default function Invoices({ type = 'inbox' }) {
     hover:  isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
   };
 
-  const fetchInvoices = useCallback(async () => {
+  const fetchInvoices = useCallback(async (force = false) => {
+    // Cache varsa ve force değilse tekrar çekme
+    if (!force && invoiceCache.has(type)) {
+      setInvoices(invoiceCache.get(type));
+      setLoading(false);
+      return;
+    }
     setLoading(true); setError(null);
     try {
       const { data, error: dbErr } = await supabase
@@ -314,7 +323,9 @@ export default function Invoices({ type = 'inbox' }) {
         .order('issue_date', { ascending: false })
         .limit(500);
       if (dbErr) throw dbErr;
-      setInvoices(data || []);
+      const rows = data || [];
+      invoiceCache.set(type, rows); // cache'e yaz
+      setInvoices(rows);
     } catch (err) {
       setError(err.message || 'Veritabanından faturalar alınamadı.');
     } finally {
@@ -334,7 +345,8 @@ export default function Invoices({ type = 'inbox' }) {
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.detail || data.error || 'Senkronizasyon başarısız.');
-      await fetchInvoices();
+      invoiceCache.delete(type); // cache temizle, force re-fetch yap
+      await fetchInvoices(true);
       alert(data.message);
     } catch (err) {
       setError(err.message);
