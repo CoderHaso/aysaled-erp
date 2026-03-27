@@ -6,8 +6,9 @@ import { Menu, Bell, Search } from 'lucide-react';
 import Dashboard  from './pages/Dashboard';
 import Stock      from './pages/Stock';
 import Suppliers  from './pages/Suppliers';
+import Customers  from './pages/Customers';
 import Settings   from './pages/Settings';
-import QRDetail from './pages/QRDetail';
+import QRDetail   from './pages/QRDetail';
 import Invoices   from './pages/Invoices';
 
 const PAGES = {
@@ -146,7 +147,7 @@ function AppShell() {
             <Route path="/qr/:id"     element={<QRDetail />} />
             <Route path="/suppliers"  element={<Suppliers />} />
             <Route path="/settings"   element={<Settings />} />
-            <Route path="/contacts"   element={<ComingSoon title="Cari Takip" icon="👥" />} />
+            <Route path="/contacts"   element={<Customers />} />
             <Route path="/incoming-invoices" element={<Invoices type="inbox" />} />
             <Route path="/outgoing-invoices" element={<Invoices type="outbox" />} />
             <Route path="/sales"      element={<ComingSoon title="Satış"      icon="🛒" />} />

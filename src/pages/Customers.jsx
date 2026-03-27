@@ -2,15 +2,17 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Building2, Phone, Mail, X, Loader2, RefreshCw,
-  Receipt, TrendingDown, Truck, ChevronRight, Edit3, Trash2,
-  CheckCircle2, Info
+  Receipt, TrendingUp, Users, ChevronRight, Edit3, Trash2,
+  AlertCircle, FileText, Package, CheckCircle2, Info
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n) => n != null ? Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2 }) : '0,00';
 const fmtD = (d) => d ? new Date(d).toLocaleDateString('tr-TR') : '-';
 
+// ─── Toast ─────────────────────────────────────────────────────────────────
 function Toast({ msg, type, onClose }) {
   useEffect(() => { const t = setTimeout(onClose, 3000); return () => clearTimeout(t); }, []);
   return (
@@ -22,36 +24,25 @@ function Toast({ msg, type, onClose }) {
   );
 }
 
-function StatusDot({ status }) {
-  const colors = { Approved: '#10b981', Canceled: '#ef4444', Error: '#ef4444', Processing: '#f59e0b' };
-  const col = colors[status] || '#94a3b8';
-  return (
-    <span className="inline-flex items-center gap-1 text-[10px] font-bold mt-0.5" style={{ color: col }}>
-      <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: col }} />
-      {status || '-'}
-    </span>
-  );
-}
-
-// ─── Supplier Detail Drawer ────────────────────────────────────────────────────
-function SupplierDrawer({ supplier, onClose, onSaved }) {
+// ─── Detail Drawer ─────────────────────────────────────────────────────────
+function CustomerDrawer({ customer, onClose, onSaved }) {
   const { currentColor } = useTheme();
-  const [invoices, setInvoices]     = useState([]);
-  const [loadingInv, setLoadingInv] = useState(true);
-  const [tab, setTab]               = useState('info');
-  const [editing, setEditing]       = useState(false);
-  const [form, setForm]             = useState({ ...supplier });
-  const [saving, setSaving]         = useState(false);
+  const [invoices, setInvoices]       = useState([]);
+  const [loadingInv, setLoadingInv]   = useState(true);
+  const [tab, setTab]                 = useState('info');   // 'info' | 'invoices'
+  const [editing, setEditing]         = useState(false);
+  const [form, setForm]               = useState({ ...customer });
+  const [saving, setSaving]           = useState(false);
 
-  const isNew = !supplier.id;
+  const isNew = !customer.id;
 
   useEffect(() => {
-    if (!supplier.vkntckn || isNew) { setLoadingInv(false); return; }
+    if (!customer.vkntckn || isNew) { setLoadingInv(false); return; }
     setLoadingInv(true);
-    supabase.from('invoices').select('*').eq('vkntckn', supplier.vkntckn).eq('type', 'outbox')
+    supabase.from('invoices').select('*').eq('vkntckn', customer.vkntckn).eq('type', 'inbox')
       .order('issue_date', { ascending: false })
       .then(({ data }) => { setInvoices(data || []); setLoadingInv(false); });
-  }, [supplier.vkntckn]);
+  }, [customer.vkntckn]);
 
   const totalAmount = invoices.reduce((s, i) => s + Number(i.amount || 0), 0);
   const lastInvoice = invoices[0];
@@ -60,9 +51,9 @@ function SupplierDrawer({ supplier, onClose, onSaved }) {
     setSaving(true);
     try {
       if (isNew) {
-        await supabase.from('suppliers').insert({ ...form, source: 'manual' });
+        await supabase.from('customers').insert({ ...form, source: 'manual' });
       } else {
-        await supabase.from('suppliers').update({ ...form, updated_at: new Date().toISOString() }).eq('id', supplier.id);
+        await supabase.from('customers').update({ ...form, updated_at: new Date().toISOString() }).eq('id', customer.id);
       }
       onSaved?.();
       onClose();
@@ -70,7 +61,6 @@ function SupplierDrawer({ supplier, onClose, onSaved }) {
     finally { setSaving(false); }
   };
 
-  const ACCENT = '#f97316'; // Tedarikçi için turuncu ton
   const TABS = [
     { id: 'info',    label: 'Bilgiler',    icon: Info },
     { id: 'invoices',label: `Faturalar (${invoices.length})`, icon: Receipt },
@@ -92,13 +82,13 @@ function SupplierDrawer({ supplier, onClose, onSaved }) {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-white font-bold text-base"
-                  style={{ background: ACCENT }}>
+                  style={{ background: currentColor }}>
                   {(form.name || '?').charAt(0).toUpperCase()}
                 </div>
                 <div>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Tedarikçi</p>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Cari</p>
                   <h2 className="text-sm font-bold text-slate-100 leading-tight max-w-[220px] truncate">
-                    {form.name || 'Yeni Tedarikçi'}
+                    {form.name || 'Yeni Cari'}
                   </h2>
                 </div>
               </div>
@@ -106,8 +96,8 @@ function SupplierDrawer({ supplier, onClose, onSaved }) {
                 {!isNew && (
                   <button onClick={() => setEditing(v => !v)}
                     className="p-2 rounded-xl transition-colors text-slate-400 hover:text-white"
-                    style={{ background: editing ? `${ACCENT}20` : 'transparent' }}>
-                    <Edit3 size={15} style={{ color: editing ? ACCENT : undefined }} />
+                    style={{ background: editing ? `${currentColor}20` : 'transparent' }}>
+                    <Edit3 size={15} style={{ color: editing ? currentColor : undefined }} />
                   </button>
                 )}
                 <button onClick={onClose} className="p-2 rounded-xl text-slate-500 hover:text-white">
@@ -116,11 +106,12 @@ function SupplierDrawer({ supplier, onClose, onSaved }) {
               </div>
             </div>
 
+            {/* Stats (değil yeni) */}
             {!isNew && (
               <div className="grid grid-cols-3 gap-2 mt-4">
                 {[
-                  { label: 'Gider Faturası', value: invoices.length, color: ACCENT },
-                  { label: 'Toplam Gider', value: `₺${(totalAmount/1000).toFixed(1)}K`, color: '#ef4444' },
+                  { label: 'Fatura', value: invoices.length, color: currentColor },
+                  { label: 'Toplam', value: `₺${(totalAmount/1000).toFixed(1)}K`, color: '#10b981' },
                   { label: 'Son Fatura', value: fmtD(lastInvoice?.issue_date), color: '#f59e0b' },
                 ].map((s, i) => (
                   <div key={i} className="rounded-xl p-2.5 text-center"
@@ -132,12 +123,13 @@ function SupplierDrawer({ supplier, onClose, onSaved }) {
               </div>
             )}
 
+            {/* Tabs */}
             {!isNew && (
               <div className="flex gap-1 mt-3 p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)' }}>
                 {TABS.map(t => (
                   <button key={t.id} onClick={() => setTab(t.id)}
                     className="flex items-center gap-1.5 flex-1 justify-center py-1.5 rounded-lg text-[11px] font-semibold transition-all"
-                    style={{ background: tab === t.id ? ACCENT : 'transparent', color: tab === t.id ? '#fff' : '#94a3b8' }}>
+                    style={{ background: tab === t.id ? currentColor : 'transparent', color: tab === t.id ? '#fff' : '#94a3b8' }}>
                     <t.icon size={11} />{t.label}
                   </button>
                 ))}
@@ -145,19 +137,19 @@ function SupplierDrawer({ supplier, onClose, onSaved }) {
             )}
           </div>
 
-          <div className="p-5 space-y-3">
-            {/* ── Bilgiler ── */}
+          <div className="p-5 space-y-4">
+            {/* ── Bilgiler Tab ── */}
             {(tab === 'info' || isNew) && (
               <div className="space-y-3">
                 {[
-                  { k: 'name',       l: 'Tedarikçi Adı / Unvan *', ph: 'Firma A.Ş.' },
-                  { k: 'vkntckn',    l: 'VKN / TCKN',              ph: '1234567890' },
-                  { k: 'tax_id',     l: 'Vergi Dairesi',           ph: 'Kadıköy VD' },
-                  { k: 'phone',      l: 'Telefon',                 ph: '0212 000 00 00' },
-                  { k: 'email',      l: 'E-posta',                 ph: 'info@firma.com' },
-                  { k: 'address',    l: 'Adres',                   ph: 'İstanbul, Türkiye' },
-                  { k: 'city',       l: 'Şehir',                   ph: 'İstanbul' },
-                  { k: 'notes',      l: 'Notlar',                  ph: 'Ek bilgiler...' },
+                  { k: 'name',        l: 'Cari Adı / Unvan *',  ph: 'Ahmet Demir veya Firma A.Ş.' },
+                  { k: 'vkntckn',     l: 'VKN / TCKN',          ph: '1234567890' },
+                  { k: 'tax_office',  l: 'Vergi Dairesi',        ph: 'Kadıköy VD' },
+                  { k: 'phone',       l: 'Telefon',              ph: '0212 000 00 00' },
+                  { k: 'email',       l: 'E-posta',              ph: 'info@ornek.com' },
+                  { k: 'address',     l: 'Adres',                ph: 'Mahalle, Cadde...' },
+                  { k: 'city',        l: 'Şehir',                ph: 'İstanbul' },
+                  { k: 'notes',       l: 'Notlar',               ph: 'Ek bilgiler...' },
                 ].map(({ k, l, ph }) => (
                   <div key={k}>
                     <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">{l}</p>
@@ -182,10 +174,11 @@ function SupplierDrawer({ supplier, onClose, onSaved }) {
                   </div>
                 ))}
 
+                {/* Kaydet butonu */}
                 {(editing || isNew) && (
                   <div className="flex gap-2 pt-2">
                     {!isNew && (
-                      <button onClick={() => { setEditing(false); setForm({ ...supplier }); }}
+                      <button onClick={() => { setEditing(false); setForm({ ...customer }); }}
                         className="flex-1 py-2 rounded-xl text-sm font-semibold text-slate-400"
                         style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)' }}>
                         İptal
@@ -193,36 +186,37 @@ function SupplierDrawer({ supplier, onClose, onSaved }) {
                     )}
                     <button onClick={handleSave} disabled={saving || !form.name?.trim()}
                       className="flex-1 py-2 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
-                      style={{ background: ACCENT, opacity: (!form.name?.trim() || saving) ? 0.6 : 1 }}>
+                      style={{ background: currentColor, opacity: (!form.name?.trim() || saving) ? 0.6 : 1 }}>
                       {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
                       {isNew ? 'Kaydet' : 'Güncelle'}
                     </button>
                   </div>
                 )}
 
-                {!isNew && supplier.source === 'invoice_sync' && (
+                {/* Kaynak badge */}
+                {!isNew && customer.source === 'invoice_sync' && (
                   <div className="flex items-center gap-2 p-3 rounded-xl"
-                    style={{ background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.15)' }}>
-                    <Receipt size={12} style={{ color: ACCENT }} />
-                    <p className="text-xs" style={{ color: ACCENT }}>Bu tedarikçi, fatura senkronizasyonundan oluşturuldu.</p>
+                    style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.15)' }}>
+                    <Receipt size={12} className="text-blue-400" />
+                    <p className="text-xs text-blue-400">Bu cari, fatura senkronizasyonundan oluşturuldu.</p>
                   </div>
                 )}
               </div>
             )}
 
-            {/* ── Faturalar ── */}
+            {/* ── Faturalar Tab ── */}
             {tab === 'invoices' && !isNew && (
               <div className="space-y-3">
                 {loadingInv && (
                   <div className="flex items-center justify-center py-10 gap-2">
-                    <Loader2 size={22} className="animate-spin" style={{ color: ACCENT }} />
+                    <Loader2 size={22} className="animate-spin text-blue-400" />
                     <span className="text-sm text-slate-400">Yükleniyor...</span>
                   </div>
                 )}
                 {!loadingInv && invoices.length === 0 && (
                   <div className="text-center py-10">
                     <Receipt size={36} className="mx-auto mb-2 opacity-20 text-slate-400" />
-                    <p className="text-sm text-slate-500">Bu tedarikçiden fatura bulunamadı.</p>
+                    <p className="text-sm text-slate-500">Bu cariye ait fatura bulunamadı.</p>
                   </div>
                 )}
                 {!loadingInv && invoices.map((inv, i) => (
@@ -233,7 +227,7 @@ function SupplierDrawer({ supplier, onClose, onSaved }) {
                     style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(148,163,184,0.08)' }}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1">
-                        <p className="text-xs font-mono font-bold" style={{ color: ACCENT }}>{inv.invoice_id}</p>
+                        <p className="text-xs font-mono text-blue-400 font-bold">{inv.invoice_id}</p>
                         <p className="text-[10px] text-slate-500 mt-0.5">{fmtD(inv.issue_date)}</p>
                       </div>
                       <div className="text-right">
@@ -241,6 +235,7 @@ function SupplierDrawer({ supplier, onClose, onSaved }) {
                         <StatusDot status={inv.status} />
                       </div>
                     </div>
+                    {/* Ürün kalemleri özeti */}
                     {inv.line_items?.length > 0 && (
                       <div className="mt-2.5 pt-2.5" style={{ borderTop: '1px solid rgba(148,163,184,0.08)' }}>
                         {inv.line_items.slice(0, 3).map((item, j) => (
@@ -267,20 +262,30 @@ function SupplierDrawer({ supplier, onClose, onSaved }) {
   );
 }
 
+function StatusDot({ status }) {
+  const colors = { Approved: '#10b981', Canceled: '#ef4444', Error: '#ef4444', Processing: '#f59e0b' };
+  const col = colors[status] || '#94a3b8';
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-bold mt-0.5"
+      style={{ color: col }}>
+      <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: col }} />
+      {status || '-'}
+    </span>
+  );
+}
+
 // ─── Ana Sayfa ─────────────────────────────────────────────────────────────────
-export default function Suppliers() {
+export default function Customers() {
   const { effectiveMode, currentColor } = useTheme();
   const isDark = effectiveMode === 'dark';
 
-  const [suppliers, setSuppliers] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [loading, setLoading]     = useState(true);
   const [search, setSearch]       = useState('');
   const [selected, setSelected]   = useState(null);
   const [showNew, setShowNew]     = useState(false);
   const [toast, setToast]         = useState(null);
-  const [syncing, setSyncing]     = useState(false);
-
-  const ACCENT = '#f97316';
+  const [syncingInv, setSyncingInv] = useState(false);
 
   const c = {
     card:   isDark ? 'rgba(30,41,59,0.7)' : '#ffffff',
@@ -292,49 +297,60 @@ export default function Suppliers() {
 
   const showToast = (msg, type = 'success') => setToast({ msg, type });
 
-  const loadSuppliers = useCallback(async () => {
+  const loadCustomers = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from('suppliers').select('*').order('name');
-    setSuppliers(data || []);
+    const { data } = await supabase.from('customers').select('*').order('name');
+    setCustomers(data || []);
     setLoading(false);
   }, []);
 
-  useEffect(() => { loadSuppliers(); }, [loadSuppliers]);
+  useEffect(() => { loadCustomers(); }, [loadCustomers]);
 
+  // Faturalardan otomatik cari oluştur (manuel tetikleme)
   const syncFromInvoices = async () => {
-    setSyncing(true);
+    setSyncingInv(true);
     try {
+      // Inbox faturalardan VKN'si olmayanları bul ve customer upsert et
       const { data: invs } = await supabase
-        .from('invoices').select('cari_name, vkntckn').eq('type', 'outbox').not('vkntckn', 'is', null);
+        .from('invoices')
+        .select('cari_name, vkntckn')
+        .eq('type', 'inbox')
+        .not('vkntckn', 'is', null);
+
       const uniq = {};
       (invs || []).forEach(r => { if (r.vkntckn) uniq[r.vkntckn] = r.cari_name; });
-      const rows = Object.entries(uniq).map(([vkntckn, name]) => ({ name, vkntckn, source: 'invoice_sync' }));
+
+      const rows = Object.entries(uniq).map(([vkntckn, name]) => ({
+        name, vkntckn, source: 'invoice_sync'
+      }));
+
       if (rows.length > 0) {
-        await supabase.from('suppliers').upsert(rows, { onConflict: 'vkntckn', ignoreDuplicates: false });
+        await supabase.from('customers').upsert(rows, { onConflict: 'vkntckn', ignoreDuplicates: false });
       }
-      await loadSuppliers();
-      showToast(`${rows.length} tedarikçi senkronize edildi ✓`);
-    } catch (e) { showToast(e.message, 'error'); }
-    finally { setSyncing(false); }
+      await loadCustomers();
+      showToast(`${rows.length} cari senkronize edildi ✓`);
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally { setSyncingInv(false); }
   };
 
-  const deleteSupplier = async (id, name) => {
+  const deleteCustomer = async (id, name) => {
     if (!window.confirm(`"${name}" silinsin mi?`)) return;
-    const { error } = await supabase.from('suppliers').delete().eq('id', id);
+    const { error } = await supabase.from('customers').delete().eq('id', id);
     if (error) showToast(error.message, 'error');
-    else { showToast('Tedarikçi silindi'); loadSuppliers(); }
+    else { showToast('Cari silindi'); loadCustomers(); }
   };
 
-  const filtered = suppliers.filter(s => {
+  const filtered = customers.filter(c => {
     const t = search.toLowerCase();
-    return (s.name||'').toLowerCase().includes(t)
-      || (s.vkntckn||'').includes(t)
-      || (s.phone||'').includes(t)
-      || (s.email||'').toLowerCase().includes(t);
+    return (c.name||'').toLowerCase().includes(t)
+      || (c.vkntckn||'').includes(t)
+      || (c.phone||'').includes(t)
+      || (c.email||'').toLowerCase().includes(t);
   });
 
-  const invoicedCount = suppliers.filter(s => s.vkntckn && s.source === 'invoice_sync').length;
-  const manualCount   = suppliers.filter(s => s.source === 'manual').length;
+  const invoicedCount = customers.filter(c => c.vkntckn && c.source === 'invoice_sync').length;
+  const manualCount   = customers.filter(c => c.source === 'manual').length;
 
   return (
     <>
@@ -344,26 +360,26 @@ export default function Suppliers() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div className="flex items-center gap-3">
-            <div className="p-3 rounded-2xl flex-shrink-0" style={{ background: `${ACCENT}15`, color: ACCENT }}>
-              <Truck size={24} />
+            <div className="p-3 rounded-2xl flex-shrink-0" style={{ background: `${currentColor}15`, color: currentColor }}>
+              <Users size={24} />
             </div>
             <div>
-              <h1 className="text-2xl font-bold" style={{ color: c.text }}>Tedarikçiler</h1>
+              <h1 className="text-2xl font-bold" style={{ color: c.text }}>Cariler</h1>
               <p className="text-sm mt-0.5" style={{ color: c.muted }}>
-                {suppliers.length} kayıt · Tedarikçi Yönetimi
+                {customers.length} kayıt · Müşteri Yönetimi
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={syncFromInvoices} disabled={syncing}
+            <button onClick={syncFromInvoices} disabled={syncingInv}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
-              style={{ background: 'rgba(249,115,22,0.1)', color: ACCENT, border: `1px solid rgba(249,115,22,0.2)` }}>
-              {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              style={{ background: 'rgba(59,130,246,0.1)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.2)' }}>
+              {syncingInv ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
               Faturalardan Senkronize Et
             </button>
             <button onClick={() => setShowNew(true)}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-bold"
-              style={{ background: ACCENT }}>
+              style={{ background: currentColor }}>
               <Plus size={15} />Manuel Ekle
             </button>
           </div>
@@ -372,18 +388,18 @@ export default function Suppliers() {
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           {[
-            { l:'Toplam',          v: suppliers.length,  color: ACCENT,    Ic: Truck },
-            { l:'Fatura Bağlantılı',v: invoicedCount,   color: '#10b981', Ic: Receipt },
-            { l:'Manuel Kayıt',   v: manualCount,        color: '#8b5cf6', Ic: Edit3 },
-            { l:'Aktif',          v: suppliers.filter(s=>s.is_active).length, color:'#f59e0b', Ic: CheckCircle2 },
-          ].map(({ l, v, color, Ic }, i) => (
+            { l:'Toplam Cari',     v: customers.length,  c: currentColor, ic: Users },
+            { l:'Fatura Bağlantılı', v: invoicedCount,  c: '#10b981',    ic: Receipt },
+            { l:'Manuel Kayıt',   v: manualCount,        c: '#8b5cf6',    ic: Edit3 },
+            { l:'Aktif',           v: customers.filter(c=>c.is_active).length, c:'#f59e0b', ic: CheckCircle2 },
+          ].map(({ l, v, c: col, ic: Ic }, i) => (
             <div key={i} className="rounded-2xl p-4 flex items-center gap-3"
               style={{ background: c.card, border: `1px solid ${c.border}` }}>
-              <div className="p-2 rounded-xl" style={{ background: `${color}15` }}>
-                <Ic size={18} style={{ color }} />
+              <div className="p-2 rounded-xl" style={{ background: `${col}15` }}>
+                <Ic size={18} style={{ color: col }} />
               </div>
               <div>
-                <p className="text-xl font-bold" style={{ color }}>{v}</p>
+                <p className="text-xl font-bold" style={{ color: col }}>{v}</p>
                 <p className="text-[10px] font-semibold" style={{ color: c.muted }}>{l}</p>
               </div>
             </div>
@@ -395,7 +411,7 @@ export default function Suppliers() {
           style={{ background: c.card, borderColor: c.border }}>
           <Search size={15} style={{ color: c.muted }} />
           <input value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="İsim, VKN/TCKN, telefon veya e-posta ara..."
+            placeholder="Ad, VKN/TCKN, telefon veya e-posta ara..."
             className="bg-transparent border-none outline-none text-sm flex-1"
             style={{ color: c.text }} />
           {search && <button onClick={() => setSearch('')}><X size={14} style={{ color: c.muted }} /></button>}
@@ -405,13 +421,13 @@ export default function Suppliers() {
         <div className="rounded-3xl overflow-hidden border" style={{ background: c.card, borderColor: c.border }}>
           {loading ? (
             <div className="flex items-center justify-center py-16 gap-2" style={{ color: c.muted }}>
-              <Loader2 size={22} className="animate-spin" style={{ color: ACCENT }} />
+              <Loader2 size={22} className="animate-spin" style={{ color: currentColor }} />
               <span className="text-sm">Yükleniyor...</span>
             </div>
           ) : filtered.length === 0 ? (
             <div className="text-center py-16" style={{ color: c.muted }}>
-              <Truck size={40} strokeWidth={1} className="mx-auto mb-3 opacity-20" />
-              <p className="font-semibold">{search ? 'Sonuç bulunamadı' : 'Henüz tedarikçi eklenmemiş'}</p>
+              <Users size={40} strokeWidth={1} className="mx-auto mb-3 opacity-20" />
+              <p className="font-semibold">{search ? 'Sonuç bulunamadı' : 'Henüz cari eklenmemiş'}</p>
               <p className="text-xs mt-1 opacity-70">Manuel ekle veya faturalardan senkronize et.</p>
             </div>
           ) : (
@@ -419,64 +435,72 @@ export default function Suppliers() {
               <table className="w-full text-left">
                 <thead>
                   <tr className="border-b" style={{ borderColor: c.border, background: c.hover }}>
-                    {['Tedarikçi', 'VKN/TCKN', 'İletişim', 'Durum', 'Kaynak', ''].map(h => (
+                    {['Cari', 'VKN/TCKN', 'İletişim', 'Durum', 'Kaynak', ''].map(h => (
                       <th key={h} className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider"
                         style={{ color: c.muted }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((sup, idx) => (
-                    <motion.tr key={sup.id || idx}
+                  {filtered.map((cust, idx) => (
+                    <motion.tr key={cust.id || idx}
                       initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                       transition={{ delay: Math.min(idx * 0.02, 0.2) }}
                       className="border-b last:border-0 cursor-pointer transition-colors"
                       style={{ borderColor: c.border }}
                       onMouseEnter={e => e.currentTarget.style.background = c.hover}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                      onClick={() => setSelected(sup)}>
+                      onClick={() => setSelected(cust)}>
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-3">
                           <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
-                            style={{ background: ACCENT }}>
-                            {sup.name.charAt(0).toUpperCase()}
+                            style={{ background: currentColor }}>
+                            {cust.name.charAt(0).toUpperCase()}
                           </div>
                           <div>
-                            <p className="text-sm font-semibold" style={{ color: c.text }}>{sup.name}</p>
-                            {sup.city && <p className="text-xs" style={{ color: c.muted }}>{sup.city}</p>}
+                            <p className="text-sm font-semibold" style={{ color: c.text }}>{cust.name}</p>
+                            {cust.city && <p className="text-xs" style={{ color: c.muted }}>{cust.city}</p>}
                           </div>
                         </div>
                       </td>
                       <td className="px-5 py-3.5">
-                        <span className="text-xs font-mono" style={{ color: c.muted }}>{sup.vkntckn || '—'}</span>
+                        <span className="text-xs font-mono" style={{ color: c.muted }}>{cust.vkntckn || '—'}</span>
                       </td>
                       <td className="px-5 py-3.5">
-                        {sup.phone && <div className="flex items-center gap-1 text-xs" style={{ color: c.muted }}><Phone size={10}/>{sup.phone}</div>}
-                        {sup.email && <div className="flex items-center gap-1 text-xs" style={{ color: c.muted }}><Mail size={10}/>{sup.email}</div>}
-                        {!sup.phone && !sup.email && <span className="text-xs" style={{ color: c.muted }}>—</span>}
+                        {cust.phone && (
+                          <div className="flex items-center gap-1 text-xs" style={{ color: c.muted }}>
+                            <Phone size={10} />{cust.phone}
+                          </div>
+                        )}
+                        {cust.email && (
+                          <div className="flex items-center gap-1 text-xs" style={{ color: c.muted }}>
+                            <Mail size={10} />{cust.email}
+                          </div>
+                        )}
+                        {!cust.phone && !cust.email && <span className="text-xs" style={{ color: c.muted }}>—</span>}
                       </td>
                       <td className="px-5 py-3.5">
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg"
-                          style={{ background: sup.is_active ? '#10b98118' : '#94a3b818', color: sup.is_active ? '#10b981' : '#94a3b8' }}>
-                          {sup.is_active ? 'Aktif' : 'Pasif'}
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-lg ${cust.is_active ? '' : 'opacity-50'}`}
+                          style={{ background: cust.is_active ? '#10b98118' : '#94a3b818', color: cust.is_active ? '#10b981' : '#94a3b8' }}>
+                          {cust.is_active ? 'Aktif' : 'Pasif'}
                         </span>
                       </td>
                       <td className="px-5 py-3.5">
                         <span className="text-[10px] font-semibold"
-                          style={{ color: sup.source === 'invoice_sync' ? ACCENT : '#8b5cf6' }}>
-                          {sup.source === 'invoice_sync' ? '🔗 Faturadan' : '✏️ Manuel'}
+                          style={{ color: cust.source === 'invoice_sync' ? '#60a5fa' : '#8b5cf6' }}>
+                          {cust.source === 'invoice_sync' ? '🔗 Faturadan' : '✏️ Manuel'}
                         </span>
                       </td>
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-1">
-                          <button onClick={e => { e.stopPropagation(); setSelected(sup); }}
+                          <button onClick={e => { e.stopPropagation(); setSelected(cust); }}
                             className="p-1.5 rounded-lg transition-colors"
-                            style={{ color: ACCENT }}
-                            onMouseEnter={e => e.currentTarget.style.background = `${ACCENT}15`}
+                            style={{ color: currentColor }}
+                            onMouseEnter={e => e.currentTarget.style.background = `${currentColor}15`}
                             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                             <ChevronRight size={14} />
                           </button>
-                          <button onClick={e => { e.stopPropagation(); deleteSupplier(sup.id, sup.name); }}
+                          <button onClick={e => { e.stopPropagation(); deleteCustomer(cust.id, cust.name); }}
                             className="p-1.5 rounded-lg transition-colors"
                             style={{ color: '#ef4444' }}
                             onMouseEnter={e => e.currentTarget.style.background = '#ef444415'}
@@ -494,19 +518,20 @@ export default function Suppliers() {
         </div>
       </motion.div>
 
+      {/* Detail / Edit Drawer */}
       <AnimatePresence>
         {selected && (
-          <SupplierDrawer
-            supplier={selected}
+          <CustomerDrawer
+            customer={selected}
             onClose={() => setSelected(null)}
-            onSaved={() => { loadSuppliers(); showToast('Tedarikçi güncellendi ✓'); }}
+            onSaved={() => { loadCustomers(); showToast('Cari güncellendi ✓'); }}
           />
         )}
         {showNew && (
-          <SupplierDrawer
-            supplier={{ name: '', vkntckn: '', phone: '', email: '', address: '', city: '', notes: '', tax_id: '', is_active: true }}
+          <CustomerDrawer
+            customer={{ name: '', vkntckn: '', phone: '', email: '', address: '', city: '', notes: '', tax_office: '', is_active: true }}
             onClose={() => setShowNew(false)}
-            onSaved={() => { loadSuppliers(); setShowNew(false); showToast('Yeni tedarikçi eklendi ✓'); }}
+            onSaved={() => { loadCustomers(); setShowNew(false); showToast('Yeni cari eklendi ✓'); }}
           />
         )}
       </AnimatePresence>
