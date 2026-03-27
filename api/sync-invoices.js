@@ -140,7 +140,12 @@ export default async function handler(req, res) {
     });
 
   } catch (err) {
-    console.error('[sync-invoices]', err.message);
-    res.status(500).json({ success: false, error: 'Senkronizasyon Başarısız', detail: err.message });
+    console.error('[sync-invoices]', err.message, err.stack);
+    res.status(500).json({
+      success: false,
+      error: 'Senkronizasyon Başarısız',
+      detail: err.message,
+      stack: err.stack?.split('\n').slice(0, 5).join(' | ')
+    });
   }
 }
