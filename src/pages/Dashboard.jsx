@@ -183,21 +183,16 @@ export default function Dashboard() {
                     <thead>
                       <tr className="text-xs font-bold uppercase tracking-widest"
                         style={{ color: c.textMuted, borderBottom: `1px solid ${c.divider}` }}>
-                        <th className="pb-3">Gönderici</th>
-                        <th className="pb-3">Tarih</th>
-                        <th className="pb-3">Tutar</th>
-                        <th className="pb-3">Durum</th>
+                        <th className="pb-3">Fatura No</th>
+                        <th className="pb-3">Gönderici / Alıcı Cari</th>
+                        <th className="pb-3 text-right">Tarih</th>
                       </tr>
                     </thead>
                     <tbody>
-                      <tr style={{ borderBottom: `1px solid ${c.divider}` }}
-                        onMouseEnter={e => e.currentTarget.style.background = c.rowHover}
-                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                        <td className="py-4 font-semibold" style={{ color: c.textBase }}>Uyumsoft Test Müşterisi</td>
-                        <td className="py-4" style={{ color: c.textMuted }}>26.03.2026</td>
-                        <td className="py-4 font-bold" style={{ color: c.textBase }}>₺15.450,00</td>
-                        <td className="py-4">
-                          <span className="badge badge-success">Onaylandı</span>
+                      {/* Dashboard'da geçici JSON önizlemesi kalabilir veya basit satır döngüsü */}
+                      <tr>
+                        <td colSpan="3" className="py-4 text-center text-xs" style={{ color: c.textMuted }}>
+                          JSON formatındaki Canlı API yanıtı aşağıdadır. Lütfen faturaları tam liste halinde görüntülemek ve veritabanına kaydetmek için sol menüden "Gelir Faturaları" sayfasına gidip "Senkronize Et" butonunu kullanın.
                         </td>
                       </tr>
                     </tbody>
@@ -206,7 +201,7 @@ export default function Dashboard() {
                   <div className="p-4 rounded-2xl mt-4"
                     style={{ background: c.actionBg, border: `1px solid ${c.border}` }}>
                     <pre className="text-[10px] overflow-x-auto" style={{ color: c.textMuted }}>
-                      {JSON.stringify(invoices, null, 2).substring(0, 400)}...
+                      {JSON.stringify(invoices, null, 2).substring(0, 600)}...
                     </pre>
                   </div>
                 </div>
