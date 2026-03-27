@@ -21,6 +21,7 @@ export default async function handler(req, res) {
 
   try {
     const { type = 'inbox', forceAll = false } = req.body || {};
+    const PAGE_SIZE = 100; // Vercel timeout için makul boyut
 
     // 1) Incremental fetch: en son kaydın tarihini bul
     let startDateStr = '2024-01-01T00:00:00';
@@ -35,42 +36,63 @@ export default async function handler(req, res) {
 
       if (latest?.issue_date) {
         const sd = new Date(latest.issue_date);
-        sd.setDate(sd.getDate() - 2);
+        sd.setDate(sd.getDate() - 2); // 2 gün geçmişe git, kaçan olmasın
         startDateStr = sd.toISOString().split('.')[0];
       }
     }
 
-    // 2) Uyumsoft'a istek at
-    // NOT: PageIndex/PageSize WSDL'de attribute olarak tanımlı
-    const args = {
-      query: {
-        attributes: { PageIndex: 0, PageSize: 200 },
-        CreateStartDate: startDateStr,
-        CreateEndDate: new Date().toISOString().split('.')[0],
-        IsArchived: false,
-        // Status filtresi yok - tüm durumlar çekilsin
-      },
-    };
-
+    const endDateStr = new Date().toISOString().split('.')[0];
     const client = await createUyumsoftClient();
     const methodName = type === 'outbox' ? 'GetOutboxInvoiceList' : 'GetInboxInvoiceList';
-    const result = await callSoap(client, methodName, args);
+    const resultKey  = type === 'outbox' ? 'GetOutboxInvoiceListResult' : 'GetInboxInvoiceListResult';
 
-    // 3) Yanıtı parçala
-    const resultKey = type === 'outbox' ? 'GetOutboxInvoiceListResult' : 'GetInboxInvoiceListResult';
-    const resultData = result?.[resultKey];
+    // 2) Tüm sayfalarda döngü yap
+    let allItems = [];
+    let pageIndex = 0;
+    let totalPages = 1; // ilk istekte gerçek deĞer gelir
 
-    let list = [];
-    if (resultData?.Value) {
-      const raw = resultData.Value.Items;
-      if (Array.isArray(raw)) {
-        list = raw;
-      } else if (raw && typeof raw === 'object') {
-        list = [raw];
+    do {
+      const args = {
+        query: {
+          attributes: { PageIndex: pageIndex, PageSize: PAGE_SIZE },
+          CreateStartDate: startDateStr,
+          CreateEndDate: endDateStr,
+          IsArchived: false,
+        },
+      };
+
+      const result     = await callSoap(client, methodName, args);
+      const resultData = result?.[resultKey];
+
+      // TotalPages bilgisi attributes içinden al
+      if (resultData?.Value?.attributes) {
+        totalPages = parseInt(resultData.Value.attributes.TotalPages || '1', 10);
       }
-    }
 
-    console.log(`[sync-invoices] ${type} - ${list.length} fatura Uyumsoft'tan alındı (${startDateStr} itibaren).`);
+      // Items al
+      const raw = resultData?.Value?.Items;
+      if (Array.isArray(raw)) {
+        allItems = allItems.concat(raw);
+      } else if (raw && typeof raw === 'object') {
+        allItems.push(raw);
+      }
+
+      console.log(`[sync-invoices] ${type} - Sayfa ${pageIndex + 1}/${totalPages}, bu sayfada ${Array.isArray(raw) ? raw.length : (raw ? 1 : 0)} fatura`);
+      pageIndex++;
+    } while (pageIndex < totalPages);
+
+    console.log(`[sync-invoices] ${type} - Toplam: ${allItems.length} fatura Uyumsoft'tan alındı.`);
+
+    // 3) DEDUPLICATE: Uyumsoft aynı fatura ID'sini bazen iki kez gönderebiliyor
+    const seen = new Set();
+    const list = allItems.filter(inv => {
+      const id = inv.InvoiceId || inv.DocumentId;
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+
+    console.log(`[sync-invoices] ${type} - Dedup sonrası: ${list.length} benzersiz fatura.`);
 
     if (list.length === 0) {
       return res.json({ success: true, message: 'Yeni fatura bulunamadı.', inserted: 0 });
