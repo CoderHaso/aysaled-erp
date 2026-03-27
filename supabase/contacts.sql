@@ -5,30 +5,11 @@
 -- =====================================================================
 
 -- ── 1. CUSTOMERS (Cariler / Müşteriler) ──────────────────────────────
+-- NOT: vkntckn UNIQUE → PostgreSQL'de NULL != NULL, yani birden fazla NULL'a izin verilir.
 CREATE TABLE IF NOT EXISTS customers (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name        text NOT NULL,
-  vkntckn     text,                          -- Null → faturasız cari
-  tax_office  text,
-  phone       text,
-  email       text,
-  address     text,
-  city        text,
-  notes       text,
-  is_active   boolean DEFAULT true,
-  source      text DEFAULT 'manual',         -- 'manual' | 'invoice_sync'
-  created_at  timestamptz DEFAULT now(),
-  updated_at  timestamptz DEFAULT now()
-);
--- VKN benzersizliği sadece dolu değerler için
-CREATE UNIQUE INDEX IF NOT EXISTS customers_vkntckn_unique
-  ON customers (vkntckn) WHERE vkntckn IS NOT NULL;
-
--- ── 2. SUPPLIERS (Tedarikçiler) ───────────────────────────────────────
-CREATE TABLE IF NOT EXISTS suppliers (
-  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name        text NOT NULL,
-  vkntckn     text,
+  vkntckn     text UNIQUE,
   tax_office  text,
   phone       text,
   email       text,
@@ -40,8 +21,23 @@ CREATE TABLE IF NOT EXISTS suppliers (
   created_at  timestamptz DEFAULT now(),
   updated_at  timestamptz DEFAULT now()
 );
-CREATE UNIQUE INDEX IF NOT EXISTS suppliers_vkntckn_unique
-  ON suppliers (vkntckn) WHERE vkntckn IS NOT NULL;
+
+-- ── 2. SUPPLIERS (Tedarikçiler) ───────────────────────────────────────
+CREATE TABLE IF NOT EXISTS suppliers (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        text NOT NULL,
+  vkntckn     text UNIQUE,
+  tax_office  text,
+  phone       text,
+  email       text,
+  address     text,
+  city        text,
+  notes       text,
+  is_active   boolean DEFAULT true,
+  source      text DEFAULT 'manual',
+  created_at  timestamptz DEFAULT now(),
+  updated_at  timestamptz DEFAULT now()
+);
 
 -- ── 3. RLS ───────────────────────────────────────────────────────────
 ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
@@ -52,24 +48,20 @@ DROP POLICY IF EXISTS "customers_all_auth" ON customers;
 DROP POLICY IF EXISTS "suppliers_all_anon" ON suppliers;
 DROP POLICY IF EXISTS "suppliers_all_auth" ON suppliers;
 
-CREATE POLICY "customers_all_anon" ON customers FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "customers_all_anon" ON customers FOR ALL TO anon   USING (true) WITH CHECK (true);
 CREATE POLICY "customers_all_auth" ON customers FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "suppliers_all_anon" ON suppliers FOR ALL TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "suppliers_all_anon" ON suppliers FOR ALL TO anon   USING (true) WITH CHECK (true);
 CREATE POLICY "suppliers_all_auth" ON suppliers FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- ── 4. AUTO-SYNC TRIGGER ─────────────────────────────────────────────
--- Invoices tablosuna satır eklendiğinde/güncellendiğinde
--- otomatik olarak customers veya suppliers tablosunu günceller.
-
 CREATE OR REPLACE FUNCTION sync_contact_from_invoice()
 RETURNS trigger AS $$
 BEGIN
-  -- Sadece VKN'si olan faturaları işle
   IF NEW.vkntckn IS NULL OR NEW.vkntckn = '' THEN
     RETURN NEW;
   END IF;
 
-  -- inbox = gelir = faturalandırdığımız müşteriler (customers)
+  -- inbox = gelir = müşteri (customers)
   IF NEW.type = 'inbox' THEN
     INSERT INTO customers (name, vkntckn, source, updated_at)
     VALUES (NEW.cari_name, NEW.vkntckn, 'invoice_sync', now())
@@ -77,10 +69,10 @@ BEGIN
       SET name       = EXCLUDED.name,
           source     = 'invoice_sync',
           updated_at = now()
-      WHERE customers.source = 'invoice_sync';  -- Manuel girişi koruma
+      WHERE customers.source = 'invoice_sync';
   END IF;
 
-  -- outbox = gider = bize fatura kesen tedarikçiler (suppliers)
+  -- outbox = gider = tedarikçi (suppliers)
   IF NEW.type = 'outbox' THEN
     INSERT INTO suppliers (name, vkntckn, source, updated_at)
     VALUES (NEW.cari_name, NEW.vkntckn, 'invoice_sync', now())
@@ -101,8 +93,6 @@ CREATE TRIGGER trg_sync_contact
   FOR EACH ROW EXECUTE FUNCTION sync_contact_from_invoice();
 
 -- ── 5. İLK VERİ YÜKLEME (Mevcut faturalardan) ────────────────────────
--- Bu bloğu bir kez çalıştırın, mevcut tüm faturalardan cari/tedarikçi oluşturur.
-
 INSERT INTO customers (name, vkntckn, source)
 SELECT DISTINCT ON (vkntckn) cari_name, vkntckn, 'invoice_sync'
 FROM invoices

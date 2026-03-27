@@ -1,10 +1,12 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import * as XLSX from 'xlsx';
 import {
   Plus, Search, AlertTriangle, RefreshCcw, AlertCircle,
   Zap, TrendingUp, Boxes, Package, ChevronUp, ChevronDown,
-  Edit2, Trash2,
+  Edit2, Trash2, Upload, Download, FileJson, FileSpreadsheet,
+  X, CheckCircle2, AlertOctagon, FolderDown,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useStock } from '../hooks/useStock';
@@ -49,11 +51,14 @@ export default function Stock() {
 
   // (Eski ID açılış kodları silindi. Barkodlar bağımsız QRDetail sayfasına gider)
 
-  const [quickAdd,  setQuickAdd]  = useState(false);
-  const [toast,     setToast]     = useState(null);
-  const [search,    setSearch]    = useState('');
-  const [sortKey,   setSortKey]   = useState('name');
-  const [sortDir,   setSortDir]   = useState('asc');
+  const [quickAdd,      setQuickAdd]      = useState(false);
+  const [showIOPanel,   setShowIOPanel]   = useState(false);
+  const [toast,         setToast]         = useState(null);
+  const [search,        setSearch]        = useState('');
+  const [sortKey,       setSortKey]       = useState('name');
+  const [sortDir,       setSortDir]       = useState('asc');
+  const [importing,     setImporting]     = useState(false);
+  const [importResult,  setImportResult]  = useState(null); // { added, skipped, errors }
 
   const c = {
     bg:       isDark ? '#0f172a' : '#f8fafc',
@@ -139,6 +144,121 @@ export default function Stock() {
     catch (e) { showToast(e.message, 'error'); }
   };
 
+  // ── Import/Export helpers ────────────────────────────────────────────────────
+
+  /** JSON/XLSX dosyasını parse edip items dizisi döner */
+  const parseImportFile = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        if (file.name.endsWith('.json')) {
+          const data = JSON.parse(e.target.result);
+          resolve(Array.isArray(data) ? data : [data]);
+        } else {
+          const wb = XLSX.read(e.target.result, { type: 'binary' });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          resolve(XLSX.utils.sheet_to_json(ws));
+        }
+      } catch (err) { reject(err); }
+    };
+    if (file.name.endsWith('.json')) reader.readAsText(file);
+    else reader.readAsBinaryString(file);
+  });
+
+  /** Satırı Supabase items formatına dönüştür */
+  const mapRowToItem = (row, forcedType) => {
+    const tip = forcedType ||
+      (String(row['_A_ERP_Tip'] || row['Tip'] || '').toLowerCase().includes('mamül') ? 'product' : 'raw');
+    return {
+      name:           String(row['Stok Adı'] || row['name'] || '').trim(),
+      unit:           String(row['Birim']    || row['unit'] || 'Adet').trim(),
+      purchase_price: parseFloat(row['Alış Fiyatı'] || row['purchase_price'] || 0) || 0,
+      item_type:      tip,
+      stock_count:    parseFloat(row['Stok']        || row['stock_count']    || 0) || 0,
+      sku:            String(row['SKU']             || row['sku']            || '').trim() || null,
+      supplier_name:  String(row['Tedarikçi']       || row['supplier_name'] || '').trim() || null,
+      location:       String(row['Konum']           || row['location']      || '').trim() || null,
+      critical_limit: parseFloat(row['Kritik Limit']|| row['critical_limit'] || 0) || 0,
+      is_active:      true,
+    };
+  };
+
+  /** Dosyadan import et — tab'a göre tip override */
+  const handleImportFile = async (file, typeOverride) => {
+    setImporting(true); setImportResult(null);
+    try {
+      const rows = await parseImportFile(file);
+      const items = rows
+        .map(r => mapRowToItem(r, typeOverride))
+        .filter(i => i.name.length > 0);
+
+      let added = 0, skipped = 0, errors = [];
+      // Batch insert 50'şer chunk
+      const chunks = [];
+      for (let i = 0; i < items.length; i += 50) chunks.push(items.slice(i, i + 50));
+      for (const chunk of chunks) {
+        const { error: err } = await supabase.from('items').insert(chunk);
+        if (err) {
+          // Tekil dene
+          for (const item of chunk) {
+            const { error: e2 } = await supabase.from('items').insert(item);
+            if (e2) { skipped++; errors.push(`${item.name}: ${e2.message}`); }
+            else added++;
+          }
+        } else { added += chunk.length; }
+      }
+      setImportResult({ added, skipped, errors: errors.slice(0, 10) });
+      refetch();
+      showToast(`${added} kayıt eklendi${skipped ? `, ${skipped} atlandı` : ''} ✓`);
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally { setImporting(false); }
+  };
+
+  /** Şablon XLSX indir */
+  const downloadTemplate = (type) => {
+    const headers = ['name','unit','purchase_price','stock_count','sku','supplier_name','location','critical_limit','item_type'];
+    const example = [{
+      name: type === 'raw' ? '5X3 LİNEER PROFİL' : 'DOWNLIGHT ARMATÜR',
+      unit: type === 'raw' ? 'Metre' : 'Adet',
+      purchase_price: 2.36, stock_count: 0, sku: '', supplier_name: '', location: '', critical_limit: 0,
+      item_type: type === 'raw' ? 'raw' : 'product',
+    }];
+    const ws = XLSX.utils.json_to_sheet(example, { header: headers });
+    ws['!cols'] = headers.map(() => ({ wch: 20 }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Şablon');
+    XLSX.writeFile(wb, `AERP_Sablonu_${type === 'raw' ? 'Hammadde' : 'Mamul'}.xlsx`);
+  };
+
+  /** Mevcut listeyi export et */
+  const handleExport = (format, type) => {
+    const list = type === 'raw' ? rawItems : productItems;
+    const mapped = list.map(i => ({
+      'Stok Adı': i.name,
+      'Birim': i.unit,
+      'SKU': i.sku || '',
+      'Alış Fiyatı': i.purchase_price,
+      'Stok': i.stock_count,
+      'Kritik Limit': i.critical_limit || 0,
+      'Tedarikçi': i.supplier_name || '',
+      'Konum': i.location || '',
+    }));
+    const label = type === 'raw' ? 'Hammadde' : 'Mamul';
+    if (format === 'json') {
+      const blob = new Blob([JSON.stringify(mapped, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = `AERP_${label}.json`; a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      const ws = XLSX.utils.json_to_sheet(mapped);
+      ws['!cols'] = Object.keys(mapped[0] || {}).map(() => ({ wch: 22 }));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, label);
+      XLSX.writeFile(wb, `AERP_${label}.xlsx`);
+    }
+  };
+
   const SortIcon = ({ col }) => sortKey === col
     ? sortDir === 'asc' ? <ChevronUp size={11} /> : <ChevronDown size={11} />
     : <ChevronUp size={11} style={{ opacity: 0.2 }} />;
@@ -188,6 +308,12 @@ export default function Stock() {
             style={{ borderColor: c.border, color: c.muted, background: c.inputBg }}>
             <RefreshCcw size={15} className={loading ? 'animate-spin' : ''} />
           </button>
+          <button onClick={() => setShowIOPanel(v => !v)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs sm:text-sm font-bold transition-all"
+            style={{ borderColor: showIOPanel ? currentColor : c.border, color: showIOPanel ? currentColor : c.muted, background: c.inputBg }}>
+            <Upload size={13} />
+            <span className="hidden sm:inline">İçe/Dışa</span>
+          </button>
           <button onClick={() => setQuickAdd(true)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs sm:text-sm font-bold transition-all"
             style={{ borderColor: c.border, color: c.muted, background: c.inputBg }}>
@@ -230,7 +356,26 @@ export default function Stock() {
         ))}
       </div>
 
+      {/* ── İMPORT / EXPORT PANELİ ────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showIOPanel && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden">
+            <ImportExportPanel
+              c={c} currentColor={currentColor} isDark={isDark}
+              activeTab={activeTab}
+              importing={importing} importResult={importResult}
+              onImportFile={handleImportFile}
+              onExport={handleExport}
+              onTemplate={downloadTemplate}
+              onClose={() => { setShowIOPanel(false); setImportResult(null); }}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ── ÖZET ─────────────────────────────────────────────────────────────── */}
+
       {activeTab === 'summary' && (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-5">
           {[
@@ -554,5 +699,173 @@ function ABtn({ icon: Icon, color, onClick }) {
       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
       <Icon size={13} />
     </button>
+  );
+}
+
+// ─── Import / Export Panel ────────────────────────────────────────────────────
+function ImportExportPanel({ c, currentColor, isDark, activeTab, importing, importResult, onImportFile, onExport, onTemplate, onClose }) {
+  const rawRef  = React.useRef();
+  const prodRef = React.useRef();
+
+  const typeLabel = (t) => t === 'raw' ? 'Hammadde' : 'Mamül';
+
+  const handleFile = (e, typeOverride) => {
+    const file = e.target.files?.[0];
+    if (file) onImportFile(file, typeOverride);
+    e.target.value = '';
+  };
+
+  return (
+    <div className="rounded-2xl p-5 space-y-5" style={{ background: c.card, border: `1.5px solid ${currentColor}30` }}>
+      {/* Başlık */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-bold" style={{ color: c.text }}>İçe / Dışa Aktarım</h3>
+          <p className="text-xs mt-0.5" style={{ color: c.muted }}>
+            JSON ve XLSX formatlarında import/export. Şablonu indirip düzenleyerek de aktarım yapabilirsiniz.
+          </p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-lg" style={{ color: c.muted }}>
+          <X size={16} />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* ── İÇE AKTAR ── */}
+        <div className="space-y-3">
+          <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: c.muted }}>
+            İçe Aktar (Import)
+          </p>
+
+          {/* Hammadde import */}
+          <div className="rounded-xl p-4 space-y-2" style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)' }}>
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg flex items-center justify-center text-sm" style={{ background: 'rgba(245,158,11,0.15)' }}>🔩</div>
+              <span className="text-xs font-bold" style={{ color: '#f59e0b' }}>Hammadde</span>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => rawRef.current?.click()}
+                disabled={importing}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all"
+                style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.25)' }}>
+                {importing ? <RefreshCcw size={12} className="animate-spin" /> : <FileJson size={12} />}
+                JSON
+              </button>
+              <button onClick={() => { rawRef.current.accept = '.xlsx,.xls'; rawRef.current?.click(); }}
+                disabled={importing}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all"
+                style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.25)' }}>
+                {importing ? <RefreshCcw size={12} className="animate-spin" /> : <FileSpreadsheet size={12} />}
+                XLSX
+              </button>
+              <input ref={rawRef} type="file" accept=".json,.xlsx,.xls" className="hidden"
+                onChange={e => handleFile(e, 'raw')} />
+            </div>
+            <button onClick={() => onTemplate('raw')}
+              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-[10px] font-semibold transition-all"
+              style={{ color: '#f59e0b', background: 'rgba(245,158,11,0.06)', border: '1px dashed rgba(245,158,11,0.3)' }}>
+              <FolderDown size={11} />Şablon İndir (Hammadde)
+            </button>
+          </div>
+
+          {/* Mamül import */}
+          <div className="rounded-xl p-4 space-y-2" style={{ background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.2)' }}>
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg flex items-center justify-center text-sm" style={{ background: 'rgba(59,130,246,0.15)' }}>⚡</div>
+              <span className="text-xs font-bold" style={{ color: '#60a5fa' }}>Mamül</span>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => prodRef.current?.click()}
+                disabled={importing}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all"
+                style={{ background: 'rgba(59,130,246,0.12)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.25)' }}>
+                {importing ? <RefreshCcw size={12} className="animate-spin" /> : <FileJson size={12} />}
+                JSON
+              </button>
+              <button onClick={() => { prodRef.current.accept = '.xlsx,.xls'; prodRef.current?.click(); }}
+                disabled={importing}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all"
+                style={{ background: 'rgba(59,130,246,0.12)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.25)' }}>
+                {importing ? <RefreshCcw size={12} className="animate-spin" /> : <FileSpreadsheet size={12} />}
+                XLSX
+              </button>
+              <input ref={prodRef} type="file" accept=".json,.xlsx,.xls" className="hidden"
+                onChange={e => handleFile(e, 'product')} />
+            </div>
+            <button onClick={() => onTemplate('product')}
+              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-[10px] font-semibold transition-all"
+              style={{ color: '#60a5fa', background: 'rgba(59,130,246,0.06)', border: '1px dashed rgba(59,130,246,0.3)' }}>
+              <FolderDown size={11} />Şablon İndir (Mamül)
+            </button>
+          </div>
+        </div>
+
+        {/* ── DIŞA AKTAR ── */}
+        <div className="space-y-3">
+          <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: c.muted }}>
+            Dışa Aktar (Export)
+          </p>
+          {['raw', 'product'].map(type => (
+            <div key={type} className="rounded-xl p-4 space-y-2"
+              style={{
+                background: type === 'raw' ? 'rgba(245,158,11,0.06)' : 'rgba(59,130,246,0.06)',
+                border: `1px solid ${type === 'raw' ? 'rgba(245,158,11,0.2)' : 'rgba(59,130,246,0.2)'}`,
+              }}>
+              <div className="flex items-center gap-2">
+                <span className="text-sm">{type === 'raw' ? '🔩' : '⚡'}</span>
+                <span className="text-xs font-bold" style={{ color: type === 'raw' ? '#f59e0b' : '#60a5fa' }}>
+                  {typeLabel(type)} Dışa Aktar
+                </span>
+              </div>
+              <div className="flex gap-2">
+                {['json', 'xlsx'].map(fmt => (
+                  <button key={fmt} onClick={() => onExport(fmt, type)}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all"
+                    style={{
+                      background: type === 'raw' ? 'rgba(245,158,11,0.12)' : 'rgba(59,130,246,0.12)',
+                      color: type === 'raw' ? '#f59e0b' : '#60a5fa',
+                      border: `1px solid ${type === 'raw' ? 'rgba(245,158,11,0.25)' : 'rgba(59,130,246,0.25)'}`,
+                    }}>
+                    {fmt === 'json' ? <FileJson size={12} /> : <FileSpreadsheet size={12} />}
+                    {fmt.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {/* Import sonucu */}
+          {importResult && (
+            <div className="rounded-xl p-4 space-y-2"
+              style={{ background: importResult.skipped > 0 ? 'rgba(245,158,11,0.08)' : 'rgba(16,185,129,0.08)', border: `1px solid ${importResult.skipped > 0 ? 'rgba(245,158,11,0.25)' : 'rgba(16,185,129,0.25)'}` }}>
+              <div className="flex items-center gap-2">
+                {importResult.skipped > 0 ? <AlertOctagon size={14} style={{ color: '#f59e0b' }} /> : <CheckCircle2 size={14} style={{ color: '#10b981' }} />}
+                <span className="text-xs font-bold" style={{ color: importResult.skipped > 0 ? '#f59e0b' : '#10b981' }}>
+                  Import Sonucu
+                </span>
+              </div>
+              <p className="text-xs" style={{ color: c.muted }}>
+                ✅ {importResult.added} eklendi
+                {importResult.skipped > 0 && <span> · ⚠ {importResult.skipped} atlandı</span>}
+              </p>
+              {importResult.errors?.length > 0 && (
+                <div className="space-y-1">
+                  {importResult.errors.map((e, i) => (
+                    <p key={i} className="text-[10px] text-red-400 truncate">{e}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {importing && (
+        <div className="flex items-center justify-center gap-2 py-2" style={{ color: currentColor }}>
+          <RefreshCcw size={16} className="animate-spin" />
+          <span className="text-xs font-semibold">İçe aktarılıyor, lütfen bekleyin...</span>
+        </div>
+      )}
+    </div>
   );
 }
