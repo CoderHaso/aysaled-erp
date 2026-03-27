@@ -5,7 +5,7 @@ const require = createRequire(import.meta.url);
 const soap = require('soap');
 
 const WSDL_URL = process.env.UYUMSOFT_WSDL ||
-  'https://efatura-test.uyumsoft.com.tr/Services/Integration?wsdl';
+  'https://edonusumapi.uyum.com.tr/Services/Integration?wsdl';
 const USERNAME = process.env.UYUMSOFT_USERNAME || 'Uyumsoft';
 const PASSWORD = process.env.UYUMSOFT_PASSWORD || 'Uyumsoft';
 

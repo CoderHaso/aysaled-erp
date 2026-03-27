@@ -8,7 +8,7 @@ export default function Settings() {
   const { effectiveMode, currentColor } = useTheme();
   const isDark = effectiveMode === 'dark';
 
-  const [form, setForm] = useState({ username: '', password: '' });
+  const [form, setForm] = useState({ username: '', password: '', isProduction: false });
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -17,7 +17,11 @@ export default function Settings() {
     async function loadSettings() {
       const { data, error } = await supabase.from('app_settings').select('value').eq('id', 'uyumsoft').single();
       if (!error && data?.value) {
-        setForm({ username: data.value.username || '', password: data.value.password || '' });
+        setForm({ 
+          username: data.value.username || '', 
+          password: data.value.password || '',
+          isProduction: data.value.isProduction || false
+        });
       }
     }
     loadSettings();
@@ -53,7 +57,11 @@ export default function Settings() {
       const res = await fetch('/api/test-auth', { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: form.username, password: form.password }) 
+        body: JSON.stringify({ 
+          username: form.username, 
+          password: form.password,
+          isProduction: form.isProduction
+        }) 
       });
 
       const data = await res.json();
@@ -114,6 +122,20 @@ export default function Settings() {
             <input type="password" className="input-field" placeholder="••••••••"
               value={form.password} onChange={e => handleChange('password', e.target.value)} />
           </div>
+        </div>
+
+        <div className="flex items-center gap-3 mb-6">
+          <input 
+            type="checkbox" 
+            id="isProduction"
+            checked={form.isProduction}
+            onChange={e => handleChange('isProduction', e.target.checked)}
+            className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+            style={{ accentColor: currentColor }}
+          />
+          <label htmlFor="isProduction" className="text-sm font-medium" style={{ color: c.text }}>
+            Canlı Ortam (Production)
+          </label>
         </div>
 
         {testResult && (

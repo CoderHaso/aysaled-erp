@@ -9,12 +9,16 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Sadece POST desteklenir' });
 
-  const { username, password } = req.body || {};
+  const { username, password, isProduction } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: 'Kullanıcı adı ve şifre zorunlu' });
 
   try {
+    const wsdlUrl = isProduction 
+      ? 'https://edonusumapi.uyum.com.tr/Services/Integration?wsdl'
+      : 'https://efatura-test.uyumsoft.com.tr/Services/Integration?wsdl';
+
     // Sadece şifre veriyoruz, gerisini (_uyumsoft-client'te yazan test/prod WSDL url'i) client hallediyor
-    const client = await createUyumsoftClient(username, password);
+    const client = await createUyumsoftClient(username, password, wsdlUrl);
     
     // Kullanıcı bilgisini çekmeyi deniyoruz (Gerçek bir SOAP Auth Testi)
     const result = await callSoap(client, 'UserInfoWithNoCheck', {});
