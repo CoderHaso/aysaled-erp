@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Search, Loader2, Download, AlertCircle, FileDown, FileUp, Eye } from 'lucide-react';
+import { Search, Loader2, Download, AlertCircle, FileDown, FileUp, Eye, RefreshCw } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
+import { supabase } from '../lib/supabaseClient';
 
 export default function Invoices({ type = 'inbox' }) {
   const { effectiveMode, currentColor } = useTheme();
@@ -9,6 +10,7 @@ export default function Invoices({ type = 'inbox' }) {
   
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
 
@@ -23,49 +25,45 @@ export default function Invoices({ type = 'inbox' }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/get-invoices', {
+      const { data, error: dbErr } = await supabase
+        .from('invoices')
+        .select('*')
+        .eq('type', type)
+        .order('issue_date', { ascending: false })
+        .limit(200);
+
+      if (dbErr) throw dbErr;
+      setInvoices(data || []);
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'Veritabanından faturalar alınamadı.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const syncInvoices = async () => {
+    setSyncing(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/sync-invoices', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, pageSize: 50 }) // 50 items default
+        body: JSON.stringify({ type })
       });
       const data = await res.json();
       
       if (!res.ok || !data.success) {
-        throw new Error(data.error || data.detail || 'Faturalar yüklenemedi.');
+        throw new Error(data.error || data.detail || 'Senkronizasyon başarısız.');
       }
 
-      // Uyumsoft SOAP yanıtından faturayı ayıklama (Değişken yapıya uyum)
-      let list = [];
-      const resultData = type === 'outbox' 
-        ? data.data?.GetOutboxInvoiceListResult 
-        : data.data?.GetInboxInvoiceListResult;
-        
-      if (resultData?.Value) {
-        const valueObj = resultData.Value;
-        // InboxInvoice veya OutboxInvoice şeklinde gelebilir
-        const invoicesRaw = valueObj.InboxInvoice || valueObj.OutboxInvoice || valueObj.InvoiceInfo || [];
-        list = Array.isArray(invoicesRaw) ? invoicesRaw : [invoicesRaw];
-      } else {
-         // Generic fallback to find array inside result
-         const recursiveFindArray = (obj) => {
-           if (!obj) return null;
-           if (Array.isArray(obj)) return obj;
-           if (typeof obj === 'object') {
-             for (let key in obj) {
-               const res = recursiveFindArray(obj[key]);
-               if (res) return res;
-             }
-           }
-           return null;
-         };
-         list = recursiveFindArray(resultData) || [];
-      }
-      setInvoices(list);
+      alert(data.message);
+      await fetchInvoices(); // Refresh from DB
     } catch (err) {
       console.error(err);
       setError(err.message);
     } finally {
-      setLoading(false);
+      setSyncing(false);
     }
   };
 
@@ -80,9 +78,10 @@ export default function Invoices({ type = 'inbox' }) {
 
   const filtered = invoices.filter(inv => {
     const term = search.toLowerCase();
-    const id = (inv.InvoiceId || inv.InvoiceNumber || '').toLowerCase();
-    const sender = (inv.SenderName || inv.TargetName || inv.CustomerName || '').toLowerCase();
-    return id.includes(term) || sender.includes(term);
+    const id = (inv.invoice_id || '').toLowerCase();
+    const sender = (inv.cari_name || '').toLowerCase();
+    const vkn = (inv.vkntckn || '').toLowerCase();
+    return id.includes(term) || sender.includes(term) || vkn.includes(term);
   });
 
   return (
@@ -115,9 +114,9 @@ export default function Invoices({ type = 'inbox' }) {
               style={{ background: c.card, borderColor: c.border, color: c.text }}
             />
           </div>
-          <button onClick={fetchInvoices} className="btn-primary flex items-center gap-2" style={{ background: currentColor }}>
-            {loading ? <Loader2 size={16} className="animate-spin" /> : <Icon size={16} />}
-            Yenile
+          <button onClick={syncInvoices} disabled={syncing} className="btn-primary flex items-center gap-2" style={{ background: currentColor }}>
+            {syncing ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+            {syncing ? 'Eşitleniyor...' : 'Senkronize Et'}
           </button>
         </div>
       </div>
@@ -161,12 +160,12 @@ export default function Invoices({ type = 'inbox' }) {
                 </tr>
               ) : (
                 filtered.map((inv, idx) => {
-                  const date = inv.IssueDate || inv.CreateDate || inv.Date || '';
-                  const invoiceId = inv.InvoiceId || inv.InvoiceNumber || inv.Number || '-';
-                  const cariName = inv.SenderName || inv.TargetName || inv.CustomerName || '-';
-                  const vkn = inv.SenderVknTckn || inv.TargetVknTckn || inv.VknTckn || '-';
-                  const amount = inv.PayableAmount || inv.TotalAmount || inv.Amount || 0;
-                  const currency = inv.CurrencyCode || 'TRY';
+                  const date = inv.issue_date || '';
+                  const invoiceId = inv.invoice_id || '-';
+                  const cariName = inv.cari_name || '-';
+                  const vkn = inv.vkntckn || '-';
+                  const amount = inv.amount || 0;
+                  const currency = inv.currency || 'TRY';
 
                   return (
                     <motion.tr 
