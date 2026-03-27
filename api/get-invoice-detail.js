@@ -66,17 +66,31 @@ function parseLine(line) {
     note = val(noteNode?.Note ?? noteNode) || '';
   }
 
+  // İskonto — InvoiceLine içindeki AllowanceCharge (ChargeIndicator=false → iskonto)
+  const ac = (() => {
+    const raw = line.AllowanceCharge || line['AllowanceCharge[]'];
+    const list = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+    return list.find(a => {
+      const ci = val(a?.ChargeIndicator ?? a?.['cbc:ChargeIndicator']);
+      return ci === 'false' || ci === false;
+    }) || null;
+  })();
+  const discountRate   = ac ? numVal(ac.MultiplierFactorNumeric ?? ac['cbc:MultiplierFactorNumeric']) : null;
+  const discountAmount = ac ? numVal(ac.Amount ?? ac['cbc:Amount']) : null;
+
   return {
-    id:          val(line.ID) || null,
+    id:              val(line.ID) || null,
     name,
-    item_code:   itemCode,
-    quantity:    qty || null,
+    item_code:       itemCode,
+    quantity:        qty || null,
     unit,
-    unit_price:  unitPrice || null,
-    line_total:  lineTotal || null,
-    tax_percent: taxPercent,
-    tax_amount:  taxAmount || null,
-    note:        note || null,
+    unit_price:      unitPrice || null,
+    line_total:      lineTotal || null,
+    tax_percent:     taxPercent,
+    tax_amount:      taxAmount || null,
+    discount_rate:   discountRate,
+    discount_amount: discountAmount,
+    note:            note || null,
   };
 }
 
