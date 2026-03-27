@@ -1,9 +1,30 @@
 import { createClient } from '@supabase/supabase-js';
 import { createUyumsoftClient, callSoap } from './_uyumsoft-client.js';
+import fs from 'fs';
+import path from 'path';
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
+let envLocal = {};
+try {
+  const envPath = path.resolve(process.cwd(), '.env.local');
+  if (fs.existsSync(envPath)) {
+    const content = fs.readFileSync(envPath, 'utf8');
+    content.split('\n').forEach(line => {
+      const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+      if (match) {
+        let val = match[2] || '';
+        val = val.replace(/^['"]|['"]$/g, '');
+        envLocal[match[1]] = val;
+      }
+    });
+  }
+} catch (e) {
+  // Yoksay
+}
+const getEnv = (k) => process.env[k] || process.env[`VITE_${k}`] || envLocal[k] || envLocal[`VITE_${k}`];
+
+const supabaseUrl = getEnv('SUPABASE_URL');
+const supabaseKey = getEnv('SUPABASE_ANON_KEY') || getEnv('SUPABASE_SERVICE_ROLE_KEY');
+const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseKey || 'placeholder');
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
