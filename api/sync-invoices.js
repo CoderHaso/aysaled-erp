@@ -22,9 +22,16 @@ try {
 }
 const getEnv = (k) => process.env[k] || process.env[`VITE_${k}`] || envLocal[k] || envLocal[`VITE_${k}`];
 
+// .env.local dosyasında VITE_ prefix'li belirtilmiş olabilir
 const supabaseUrl = getEnv('SUPABASE_URL');
 const supabaseKey = getEnv('SUPABASE_ANON_KEY') || getEnv('SUPABASE_SERVICE_ROLE_KEY');
-const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseKey || 'placeholder');
+
+console.log('[sync-invoices] Supabase URL:', supabaseUrl ? 'Bulundu' : 'BULUNAMADI!');
+
+const supabase = createClient(
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseKey || 'placeholder'
+);
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -55,12 +62,13 @@ export default async function handler(req, res) {
     }
 
     // 2) Uyumsoft'a istek at
+    // NOT: WSDL'e göre PageIndex ve PageSize XML attribute olarak gönderilmeli
     const args = {
       query: {
-        attributes: { PageIndex: 0, PageSize: 200 }, // Maksimum 200 sayfa varsaydık (pagination eklenebilir)
+        attributes: { PageIndex: 0, PageSize: 200 },
         CreateStartDate: startDateStr,
         CreateEndDate: new Date().toISOString().split('.')[0],
-        Status: 'Approved',
+        // Status filtresi kaldırıldı - tüm durumları çek
         IsArchived: false,
       },
     };
@@ -77,23 +85,16 @@ export default async function handler(req, res) {
     let list = [];
     if (resultData?.Value) {
       const valueObj = resultData.Value;
-      // WSDL'e göre Value.Items veya Value.Items.Item formatında geliyor
-      const invoicesRaw = valueObj.Items?.Item || valueObj.Items || valueObj.InboxInvoice || valueObj.OutboxInvoice || [];
-      list = Array.isArray(invoicesRaw) ? invoicesRaw : [invoicesRaw];
-    } else {
-       const recursiveFindArray = (obj) => {
-         if (!obj) return null;
-         if (Array.isArray(obj)) return obj;
-         if (typeof obj === 'object') {
-           for (let key in obj) {
-             const res = recursiveFindArray(obj[key]);
-             if (res) return res;
-           }
-         }
-         return null;
-       };
-       list = recursiveFindArray(resultData) || [];
+      // WSDL'e göre: Value altında Items[] dönüyor, soap.js bunu array olarak ya da tek object olarak verebilir
+      const raw = valueObj.Items;
+      if (Array.isArray(raw)) {
+        list = raw;
+      } else if (raw && typeof raw === 'object') {
+        list = [raw]; // Tek eleman döndüğünde wrap et
+      }
     }
+    
+    console.log(`[sync-invoices] ${type} - ${list.length} fatura Uyumsoft'tan alındı.`);
 
     // Eğer boşsa direkt dön
     if (list.length === 0) {
@@ -130,13 +131,15 @@ export default async function handler(req, res) {
 
     const { error: upsertErr } = await supabase
       .from('invoices')
-      .upsert(upsertPayload, { onConflict: 'invoice_id, type' });
+      .upsert(upsertPayload, { onConflict: 'invoice_id,type' }); // NOT: bosşluk OLMAMALI
 
     if (upsertErr) {
-      throw new Error('Supabase kayıt hatası: ' + upsertErr.message);
+      console.error('[sync-invoices] Supabase upsert hatası:', JSON.stringify(upsertErr));
+      throw new Error('Supabase kayıt hatası: ' + upsertErr.message + ' | Code: ' + upsertErr.code);
     }
 
-    res.json({ success: true, message: `${upsertPayload.length} fatura başarıyla sekronize edildi.`, inserted: upsertPayload.length });
+    console.log(`[sync-invoices] ${upsertPayload.length} fatura Supabase'e yazıldı.`);
+    res.json({ success: true, message: `${upsertPayload.length} fatura başarıyla senkronize edildi.`, inserted: upsertPayload.length });
 
   } catch (err) {
     console.error('[sync-invoices]', err.message);
