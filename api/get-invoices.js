@@ -8,7 +8,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { pageIndex = 0, pageSize = 20, startDate, endDate, status = 'Approved' } = req.body || {};
+    const { pageIndex = 0, pageSize = 20, startDate, endDate, status = 'Approved', type = 'inbox' } = req.body || {};
 
     const args = {
       query: {
@@ -21,7 +21,8 @@ export default async function handler(req, res) {
     };
 
     const client = await createUyumsoftClient();
-    const result = await callSoap(client, 'GetInboxInvoiceList', args);
+    const methodName = type === 'outbox' ? 'GetOutboxInvoiceList' : 'GetInboxInvoiceList';
+    const result = await callSoap(client, methodName, args);
     res.json({ success: true, data: result });
   } catch (err) {
     console.error('[get-invoices]', err.message);

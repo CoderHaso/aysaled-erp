@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  LayoutDashboard, Package, Users, FileText,
+  LayoutDashboard, Package, Users, FileDown, FileUp,
   ShoppingCart, TrendingUp, Settings, Palette, Building2
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
@@ -10,9 +10,10 @@ import ThemeSettings from './ThemeSettings';
 const MENU = [
   { name: 'Dashboard',    icon: LayoutDashboard, id: 'dashboard' },
   { name: 'Stok',         icon: Package,         id: 'stock'     },
-  { name: 'Tedarikçiler', icon: Building2,        id: 'suppliers' },
+  { name: 'Tedarikçiler', icon: Building2,       id: 'suppliers' },
   { name: 'Cariler',      icon: Users,           id: 'contacts'  },
-  { name: 'Faturalar',    icon: FileText,        id: 'invoices'  },
+  { name: 'Gelir Fat.',   icon: FileDown,        id: 'incoming-invoices' },
+  { name: 'Gider Fat.',   icon: FileUp,          id: 'outgoing-invoices' },
   { name: 'Satış',        icon: ShoppingCart,    id: 'sales'     },
   { name: 'Raporlar',     icon: TrendingUp,      id: 'reports'   },
 ];

@@ -8,13 +8,15 @@ import Stock      from './pages/Stock';
 import Suppliers  from './pages/Suppliers';
 import Settings   from './pages/Settings';
 import QRDetail from './pages/QRDetail';
+import Invoices   from './pages/Invoices';
 
 const PAGES = {
   '/':           { title: 'Dashboard',     sub: 'Genel Bakış' },
   '/stock':      { title: 'Stok Merkezi',  sub: 'Hammadde & Mamül' },
   '/suppliers':  { title: 'Tedarikçiler',  sub: 'Tedarikçi Yönetimi' },
   '/contacts':   { title: 'Cari Takip',    sub: 'Müşteri & Tedarikçi' },
-  '/invoices':   { title: 'Faturalar',     sub: 'Gelen & Giden' },
+  '/incoming-invoices': { title: 'Gelir Faturaları', sub: 'Uyumsoft Gelen Faturalar' },
+  '/outgoing-invoices': { title: 'Gider Faturaları', sub: 'Uyumsoft Giden Faturalar' },
   '/sales':      { title: 'Satış',         sub: 'Sipariş & Satış' },
   '/reports':    { title: 'Raporlar',      sub: 'Finans & Analiz' },
   '/settings':   { title: 'Ayarlar',       sub: 'Sistem Yapılandırması' },
@@ -25,7 +27,8 @@ const ROUTE_TO_ID = {
   '/stock':     'stock',
   '/suppliers': 'suppliers',
   '/contacts':  'contacts',
-  '/invoices':  'invoices',
+  '/incoming-invoices': 'incoming-invoices',
+  '/outgoing-invoices': 'outgoing-invoices',
   '/sales':     'sales',
   '/reports':   'reports',
   '/settings':  'settings',
@@ -56,7 +59,10 @@ function AppShell() {
   const handleNavigate = (id) => {
     const routes = {
       dashboard: '/', stock: '/stock', suppliers: '/suppliers',
-      contacts: '/contacts', invoices: '/invoices', sales: '/sales', reports: '/reports', settings: '/settings',
+      contacts: '/contacts', 
+      'incoming-invoices': '/incoming-invoices', 
+      'outgoing-invoices': '/outgoing-invoices', 
+      sales: '/sales', reports: '/reports', settings: '/settings',
     };
     navigate(routes[id] || '/');
     // Mobilde gezindikten sonra sidebar kapat
@@ -141,7 +147,8 @@ function AppShell() {
             <Route path="/suppliers"  element={<Suppliers />} />
             <Route path="/settings"   element={<Settings />} />
             <Route path="/contacts"   element={<ComingSoon title="Cari Takip" icon="👥" />} />
-            <Route path="/invoices"   element={<ComingSoon title="Faturalar"  icon="🧾" />} />
+            <Route path="/incoming-invoices" element={<Invoices type="inbox" />} />
+            <Route path="/outgoing-invoices" element={<Invoices type="outbox" />} />
             <Route path="/sales"      element={<ComingSoon title="Satış"      icon="🛒" />} />
             <Route path="/reports"    element={<ComingSoon title="Raporlar"   icon="📊" />} />
           </Routes>
