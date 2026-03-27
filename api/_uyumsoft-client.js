@@ -3,34 +3,13 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const soap = require('soap');
-const fs = require('fs');
-const path = require('path');
 
-// Vite development modunda process.env bazen yüklenmeyebiliyor. Bu nedenle el ile okuyoruz:
-let envLocal = {};
-try {
-  const envPath = path.resolve(process.cwd(), '.env.local');
-  if (fs.existsSync(envPath)) {
-    const content = fs.readFileSync(envPath, 'utf8');
-    content.split('\n').forEach(line => {
-      const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
-      if (match) {
-        let key = match[1];
-        let val = match[2] || '';
-        val = val.replace(/^['"]|['"]$/g, '');
-        envLocal[key] = val;
-      }
-    });
-  }
-} catch (e) {
-  // Yoksay
-}
+// Vercel'de VITE_ prefix'siz key'ler serverless function'lara iletilir
+const WSDL_URL = process.env.UYUMSOFT_WSDL || 'https://edonusumapi.uyum.com.tr/Services/Integration?wsdl';
+const USERNAME = process.env.UYUMSOFT_USERNAME || process.env.VITE_UYUMSOFT_USERNAME || 'Uyumsoft';
+const PASSWORD = process.env.UYUMSOFT_PASSWORD || process.env.VITE_UYUMSOFT_PASSWORD || 'Uyumsoft';
 
-const getEnv = (key) => process.env[key] || process.env[`VITE_${key}`] || envLocal[key] || envLocal[`VITE_${key}`];
-
-const WSDL_URL = getEnv('UYUMSOFT_WSDL') || 'https://edonusumapi.uyum.com.tr/Services/Integration?wsdl';
-const USERNAME = getEnv('UYUMSOFT_USERNAME') || 'Uyumsoft';
-const PASSWORD = getEnv('UYUMSOFT_PASSWORD') || 'Uyumsoft';
+if (!process.env.UYUMSOFT_USERNAME) console.warn('[uyumsoft-client] UYUMSOFT_USERNAME env bulunamadi, varsayilan kullaniliyor!');
 
 /**
  * Uyumsoft SOAP client oluşturur ve WSSecurity uygular.

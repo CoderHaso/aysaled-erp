@@ -1,28 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 import { createUyumsoftClient, callSoap } from './_uyumsoft-client.js';
-import fs from 'fs';
-import path from 'path';
 
-let envLocal = {};
-try {
-  const envPath = path.resolve(process.cwd(), '.env.local');
-  if (fs.existsSync(envPath)) {
-    const content = fs.readFileSync(envPath, 'utf8');
-    content.split('\n').forEach(line => {
-      const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?$/);
-      if (match) {
-        let val = (match[2] || '').trim().replace(/^['"]|['"]$/g, '');
-        envLocal[match[1]] = val;
-      }
-    });
-  }
-} catch (e) { /* yoksay */ }
+// Vercel'de process.env doğrudan çalışır; VITE_ prefiksi olmayan değişkenler API'ye iletilir
+// Geçerli key'ler: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 
-const getEnv = (k) => process.env[k] || process.env[`VITE_${k}`] || envLocal[k] || envLocal[`VITE_${k}`];
-
-const supabaseUrl = getEnv('SUPABASE_URL');
-const supabaseKey = getEnv('SUPABASE_ANON_KEY') || getEnv('SUPABASE_SERVICE_ROLE_KEY');
-console.log('[sync-invoices] Supabase URL:', supabaseUrl ? 'Bulundu' : 'BULUNAMADI!');
+if (!supabaseUrl) console.error('[sync-invoices] KRITIK: SUPABASE_URL env degiskeni bulunamadi!');
+if (!supabaseKey) console.error('[sync-invoices] KRITIK: SUPABASE_ANON_KEY env degiskeni bulunamadi!');
 const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co',
   supabaseKey || 'placeholder'
