@@ -76,8 +76,12 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { invoiceId, type = 'inbox' } = req.body || {};
+  const { invoiceId, documentId, type = 'inbox' } = req.body || {};
   if (!invoiceId) return res.status(400).json({ error: 'invoiceId gerekli' });
+
+  // Uyumsoft GetInboxInvoice/GetOutboxInvoice metodları için iç DocumentId kullanılır
+  // (BLD2026... gibi fatura numaraları değil, Uyumsoft'un kendi UUID'si)
+  const uyumsoftId = documentId || invoiceId;
 
   try {
     // 1) Supabase'de zaten line_items var mı kontrol et
@@ -93,11 +97,11 @@ export default async function handler(req, res) {
       return res.json({ success: true, source: 'cache', line_items: cached.line_items, raw_detail: cached.raw_detail });
     }
 
-    // 2) Uyumsoft'tan çek
-    console.log(`[get-invoice-detail] ${invoiceId} - Uyumsoft'tan çekiliyor... (type: ${type})`);
+    // 2) Uyumsoft'tan çek - DocumentId kullan (fatura numarası değil)
+    console.log(`[get-invoice-detail] ${invoiceId} - Uyumsoft'tan çekiliyor. UyumsoftId: ${uyumsoftId} (type: ${type})`);
     const client = await createUyumsoftClient();
     const method = type === 'outbox' ? 'GetOutboxInvoice' : 'GetInboxInvoice';
-    const result = await callSoap(client, method, { invoiceId });
+    const result = await callSoap(client, method, { invoiceId: uyumsoftId });
 
     // Yanıt yapısını tamamen logla (ilk seviye)
     console.log('[get-invoice-detail] Result keys:', Object.keys(result || {}));

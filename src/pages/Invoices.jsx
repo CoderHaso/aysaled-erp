@@ -156,7 +156,11 @@ function InvoiceDetailDrawer({ invoice, isInbox, onClose }) {
     fetch('/api/get-invoice-detail', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ invoiceId: invoice.invoice_id, type: invoice.type })
+      body: JSON.stringify({
+        invoiceId:  invoice.invoice_id,
+        documentId: invoice.document_id,  // Uyumsoft iç ID (UUID)
+        type:       invoice.type
+      })
     })
       .then(r => r.json())
       .then(data => {
