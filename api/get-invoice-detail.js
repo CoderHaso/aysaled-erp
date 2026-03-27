@@ -17,56 +17,66 @@ function normalizeLines(lines) {
 }
 
 /**
- * UBL InvoiceLine nesnesinden temiz bir satır objesi çıkarır.
+ * Bir soap-js node'undan düz değeri alır.
+ * Olası formatlar: '5', 5, { _: '5', attributes: {...} }, { $value: '5', ... }
  */
+function val(node) {
+  if (node === null || node === undefined) return null;
+  if (typeof node === 'number') return node;
+  if (typeof node === 'string') return node;
+  if (node._ !== undefined) return node._;
+  if (node.$value !== undefined) return node.$value;
+  return null;
+}
+function numVal(node) {
+  const v = val(node);
+  if (v === null || v === '') return 0;
+  const n = parseFloat(String(v).replace(',', '.'));
+  return isNaN(n) ? 0 : n;
+}
+
 function parseLine(line) {
-  // Item bilgisi
-  const item = line.Item || {};
-  const name = item.Name || item.Description || '-';
-  const itemCode = item.SellersItemIdentification?.ID?._
-    || item.SellersItemIdentification?.ID
-    || item.BuyersItemIdentification?.ID?._ 
-    || item.BuyersItemIdentification?.ID
-    || null;
+  const item    = line.Item || {};
+  const rawName = item.Name || item.Description;
+  const name    = val(rawName) || '-';
 
-  // Miktar ve birim
-  const qty = parseFloat(line.InvoicedQuantity?._ || line.InvoicedQuantity || 0);
-  const unit = line.InvoicedQuantity?.attributes?.unitCode || line.InvoicedQuantity?.unitCode || '';
+  const sellerId = item.SellersItemIdentification?.ID;
+  const buyerId  = item.BuyersItemIdentification?.ID;
+  const itemCode = val(sellerId) || val(buyerId) || null;
 
-  // Fiyat
-  const unitPrice = parseFloat(
-    line.Price?.PriceAmount?._ || line.Price?.PriceAmount || 0
-  );
+  // InvoicedQuantity: taşır değeri (qty) + unitCode (attribute)
+  const iqNode = line.InvoicedQuantity;
+  const qty    = numVal(iqNode);
+  const unit   = iqNode?.attributes?.unitCode || iqNode?.unitCode || '';
 
-  // Satır tutarı (KDV hariç)
-  const lineTotal = parseFloat(
-    line.LineExtensionAmount?._ || line.LineExtensionAmount || 0
-  );
+  const unitPrice = numVal(line.Price?.PriceAmount);
+  const lineTotal = numVal(line.LineExtensionAmount);
 
-  // KDV
-  const taxAmount = parseFloat(
-    line.TaxTotal?.TaxAmount?._ || line.TaxTotal?.TaxAmount || 0
-  );
-  const taxPercent = parseFloat(
-    line.TaxTotal?.TaxSubtotal?.TaxCategory?.Percent || 0
-  );
+  const taxTotal   = line.TaxTotal;
+  const taxAmount  = numVal(taxTotal?.TaxAmount);
+  const subtotals  = taxTotal?.TaxSubtotal;
+  const subtotal   = Array.isArray(subtotals) ? subtotals[0] : subtotals;
+  const taxPercent = numVal(subtotal?.TaxCategory?.Percent);
 
-  // Açıklama notu
-  const note = Array.isArray(line['Note[]'])
-    ? line['Note[]'].map(n => n.Note || n).join(' ')
-    : (line['Note[]']?.Note || '');
+  const noteNode = line['Note[]'] || line.Note;
+  let note = '';
+  if (Array.isArray(noteNode)) {
+    note = noteNode.map(n => val(n?.Note ?? n) || '').filter(Boolean).join(' ');
+  } else if (noteNode) {
+    note = val(noteNode?.Note ?? noteNode) || '';
+  }
 
   return {
-    id: line.ID?._ || line.ID || null,
+    id:          val(line.ID) || null,
     name,
-    item_code: itemCode,
-    quantity: qty,
+    item_code:   itemCode,
+    quantity:    qty || null,
     unit,
-    unit_price: unitPrice,
-    line_total: lineTotal,
+    unit_price:  unitPrice || null,
+    line_total:  lineTotal || null,
     tax_percent: taxPercent,
-    tax_amount: taxAmount,
-    note: note || null,
+    tax_amount:  taxAmount || null,
+    note:        note || null,
   };
 }
 
