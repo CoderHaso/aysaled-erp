@@ -324,22 +324,13 @@ export default function Customers() {
   const syncFromInvoices = async () => {
     setSyncingInv(true);
     try {
-      // Inbox faturalardan VKN'si olmayanları bul ve customer upsert et
       const { data: invs } = await supabase
-        .from('invoices')
-        .select('cari_name, vkntckn')
-        .eq('type', 'inbox')
-        .not('vkntckn', 'is', null);
-
+        .from('invoices').select('cari_name, vkntckn').eq('type', 'outbox').not('vkntckn', 'is', null);
       const uniq = {};
       (invs || []).forEach(r => { if (r.vkntckn) uniq[r.vkntckn] = r.cari_name; });
-
-      const rows = Object.entries(uniq).map(([vkntckn, name]) => ({
-        name, vkntckn, source: 'invoice_sync'
-      }));
-
+      const rows = Object.entries(uniq).map(([vkntckn, name]) => ({ name, vkntckn, source: 'invoice_sync' }));
       if (rows.length > 0) {
-        await supabase.from('customers').upsert(rows, { onConflict: 'vkntckn', ignoreDuplicates: false });
+        await supabase.from('customers').upsert(rows, { onConflict: 'vkntckn', ignoreDuplicates: true });
       }
       await loadCustomers();
       showToast(`${rows.length} cari senkronize edildi ✓`);
@@ -348,11 +339,12 @@ export default function Customers() {
     } finally { setSyncingInv(false); }
   };
 
-  // Uyumsoft’tan tam UBL çekerek adres/telefon/e-posta zenginleştir (auto-batch)
+  // Uyumsoft'tan tam UBL çekerek MEVCUT carilerin boş alanlarını doldur
+  // ÖNEMLİ: Yeni cari oluşturmaz, sadece mevcut VKN'leri günceller
   const enrichContacts = async () => {
     setEnriching(true);
     const totals = { processed: 0, enriched: 0, errors: [], skipped: 0 };
-    setEnrichLog({ ...totals, running: true });
+    setEnrichLog({ ...totals, running: true, remaining: '?' });
 
     try {
       let keepGoing = true;
@@ -360,7 +352,7 @@ export default function Customers() {
         const r = await fetch('/api/enrich-contacts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'inbox', limit: 10, onlyMissing: true }),
+          body: JSON.stringify({ type: 'customers', limit: 10 }),
         });
         const data = await r.json();
         const res  = data.results || {};
@@ -370,10 +362,9 @@ export default function Customers() {
         totals.skipped   += res.skipped   || 0;
         totals.errors     = [...totals.errors, ...(res.errors || [])];
 
-        setEnrichLog({ ...totals, running: true });
+        setEnrichLog({ ...totals, running: true, remaining: data.remaining ?? '?' });
 
-        // İşlenecek bir şey kalmadıysa dur
-        if (!data.success || (res.processed || 0) === 0) keepGoing = false;
+        if (!data.success || data.remaining === 0 || (res.processed || 0) === 0) keepGoing = false;
       }
     } catch (e) {
       totals.errors.push(e.message);
@@ -381,9 +372,10 @@ export default function Customers() {
       setEnriching(false);
       setEnrichLog(prev => ({ ...prev, running: false }));
       await loadCustomers();
-      showToast(`${totals.enriched} cari zenginleştirildi ✓ (${totals.processed} işlendi)`);
+      showToast(`${totals.enriched} cari zenginleştirildi ✓`);
     }
   };
+
 
   const deleteCustomer = async (id, name) => {
     if (!window.confirm(`"${name}" silinsin mi?`)) return;
@@ -449,7 +441,9 @@ export default function Customers() {
               <div className="flex items-center gap-2">
                 {enrichLog.running && <Loader2 size={12} className="animate-spin text-emerald-400" />}
                 <p className="font-bold text-emerald-400">
-                  {enrichLog.running ? `Zenginleştiriliyor... (${enrichLog.processed} işlendi)` : 'Zenginleştirme Tamamlandı'}
+                  {enrichLog.running
+                    ? `Çalışıyor... (kalan: ${enrichLog.remaining ?? '?'})`
+                    : 'Zenginleştirme Tamamlandı'}
                 </p>
               </div>
               {!enrichLog.running && (

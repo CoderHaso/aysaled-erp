@@ -345,7 +345,7 @@ export default function Suppliers() {
         const r = await fetch('/api/enrich-contacts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'outbox', limit: 10, onlyMissing: true }),
+          body: JSON.stringify({ type: 'suppliers', limit: 10 }),
         });
         const data = await r.json();
         const res  = data.results || {};
@@ -355,9 +355,9 @@ export default function Suppliers() {
         totals.skipped   += res.skipped   || 0;
         totals.errors     = [...totals.errors, ...(res.errors || [])];
 
-        setEnrichLog({ ...totals, running: true });
+        setEnrichLog({ ...totals, running: true, remaining: data.remaining ?? '?' });
 
-        if (!data.success || (res.processed || 0) === 0) keepGoing = false;
+        if (!data.success || data.remaining === 0 || (res.processed || 0) === 0) keepGoing = false;
       }
     } catch (e) {
       totals.errors.push(e.message);
@@ -433,7 +433,9 @@ export default function Suppliers() {
               <div className="flex items-center gap-2">
                 {enrichLog.running && <Loader2 size={12} className="animate-spin text-emerald-400" />}
                 <p className="font-bold text-emerald-400">
-                  {enrichLog.running ? `Zenginleştiriliyor... (${enrichLog.processed} işlendi)` : 'Zenginleştirme Tamamlandı'}
+                  {enrichLog.running
+                    ? `Çalışıyor... (kalan: ${enrichLog.remaining ?? '?'})`
+                    : 'Zenginleştirme Tamamlandı'}
                 </p>
               </div>
               {!enrichLog.running && (
