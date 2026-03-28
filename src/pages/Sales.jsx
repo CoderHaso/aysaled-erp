@@ -5,9 +5,11 @@ import {
   ShoppingCart, Clock, History, Zap, Trash2, Package, Edit3,
   FileText, User, Calendar, CreditCard, MapPin, StickyNote,
   ChevronRight, CheckCircle2, XCircle, RefreshCw, TrendingUp,
+  Receipt, ScanEye,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
+import InvoicePreviewModal from '../components/InvoicePreviewModal';
 
 // ─── Sabitler & Yardımcılar ───────────────────────────────────────────────────
 const STATUS = {
@@ -223,6 +225,10 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
   const [saving, setSaving] = useState(false);
   const [custOpen, setCustOpen] = useState(false);
   const [custQ, setCustQ]       = useState('');
+  // Fatura toggle
+  const [invoiceToggle, setInvoiceToggle] = useState(false);
+  const [draftLoading,  setDraftLoading]  = useState(false);
+  const [draftPreviewUrl, setDraftPreviewUrl] = useState(null);  // string URL veya null
 
   // Müşteri seçince otomatik sipariş no üret
   const selectCustomer = async (cust) => {
@@ -287,10 +293,45 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
     finally { setSaving(false); }
   };
 
+  // Taslak fatura önizle
+  const handleDraftPreview = async () => {
+    setDraftLoading(true);
+    setDraftPreviewUrl(null);
+    try {
+      const r = await fetch('/api/draft-invoice-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerName:    form.customer_name,
+          customerVkntckn: form.customer_vkntckn || '',
+          currency:        form.currency,
+          invoiceDate:     new Date().toISOString().slice(0, 10),
+          notes:           form.notes,
+          lines: lines.filter(l => l.item_name).map(l => ({
+            name:      l.item_name,
+            quantity:  l.quantity,
+            unit:      l.unit,
+            unitPrice: l.unit_price,
+            taxRate:   l.tax_rate,
+          })),
+        }),
+      });
+      const data = await r.json();
+      if (data.success && data.previewUrl) {
+        setDraftPreviewUrl(data.previewUrl);
+      } else {
+        alert(data.error || 'Önizleme alınamadı');
+      }
+    } catch (e) { alert(e.message); }
+    finally { setDraftLoading(false); }
+  };
+
   return (
+    <>
     <motion.div className="fixed inset-0 z-50 overflow-y-auto"
       style={{ background: '#06101e' }}
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+
 
       {/* Header */}
       <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-4"
@@ -466,6 +507,52 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
           </div>
         </SectionCard>
 
+        {/* Fatura Toggle */}
+        <SectionCard title="Resmi Fatura" icon={Receipt}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-200">Resmi Fatura Kesilecek</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Kapalıysa sadece iç sipariş kaydı. Açıksa Uyumsoft'a taslak gönderilebilir.
+              </p>
+            </div>
+            {/* Toggle Switch */}
+            <button onClick={() => { setInvoiceToggle(v => !v); setDraftPreviewUrl(null); }}
+              className="relative w-12 h-6 rounded-full transition-all flex-shrink-0"
+              style={{ background: invoiceToggle ? '#10b981' : 'rgba(148,163,184,0.2)' }}>
+              <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-all"
+                style={{ left: invoiceToggle ? '1.625rem' : '0.125rem' }} />
+            </button>
+          </div>
+
+          <AnimatePresence>
+            {invoiceToggle && (
+              <motion.div initial={{ opacity:0, height:0 }} animate={{ opacity:1, height:'auto' }} exit={{ opacity:0, height:0 }}
+                className="overflow-hidden">
+                <div className="pt-4 flex flex-col gap-3">
+                  <p className="text-xs text-slate-400">
+                    ✅ Sipariş kaydedilmeden önce Uyumsoft'ta taslak fatura oluşturulup HTML önizlemesi gösterilir.
+                    Onayladıktan sonra gerçek faturayı kesmek için Uyumsoft portalını kullanın.
+                  </p>
+                  <button onClick={handleDraftPreview}
+                    disabled={draftLoading || !form.customer_name || lines.filter(l=>l.item_name).length === 0}
+                    className="flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold transition-all"
+                    style={{
+                      background: 'rgba(139,92,246,0.12)',
+                      color: '#a78bfa',
+                      border: '1px solid rgba(139,92,246,0.25)',
+                      opacity: draftLoading || !form.customer_name ? 0.5 : 1,
+                    }}>
+                    {draftLoading
+                      ? <><Loader2 size={15} className="animate-spin" />Taslak oluşturuluyor...</>
+                      : <><ScanEye size={15} />Fatura Önizle (Uyumsoft Taslak)</>}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </SectionCard>
+
         {/* Kaydet */}
         <div className="flex gap-3 pb-8">
           <button onClick={onClose}
@@ -482,8 +569,19 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
         </div>
       </div>
     </motion.div>
+
+    {/* Taslak fatura önizleme modal */}
+    {draftPreviewUrl && (
+      <InvoicePreviewModal
+        invoiceId="TASLAK"
+        previewUrl={draftPreviewUrl}
+        onClose={() => setDraftPreviewUrl(null)}
+      />
+    )}
+  </>
   );
 }
+
 
 function SectionCard({ title, icon: Icon, children }) {
   return (

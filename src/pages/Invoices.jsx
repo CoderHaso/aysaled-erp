@@ -2,10 +2,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Loader2, AlertCircle, FileDown, FileUp, Eye, RefreshCw,
-  X, Building2, Tag, Package, BarChart2, CheckCircle2, Receipt, Info
+  X, Building2, Tag, Package, BarChart2, CheckCircle2, Receipt, Info, ScanEye
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
+import InvoicePreviewModal from '../components/InvoicePreviewModal';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const STATUS_MAP = {
@@ -340,6 +341,7 @@ export default function Invoices({ type = 'inbox' }) {
   const [error, setError]         = useState(null);
   const [search, setSearch]       = useState('');
   const [selected, setSelected]   = useState(null);
+  const [previewInv, setPreviewInv] = useState(null); // { invoiceId, documentId, type }
 
   const isInbox = type === 'inbox';
   const Icon    = isInbox ? FileDown : FileUp;
@@ -510,15 +512,27 @@ export default function Invoices({ type = 'inbox' }) {
                         <span className="text-xs font-normal ml-1" style={{ color: c.muted }}>{inv.currency}</span>
                       </td>
                       <td className="px-5 py-3.5 text-center">
-                        <button
-                          onClick={e => { e.stopPropagation(); setSelected(inv); }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all"
-                          style={{ background:`${currentColor}15`, color:currentColor }}>
-                          {hasCached
-                            ? <CheckCircle2 size={13} className="text-emerald-400" />
-                            : <Eye size={13} />}
-                          Görüntüle
-                        </button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={e => { e.stopPropagation(); setSelected(inv); }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all"
+                            style={{ background:`${currentColor}15`, color:currentColor }}
+                            title="Detayları Görüntüle">
+                            {hasCached
+                              ? <CheckCircle2 size={13} className="text-emerald-400" />
+                              : <Eye size={13} />}
+                            Detay
+                          </button>
+                          {inv.document_id && (
+                            <button
+                              onClick={e => { e.stopPropagation(); setPreviewInv({ invoiceId: inv.invoice_id, documentId: inv.document_id, type: inv.type }); }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all"
+                              style={{ background:'rgba(139,92,246,0.12)', color:'#a78bfa' }}
+                              title="Fatura Görselini Önizle">
+                              <ScanEye size={13} />Önizle
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </motion.tr>
                   );
@@ -539,6 +553,15 @@ export default function Invoices({ type = 'inbox' }) {
           />
         )}
       </AnimatePresence>
+
+      {previewInv && (
+        <InvoicePreviewModal
+          invoiceId={previewInv.invoiceId}
+          documentId={previewInv.documentId}
+          type={previewInv.type}
+          onClose={() => setPreviewInv(null)}
+        />
+      )}
     </>
   );
 }
