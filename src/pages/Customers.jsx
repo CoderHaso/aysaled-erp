@@ -343,13 +343,13 @@ export default function Customers() {
       const r = await fetch('/api/enrich-contacts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'inbox', limit: 50, onlyMissing: true }),
+        body: JSON.stringify({ type: 'inbox', limit: 10, onlyMissing: true }),
       });
       const data = await r.json();
       setEnrichLog(data.results);
       if (data.success) {
         await loadCustomers();
-        showToast(`${data.results?.enriched || 0} cari zenginleştirildi ✓`);
+        showToast(`${data.results?.enriched || 0} cari zenginleştirildi ✓ (${data.results?.processed || 0} işlendi, ${data.results?.skipped || 0} atlandı)`);
       } else {
         showToast(data.error || 'Zenginleştirme hatası', 'error');
       }

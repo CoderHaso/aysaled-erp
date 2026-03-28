@@ -327,7 +327,7 @@ export default function Suppliers() {
       const r = await fetch('/api/enrich-contacts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'outbox', limit: 50, onlyMissing: true }),
+        body: JSON.stringify({ type: 'outbox', limit: 10, onlyMissing: true }),
       });
       const data = await r.json();
       setEnrichLog(data.results);

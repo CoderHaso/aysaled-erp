@@ -79,7 +79,9 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST')   return res.status(405).json({ error: 'Method not allowed' });
 
-  const { limit = 30, type = 'both', onlyMissing = true } = req.body || {};
+  const { limit = 10, type = 'both', onlyMissing = true } = req.body || {};
+
+  console.log(`[enrich-contacts] Başlıyor: type=${type}, limit=${limit}, onlyMissing=${onlyMissing}`);
 
   const results = { processed: 0, enriched: 0, errors: [], skipped: 0 };
 
