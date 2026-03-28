@@ -1,0 +1,786 @@
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Plus, Search, X, Loader2, ChevronDown, Check, AlertTriangle,
+  ShoppingCart, Clock, History, Zap, Trash2, Package, Edit3,
+  FileText, User, Calendar, CreditCard, MapPin, StickyNote,
+  ChevronRight, CheckCircle2, XCircle, RefreshCw, TrendingUp,
+} from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
+import { supabase } from '../lib/supabaseClient';
+
+// ─── Sabitler & Yardımcılar ───────────────────────────────────────────────────
+const STATUS = {
+  pending:    { label: 'Beklemede',    color: '#f59e0b', bg: 'rgba(245,158,11,0.12)'  },
+  processing: { label: 'Hazırlanıyor', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)'  },
+  completed:  { label: 'Tamamlandı',  color: '#10b981', bg: 'rgba(16,185,129,0.12)'  },
+  cancelled:  { label: 'İptal',       color: '#ef4444', bg: 'rgba(239,68,68,0.12)'   },
+};
+
+const CURRENCIES = ['TRY', 'USD', 'EUR', 'GBP'];
+const TAX_RATES  = [0, 1, 8, 10, 18, 20];
+
+const fmt   = (n, cur = 'TRY') => {
+  const sym = { TRY: '₺', USD: '$', EUR: '€', GBP: '£' }[cur] || '';
+  return `${sym}${Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+const fmtD  = (d) => d ? new Date(d).toLocaleDateString('tr-TR', { day:'2-digit', month:'short', year:'numeric' }) : '-';
+const addDays = (d, n) => { const r = new Date(d); r.setDate(r.getDate() + n); return r; };
+const isUrgent = (o) =>
+  (o.status === 'pending' || o.status === 'processing') &&
+  o.due_date &&
+  new Date(o.due_date) <= addDays(new Date(), 3);
+
+// Sipariş numarası üret: AYS-{ilk kelime}-{padded count}
+async function generateOrderNumber(customerName) {
+  const firstWord = (customerName || 'MUS')
+    .split(/\s+/)[0]
+    .replace(/[^A-Za-zİÇŞĞÜÖıçşğüö0-9]/g, '')
+    .toUpperCase()
+    .slice(0, 6);
+  const { count } = await supabase.from('orders').select('id', { count: 'exact', head: true });
+  const seq = String((count || 0) + 1).padStart(3, '0');
+  return `AYS-${firstWord}-${seq}`;
+}
+
+// ─── Status Badge ─────────────────────────────────────────────────────────────
+function StatusBadge({ status, urgent }) {
+  const s = STATUS[status] || STATUS.pending;
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold"
+        style={{ background: s.bg, color: s.color }}>
+        {s.label}
+      </span>
+      {urgent && (
+        <span className="inline-flex items-center gap-0.5 px-2 py-1 rounded-lg text-[11px] font-bold"
+          style={{ background: 'rgba(239,68,68,0.12)', color: '#ef4444' }}>
+          <Zap size={10} />ACİL
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ─── Ürün Satırı ──────────────────────────────────────────────────────────────
+function LineRow({ line, idx, allItems, currency, onChange, onRemove, c }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ]       = useState('');
+  const matches = allItems.filter(i =>
+    !q || i.name.toLowerCase().includes(q.toLowerCase()) ||
+    (i.sku||'').toLowerCase().includes(q.toLowerCase())
+  ).slice(0, 8);
+
+  const total    = (line.quantity || 0) * (line.unit_price || 0);
+  const taxAmt   = total * (line.tax_rate || 0) / 100;
+  const stockOk  = line.stock_count == null || line.quantity <= line.stock_count;
+
+  return (
+    <div className="rounded-xl p-3 space-y-2.5 relative"
+      style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${stockOk ? 'rgba(148,163,184,0.1)' : 'rgba(239,68,68,0.3)'}` }}>
+      {/* Ürün seç */}
+      <div className="relative">
+        <div onClick={() => setOpen(v => !v)}
+          className="flex items-center justify-between px-3 py-2 rounded-xl cursor-pointer"
+          style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.12)' }}>
+          <div>
+            {line.item_name
+              ? <><p className="text-sm font-semibold text-slate-100">{line.item_name}</p>
+                  <p className="text-[10px] text-slate-500">{line.item_type === 'product' ? '⚡ Mamül' : '🔩 Hammadde'}</p></>
+              : <p className="text-sm text-slate-500">Ürün / Hammadde seç...</p>
+            }
+          </div>
+          <div className="flex items-center gap-2">
+            {line.stock_count != null && (
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${stockOk ? 'text-emerald-400' : 'text-red-400'}`}
+                style={{ background: stockOk ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)' }}>
+                Stok: {line.stock_count} {line.unit}
+              </span>
+            )}
+            <ChevronDown size={14} className="text-slate-500" />
+          </div>
+        </div>
+
+        <AnimatePresence>
+          {open && (
+            <motion.div initial={{ opacity:0, y:-4 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:-4 }}
+              className="absolute z-40 w-full mt-1 rounded-xl overflow-hidden"
+              style={{ background: '#0c1a2e', border: '1px solid rgba(148,163,184,0.15)', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}>
+              <div className="p-2">
+                <input autoFocus value={q} onChange={e => setQ(e.target.value)}
+                  placeholder="Ara..." className="w-full px-3 py-1.5 rounded-lg text-sm outline-none"
+                  style={{ background: 'rgba(255,255,255,0.07)', color: '#f1f5f9' }} />
+              </div>
+              <div className="max-h-48 overflow-y-auto">
+                {matches.length === 0 && <p className="px-4 py-3 text-xs text-slate-500">Sonuç yok</p>}
+                {matches.map(item => (
+                  <div key={item.id} onClick={() => {
+                    onChange({ item_id: item.id, item_name: item.name, item_type: item.item_type,
+                      unit: item.unit, unit_price: item.purchase_price || 0, stock_count: item.stock_count || 0 });
+                    setOpen(false); setQ('');
+                  }}
+                    className="flex items-center justify-between px-4 py-2.5 cursor-pointer transition-colors"
+                    style={{ borderBottom: '1px solid rgba(148,163,184,0.06)' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                    <div>
+                      <p className="text-sm text-slate-100 font-semibold">{item.name}</p>
+                      <p className="text-[10px] text-slate-500">
+                        {item.item_type === 'product' ? '⚡' : '🔩'} {item.unit}
+                        {item.sku ? ` · ${item.sku}` : ''}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs font-bold text-slate-300">{fmt(item.purchase_price, currency)}</p>
+                      <p className="text-[10px]" style={{ color: item.stock_count > 0 ? '#10b981' : '#ef4444' }}>
+                        Stok: {item.stock_count}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Sayısal alanlar */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <Field label="Miktar" type="number" value={line.quantity}
+          onChange={v => onChange({ quantity: parseFloat(v) || 0 })} suffix={line.unit} />
+        <Field label="Birim Fiyat" type="number" value={line.unit_price}
+          onChange={v => onChange({ unit_price: parseFloat(v) || 0 })} />
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">KDV %</p>
+          <select value={line.tax_rate ?? 18}
+            onChange={e => onChange({ tax_rate: parseFloat(e.target.value) })}
+            className="w-full rounded-xl px-3 py-2 text-sm outline-none"
+            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)', color: '#f1f5f9' }}>
+            {TAX_RATES.map(r => <option key={r} value={r}>%{r}</option>)}
+          </select>
+        </div>
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Satır Toplam</p>
+          <div className="px-3 py-2 rounded-xl text-sm font-bold text-emerald-400"
+            style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.15)' }}>
+            {fmt(total + taxAmt, currency)}
+          </div>
+        </div>
+      </div>
+
+      {/* Not + sil */}
+      <div className="flex gap-2">
+        <input value={line.notes || ''} onChange={e => onChange({ notes: e.target.value })}
+          placeholder="Satır notu (opsiyonel)"
+          className="flex-1 px-3 py-1.5 rounded-xl text-xs outline-none"
+          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(148,163,184,0.1)', color: '#94a3b8' }} />
+        <button onClick={onRemove}
+          className="p-1.5 rounded-lg text-red-400 hover:bg-red-400/10 transition-colors">
+          <Trash2 size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, type = 'text', value, onChange, suffix, placeholder }) {
+  return (
+    <div>
+      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">{label}</p>
+      <div className="relative">
+        <input type={type} value={value ?? ''} onChange={e => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="w-full px-3 py-2 rounded-xl text-sm outline-none"
+          style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)', color: '#f1f5f9', paddingRight: suffix ? '2.5rem' : undefined }} />
+        {suffix && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">{suffix}</span>}
+      </div>
+    </div>
+  );
+}
+
+// ─── Sipariş Formu ────────────────────────────────────────────────────────────
+function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor }) {
+  const isEdit = !!order?.id;
+
+  const blankLine = () => ({
+    _key: Math.random(), item_id: null, item_name: '', item_type: 'product',
+    quantity: 1, unit: 'Adet', unit_price: 0, tax_rate: 18, stock_count: null, notes: '',
+  });
+
+  const [form, setForm] = useState({
+    customer_id:      order?.customer_id || '',
+    customer_name:    order?.customer_name || '',
+    customer_vkntckn: order?.customer_vkntckn || '',
+    order_number:     order?.order_number || '',
+    status:           order?.status || 'pending',
+    currency:         order?.currency || 'TRY',
+    due_date:         order?.due_date ? order.due_date.slice(0, 10) : addDays(new Date(), 7).toISOString().slice(0, 10),
+    delivery_address: order?.delivery_address || '',
+    billing_address:  order?.billing_address || '',
+    notes:            order?.notes || '',
+  });
+  const [lines, setLines]   = useState(order?.items?.length ? order.items.map(i => ({ ...i, _key: Math.random() })) : [blankLine()]);
+  const [saving, setSaving] = useState(false);
+  const [custOpen, setCustOpen] = useState(false);
+  const [custQ, setCustQ]       = useState('');
+
+  // Müşteri seçince otomatik sipariş no üret
+  const selectCustomer = async (cust) => {
+    const num = await generateOrderNumber(cust.name);
+    setForm(f => ({ ...f, customer_id: cust.id, customer_name: cust.name, customer_vkntckn: cust.vkntckn || '', order_number: isEdit ? f.order_number : num }));
+    setCustOpen(false); setCustQ('');
+  };
+
+  const filteredCusts = customers.filter(c =>
+    !custQ || c.name.toLowerCase().includes(custQ.toLowerCase()) || (c.vkntckn||'').includes(custQ)
+  ).slice(0, 8);
+
+  const updateLine = (idx, patch) =>
+    setLines(ls => ls.map((l, i) => i === idx ? { ...l, ...patch } : l));
+  const removeLine = (idx) => setLines(ls => ls.filter((_, i) => i !== idx));
+
+  // Toplamlar
+  const subtotal   = lines.reduce((s, l) => s + (l.quantity||0) * (l.unit_price||0), 0);
+  const taxTotal   = lines.reduce((s, l) => s + (l.quantity||0) * (l.unit_price||0) * (l.tax_rate||0) / 100, 0);
+  const grandTotal = subtotal + taxTotal;
+
+  // KDV dökümü
+  const vatBreak = {};
+  lines.forEach(l => {
+    const pct = l.tax_rate || 0;
+    vatBreak[pct] = (vatBreak[pct] || 0) + (l.quantity||0) * (l.unit_price||0) * pct / 100;
+  });
+
+  const handleSave = async () => {
+    if (!form.customer_name.trim() || !form.order_number.trim()) return;
+    setSaving(true);
+    try {
+      const orderData = {
+        ...form,
+        subtotal:    Math.round(subtotal   * 100) / 100,
+        tax_total:   Math.round(taxTotal   * 100) / 100,
+        grand_total: Math.round(grandTotal * 100) / 100,
+        due_date: form.due_date ? new Date(form.due_date).toISOString() : null,
+      };
+
+      let orderId;
+      if (isEdit) {
+        await supabase.from('orders').update(orderData).eq('id', order.id);
+        orderId = order.id;
+        await supabase.from('order_items').delete().eq('order_id', orderId);
+      } else {
+        const { data, error } = await supabase.from('orders').insert(orderData).select('id').single();
+        if (error) throw error;
+        orderId = data.id;
+      }
+
+      if (lines.filter(l => l.item_name).length > 0) {
+        const items = lines
+          .filter(l => l.item_name)
+          .map(({ _key, ...l }) => ({ ...l, order_id: orderId }));
+        await supabase.from('order_items').insert(items);
+      }
+
+      onSaved?.();
+      onClose();
+    } catch (e) { alert(e.message); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <motion.div className="fixed inset-0 z-50 overflow-y-auto"
+      style={{ background: '#06101e' }}
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+
+      {/* Header */}
+      <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-4"
+        style={{ background: 'rgba(6,16,30,0.97)', backdropFilter:'blur(14px)', borderBottom:'1px solid rgba(148,163,184,0.08)' }}>
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+            {isEdit ? 'Sipariş Düzenle' : 'Yeni Sipariş'}
+          </p>
+          <h2 className="text-base font-bold text-slate-100 font-mono mt-0.5">
+            {form.order_number || '—'}
+          </h2>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={onClose} className="p-2 rounded-xl text-slate-500 hover:text-white">
+            <X size={18} />
+          </button>
+        </div>
+      </div>
+
+      <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+
+        {/* Müşteri + Sipariş No */}
+        <SectionCard title="Sipariş Bilgileri" icon={FileText}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Müşteri seçici */}
+            <div className="relative">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Müşteri *</p>
+              <div onClick={() => setCustOpen(v => !v)}
+                className="flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)' }}>
+                <span className={`text-sm ${form.customer_name ? 'text-slate-100' : 'text-slate-500'}`}>
+                  {form.customer_name || 'Müşteri seç veya yaz...'}
+                </span>
+                <ChevronDown size={14} className="text-slate-500" />
+              </div>
+              <AnimatePresence>
+                {custOpen && (
+                  <motion.div initial={{ opacity:0, y:-4 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0 }}
+                    className="absolute z-40 w-full mt-1 rounded-xl overflow-hidden"
+                    style={{ background: '#0c1a2e', border:'1px solid rgba(148,163,184,0.15)', boxShadow:'0 20px 40px rgba(0,0,0,0.5)' }}>
+                    <div className="p-2">
+                      <input autoFocus value={custQ}
+                        onChange={e => { setCustQ(e.target.value); setForm(f => ({ ...f, customer_name: e.target.value })); }}
+                        placeholder="Ara veya yeni isim gir..."
+                        className="w-full px-3 py-1.5 rounded-lg text-sm outline-none"
+                        style={{ background: 'rgba(255,255,255,0.07)', color: '#f1f5f9' }} />
+                    </div>
+                    {filteredCusts.map(c => (
+                      <div key={c.id} onClick={() => selectCustomer(c)}
+                        className="px-4 py-2.5 cursor-pointer transition-colors"
+                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                        <p className="text-sm text-slate-100 font-semibold">{c.name}</p>
+                        {c.vkntckn && <p className="text-[10px] text-slate-500 font-mono">{c.vkntckn}</p>}
+                      </div>
+                    ))}
+                    {custQ && filteredCusts.length === 0 && (
+                      <div className="px-4 py-2.5 cursor-pointer text-slate-400 text-sm"
+                        onClick={async () => {
+                          const num = await generateOrderNumber(custQ);
+                          setForm(f => ({ ...f, customer_name: custQ, order_number: isEdit ? f.order_number : num }));
+                          setCustOpen(false);
+                        }}>
+                        + "{custQ}" olarak devam et
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            <Field label="Sipariş No" value={form.order_number} onChange={v => setForm(f => ({ ...f, order_number: v }))} />
+
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Teslim Tarihi</p>
+              <input type="date" value={form.due_date}
+                onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))}
+                className="w-full px-3 py-2 rounded-xl text-sm outline-none"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)', color: '#f1f5f9' }} />
+            </div>
+
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Para Birimi</p>
+              <div className="flex gap-1">
+                {CURRENCIES.map(c => (
+                  <button key={c} onClick={() => setForm(f => ({ ...f, currency: c }))}
+                    className="flex-1 py-2 rounded-xl text-xs font-bold transition-all"
+                    style={{ background: form.currency === c ? `${currentColor}20` : 'rgba(255,255,255,0.04)', color: form.currency === c ? currentColor : '#64748b', border: `1px solid ${form.currency === c ? `${currentColor}40` : 'rgba(148,163,184,0.1)'}` }}>
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {isEdit && (
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Durum</p>
+                <div className="flex gap-1 flex-wrap">
+                  {Object.entries(STATUS).map(([key, val]) => (
+                    <button key={key} onClick={() => setForm(f => ({ ...f, status: key }))}
+                      className="flex-1 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap"
+                      style={{ background: form.status === key ? val.bg : 'rgba(255,255,255,0.04)', color: form.status === key ? val.color : '#64748b', border: `1px solid ${form.status === key ? val.color + '40' : 'rgba(148,163,184,0.1)'}` }}>
+                      {val.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </SectionCard>
+
+        {/* Ürün Kalemleri */}
+        <SectionCard title="Ürün / Hammadde Kalemleri" icon={Package}>
+          <div className="space-y-2">
+            {lines.map((line, idx) => (
+              <LineRow key={line._key} line={line} idx={idx} allItems={allItems}
+                currency={form.currency}
+                onChange={patch => updateLine(idx, patch)}
+                onRemove={() => removeLine(idx)}
+                c={{}} />
+            ))}
+          </div>
+          <button onClick={() => setLines(ls => [...ls, blankLine()])}
+            className="mt-3 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all"
+            style={{ background: 'rgba(255,255,255,0.04)', border: '1px dashed rgba(148,163,184,0.2)', color: '#64748b' }}
+            onMouseEnter={e => e.currentTarget.style.color = currentColor}
+            onMouseLeave={e => e.currentTarget.style.color = '#64748b'}>
+            <Plus size={15} />Kalem Ekle
+          </button>
+        </SectionCard>
+
+        {/* Adres & Notlar */}
+        <SectionCard title="Adres & Notlar" icon={MapPin}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Teslimat Adresi</p>
+              <textarea className="w-full px-3 py-2 rounded-xl text-sm outline-none resize-none"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)', color: '#f1f5f9' }}
+                rows={2} placeholder="Opsiyonel..."
+                value={form.delivery_address} onChange={e => setForm(f => ({ ...f, delivery_address: e.target.value }))} />
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Fatura Adresi</p>
+              <textarea className="w-full px-3 py-2 rounded-xl text-sm outline-none resize-none"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)', color: '#f1f5f9' }}
+                rows={2} placeholder="Opsiyonel..."
+                value={form.billing_address} onChange={e => setForm(f => ({ ...f, billing_address: e.target.value }))} />
+            </div>
+            <div className="sm:col-span-2">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Sipariş Notu</p>
+              <textarea className="w-full px-3 py-2 rounded-xl text-sm outline-none resize-none"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)', color: '#f1f5f9' }}
+                rows={2} placeholder="Ek bilgi, özel talepler..."
+                value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* Özet */}
+        <SectionCard title="Sipariş Özeti" icon={TrendingUp}>
+          <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(148,163,184,0.1)' }}>
+            {Object.entries(vatBreak).map(([pct, amt]) => (
+              <React.Fragment key={pct}>
+                <SumRow label={`Matrah (%${pct} KDV için)`} value={fmt(lines.filter(l=>(l.tax_rate||0)==pct).reduce((s,l)=>s+(l.quantity||0)*(l.unit_price||0),0), form.currency)} />
+                <SumRow label={`KDV %${pct}`} value={fmt(amt, form.currency)} color="#60a5fa" />
+              </React.Fragment>
+            ))}
+            <SumRow label="Ara Toplam (KDV hariç)" value={fmt(subtotal, form.currency)} />
+            <SumRow label="Toplam KDV" value={fmt(taxTotal, form.currency)} color="#60a5fa" />
+            <div style={{ borderTop: '2px solid rgba(148,163,184,0.15)', background: 'rgba(255,255,255,0.03)' }}>
+              <SumRow label="GENEL TOPLAM" value={fmt(grandTotal, form.currency)} bold accent />
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* Kaydet */}
+        <div className="flex gap-3 pb-8">
+          <button onClick={onClose}
+            className="flex-1 py-3 rounded-2xl text-sm font-semibold"
+            style={{ background: 'rgba(255,255,255,0.05)', color: '#64748b', border: '1px solid rgba(148,163,184,0.15)' }}>
+            İptal
+          </button>
+          <button onClick={handleSave} disabled={saving || !form.customer_name || !form.order_number}
+            className="flex-1 py-3 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2"
+            style={{ background: currentColor, opacity: saving || !form.customer_name || !form.order_number ? 0.6 : 1 }}>
+            {saving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+            {isEdit ? 'Güncelle' : 'Sipariş Oluştur'}
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function SectionCard({ title, icon: Icon, children }) {
+  return (
+    <div className="rounded-2xl p-5 space-y-4"
+      style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(148,163,184,0.08)' }}>
+      <div className="flex items-center gap-2">
+        <Icon size={14} className="text-slate-500" />
+        <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">{title}</h3>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function SumRow({ label, value, bold, accent, color }) {
+  return (
+    <div className="flex justify-between items-center px-4 py-2.5"
+      style={{ borderBottom: '1px solid rgba(148,163,184,0.07)' }}>
+      <span className={`text-xs ${bold ? 'font-bold text-slate-200' : 'text-slate-400'}`}>{label}</span>
+      <span className={`text-sm font-bold tabular-nums`}
+        style={{ color: accent ? '#34d399' : (color || (bold ? '#f1f5f9' : '#94a3b8')) }}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+// ─── Sipariş Kartı ────────────────────────────────────────────────────────────
+function OrderCard({ order, onEdit, onStatusChange, currentColor, c }) {
+  const urgent = isUrgent(order);
+  const daysLeft = order.due_date
+    ? Math.ceil((new Date(order.due_date) - new Date()) / 86400000)
+    : null;
+
+  return (
+    <motion.div initial={{ opacity:0, y:6 }} animate={{ opacity:1, y:0 }}
+      className="rounded-2xl p-4 space-y-3 cursor-pointer transition-all"
+      style={{ background: c.card, border: `1px solid ${urgent ? 'rgba(239,68,68,0.3)' : c.border}` }}
+      onClick={() => onEdit(order)}>
+      {/* Üst satır */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-mono font-bold" style={{ color: currentColor }}>{order.order_number}</p>
+          <p className="text-sm font-bold text-slate-100 mt-0.5 truncate">{order.customer_name}</p>
+        </div>
+        <StatusBadge status={order.status} urgent={urgent} />
+      </div>
+
+      {/* Orta */}
+      <div className="grid grid-cols-3 gap-2">
+        <InfoChip icon={CreditCard} label="Toplam" value={fmt(order.grand_total, order.currency)} color="#34d399" />
+        <InfoChip icon={Calendar} label="Teslim" value={fmtD(order.due_date)}
+          color={daysLeft != null && daysLeft <= 3 ? '#ef4444' : (daysLeft != null && daysLeft <= 7 ? '#f59e0b' : '#94a3b8')} />
+        <InfoChip icon={Package} label="Oluşturma" value={fmtD(order.created_at)} />
+      </div>
+
+      {order.notes && (
+        <p className="text-xs text-slate-500 italic truncate">📝 {order.notes}</p>
+      )}
+
+      {/* Durum güncelle */}
+      <div className="flex gap-1.5 pt-1" onClick={e => e.stopPropagation()}>
+        {Object.entries(STATUS).filter(([k]) => k !== order.status).slice(0, 3).map(([key, val]) => (
+          <button key={key} onClick={() => onStatusChange(order.id, key)}
+            className="flex-1 py-1 rounded-lg text-[10px] font-bold transition-all"
+            style={{ background: val.bg, color: val.color }}>
+            {val.label}
+          </button>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
+function InfoChip({ icon: Icon, label, value, color }) {
+  return (
+    <div className="rounded-xl p-2" style={{ background: 'rgba(255,255,255,0.04)' }}>
+      <div className="flex items-center gap-1 mb-0.5">
+        <Icon size={9} className="text-slate-600" />
+        <p className="text-[9px] text-slate-600 uppercase tracking-wide">{label}</p>
+      </div>
+      <p className="text-xs font-bold truncate" style={{ color: color || '#f1f5f9' }}>{value}</p>
+    </div>
+  );
+}
+
+// ─── Ana Satış Sayfası ────────────────────────────────────────────────────────
+export default function Sales() {
+  const { effectiveMode, currentColor } = useTheme();
+  const isDark = effectiveMode === 'dark';
+
+  const [orders,    setOrders]    = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [allItems,  setAllItems]  = useState([]);
+  const [loading,   setLoading]   = useState(true);
+  const [search,    setSearch]    = useState('');
+  const [tab,       setTab]       = useState('current');  // current | urgent | history
+  const [showForm,  setShowForm]  = useState(false);
+  const [editOrder, setEditOrder] = useState(null);
+  const [toast,     setToast]     = useState(null);
+
+  const c = {
+    card:   isDark ? 'rgba(30,41,59,0.7)' : '#ffffff',
+    border: isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0',
+    text:   isDark ? '#f1f5f9' : '#0f172a',
+    muted:  isDark ? '#94a3b8' : '#64748b',
+  };
+
+  const showToast = (msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    const [ordRes, custRes, itemRes] = await Promise.all([
+      supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }),
+      supabase.from('customers').select('id, name, vkntckn').order('name'),
+      supabase.from('items').select('id, name, item_type, unit, purchase_price, stock_count, sku').order('name'),
+    ]);
+    setOrders((ordRes.data || []).map(o => ({ ...o, items: o.order_items || [] })));
+    setCustomers(custRes.data || []);
+    setAllItems(itemRes.data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  const updateStatus = async (orderId, status) => {
+    const patch = status === 'completed' ? { status, completed_at: new Date().toISOString() } : { status };
+    await supabase.from('orders').update(patch).eq('id', orderId);
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...patch } : o));
+    showToast('Durum güncellendi ✓');
+  };
+
+  const openEdit = async (order) => {
+    // Kalemleri çek
+    const { data: items } = await supabase.from('order_items').select('*').eq('order_id', order.id);
+    setEditOrder({ ...order, items: (items || []).map(i => ({ ...i, _key: Math.random() })) });
+    setShowForm(true);
+  };
+
+  // Tab filtreleme
+  const filtered = useMemo(() => {
+    let list = orders;
+    if (search) {
+      const q = search.toLowerCase();
+      list = list.filter(o => o.order_number.toLowerCase().includes(q) || o.customer_name.toLowerCase().includes(q));
+    }
+    if (tab === 'current')  return list.filter(o => o.status === 'pending' || o.status === 'processing');
+    if (tab === 'urgent')   return list.filter(o => isUrgent(o));
+    if (tab === 'history')  return list.filter(o => o.status === 'completed' || o.status === 'cancelled');
+    return list;
+  }, [orders, tab, search]);
+
+  const urgentCount  = orders.filter(isUrgent).length;
+  const currentCount = orders.filter(o => o.status === 'pending' || o.status === 'processing').length;
+  const historyCount = orders.filter(o => o.status === 'completed' || o.status === 'cancelled').length;
+  const totalRevenue = orders.filter(o => o.status === 'completed').reduce((s, o) => s + o.grand_total, 0);
+
+  const TABS = [
+    { id:'current', label:'Mevcut',  icon: ShoppingCart, count: currentCount, color: currentColor },
+    { id:'urgent',  label:'Acil',    icon: Zap,          count: urgentCount,  color: '#ef4444' },
+    { id:'history', label:'Geçmiş',  icon: History,      count: historyCount, color: '#94a3b8' },
+  ];
+
+  return (
+    <>
+      <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }}
+        className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-2xl" style={{ background:`${currentColor}15`, color:currentColor }}>
+              <ShoppingCart size={24} />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold" style={{ color: c.text }}>Satış</h1>
+              <p className="text-sm mt-0.5" style={{ color: c.muted }}>
+                {orders.length} sipariş · Ciro: {fmt(totalRevenue)}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="relative hidden sm:block">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Sipariş no / Müşteri..."
+                className="pl-9 pr-4 py-2 rounded-xl border text-sm outline-none"
+                style={{ background: c.card, borderColor: c.border, color: c.text }} />
+            </div>
+            <button onClick={() => { setEditOrder(null); setShowForm(true); }}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-bold"
+              style={{ background: currentColor }}>
+              <Plus size={15} />Yeni Sipariş
+            </button>
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          {[
+            { l:'Toplam Sipariş',  v: orders.length,  color: currentColor },
+            { l:'Bekleyen',        v: currentCount,   color: '#f59e0b' },
+            { l:'Acil (≤3 gün)',   v: urgentCount,    color: '#ef4444' },
+            { l:'Toplam Ciro',     v: fmt(totalRevenue), color: '#10b981' },
+          ].map(({l,v,color},i) => (
+            <div key={i} className="rounded-2xl p-4" style={{ background: c.card, border:`1px solid ${c.border}` }}>
+              <p className="text-xl font-bold" style={{ color }}>{v}</p>
+              <p className="text-[10px] font-semibold mt-1" style={{ color: c.muted }}>{l}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Tab bar */}
+        <div className="flex items-center gap-0 border-b mb-5" style={{ borderColor: c.border }}>
+          {TABS.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className="flex items-center gap-2 px-5 py-3 text-sm font-semibold transition-all"
+              style={{ color: tab===t.id ? t.color : c.muted, borderBottom: tab===t.id ? `2px solid ${t.color}` : '2px solid transparent' }}>
+              <t.icon size={14} />
+              {t.label}
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold"
+                style={{ background: tab===t.id ? `${t.color}20` : 'rgba(148,163,184,0.1)', color: tab===t.id ? t.color : c.muted }}>
+                {t.count}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* Urgent banner */}
+        {tab === 'urgent' && urgentCount > 0 && (
+          <div className="flex items-center gap-3 p-4 rounded-2xl mb-4"
+            style={{ background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.2)' }}>
+            <AlertTriangle size={18} className="text-red-400 flex-shrink-0" />
+            <p className="text-sm text-red-400">
+              <strong>{urgentCount} sipariş</strong> 3 gün içinde teslim edilmesi gerekiyor!
+            </p>
+          </div>
+        )}
+
+        {/* Liste */}
+        {loading ? (
+          <div className="flex items-center justify-center py-20 gap-2" style={{ color: c.muted }}>
+            <Loader2 size={24} className="animate-spin" style={{ color: currentColor }} />
+            <span className="text-sm">Yükleniyor...</span>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-3" style={{ color: c.muted }}>
+            <ShoppingCart size={44} strokeWidth={1} className="opacity-20" />
+            <p className="font-semibold">Bu sekmede sipariş yok.</p>
+            {tab === 'current' && (
+              <button onClick={() => { setEditOrder(null); setShowForm(true); }}
+                className="btn-primary text-sm px-5 py-2">
+                + İlk Siparişi Oluştur
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {filtered.map(order => (
+              <OrderCard key={order.id} order={order}
+                onEdit={openEdit}
+                onStatusChange={updateStatus}
+                currentColor={currentColor}
+                c={c} />
+            ))}
+          </div>
+        )}
+
+      </motion.div>
+
+      {/* Form overlay */}
+      <AnimatePresence>
+        {showForm && (
+          <OrderForm
+            order={editOrder}
+            customers={customers}
+            allItems={allItems}
+            currentColor={currentColor}
+            onClose={() => { setShowForm(false); setEditOrder(null); }}
+            onSaved={() => { loadAll(); showToast(editOrder ? 'Sipariş güncellendi ✓' : 'Sipariş oluşturuldu ✓'); }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Toast */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div initial={{ opacity:0,y:20 }} animate={{ opacity:1,y:0 }} exit={{ opacity:0,y:20 }}
+            className="fixed bottom-6 right-6 z-[400] px-5 py-3 rounded-2xl shadow-xl text-white font-semibold text-sm"
+            style={{ background: toast.type==='error' ? '#ef4444' : '#10b981' }}>
+            {toast.msg}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  );
+}

@@ -7,6 +7,7 @@ import Dashboard  from './pages/Dashboard';
 import Stock      from './pages/Stock';
 import Suppliers  from './pages/Suppliers';
 import Customers  from './pages/Customers';
+import Sales      from './pages/Sales';
 import Settings   from './pages/Settings';
 import QRDetail   from './pages/QRDetail';
 import Invoices   from './pages/Invoices';
@@ -150,7 +151,7 @@ function AppShell() {
             <Route path="/contacts"   element={<Customers />} />
             <Route path="/incoming-invoices" element={<Invoices type="inbox" />} />
             <Route path="/outgoing-invoices" element={<Invoices type="outbox" />} />
-            <Route path="/sales"      element={<ComingSoon title="Satış"      icon="🛒" />} />
+            <Route path="/sales"      element={<Sales />} />
             <Route path="/reports"    element={<ComingSoon title="Raporlar"   icon="📊" />} />
           </Routes>
         </main>
