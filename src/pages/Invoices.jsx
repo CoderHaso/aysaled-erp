@@ -7,6 +7,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import InvoicePreviewModal from '../components/InvoicePreviewModal';
+import { useLocation } from 'react-router-dom';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const STATUS_MAP = {
@@ -342,6 +343,24 @@ export default function Invoices({ type = 'inbox' }) {
   const [search, setSearch]       = useState('');
   const [selected, setSelected]   = useState(null);
   const [previewInv, setPreviewInv] = useState(null); // { invoiceId, documentId, type }
+  const location = useLocation();
+
+  // Cari/Tedarikçi drawer’dan yönlendirme gelirse faturayı otomatik aç
+  useEffect(() => {
+    const state = location.state;
+    if (!state?.openInvoiceId) return;
+    // Listede bul ve aç, yoksa preview aç
+    const found = invoices.find(inv => inv.invoice_id === state.openInvoiceId);
+    if (found) {
+      if (state.documentId) {
+        setPreviewInv({ invoiceId: found.invoice_id, documentId: found.document_id || state.documentId, type });
+      } else {
+        setSelected(found);
+      }
+    }
+    // State’i temizle (tekrar tetiklenmesin)
+    window.history.replaceState({}, '');
+  }, [location.state, invoices]);
 
   const isInbox = type === 'inbox';
   const Icon    = isInbox ? FileDown : FileUp;

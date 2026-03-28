@@ -3,10 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Building2, Phone, Mail, X, Loader2, RefreshCw,
   Receipt, TrendingUp, Users, ChevronRight, Edit3, Trash2,
-  AlertCircle, FileText, Package, CheckCircle2, Info
+  AlertCircle, FileText, Package, CheckCircle2, Info, ExternalLink
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
+import { useNavigate } from 'react-router-dom';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n) => n != null ? Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2 }) : '0,00';
@@ -27,6 +28,7 @@ function Toast({ msg, type, onClose }) {
 // ─── Detail Drawer ─────────────────────────────────────────────────────────
 function CustomerDrawer({ customer, onClose, onSaved }) {
   const { currentColor } = useTheme();
+  const navigate = useNavigate();
   const [invoices, setInvoices]       = useState([]);
   const [loadingInv, setLoadingInv]   = useState(true);
   const [tab, setTab]                 = useState('info');   // 'info' | 'invoices'
@@ -223,16 +225,26 @@ function CustomerDrawer({ customer, onClose, onSaved }) {
                   <motion.div key={inv.id || i}
                     initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.04 }}
-                    className="rounded-2xl p-4"
-                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(148,163,184,0.08)' }}>
+                    onClick={() => {
+                      onClose();
+                      navigate('/incoming-invoices', { state: { openInvoiceId: inv.invoice_id, documentId: inv.document_id } });
+                    }}
+                    className="rounded-2xl p-4 cursor-pointer group transition-all"
+                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(148,163,184,0.08)' }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = `${currentColor}40`}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = 'rgba(148,163,184,0.08)'}
+                  >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1">
                         <p className="text-xs font-mono text-blue-400 font-bold">{inv.invoice_id}</p>
                         <p className="text-[10px] text-slate-500 mt-0.5">{fmtD(inv.issue_date)}</p>
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-bold text-slate-100">{fmt(inv.amount)} <span className="text-[10px] text-slate-500">{inv.currency}</span></p>
-                        <StatusDot status={inv.status} />
+                      <div className="flex items-center gap-2">
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-slate-100">{fmt(inv.amount)} <span className="text-[10px] text-slate-500">{inv.currency}</span></p>
+                          <StatusDot status={inv.status} />
+                        </div>
+                        <ExternalLink size={12} className="text-slate-600 group-hover:text-blue-400 transition-colors flex-shrink-0" />
                       </div>
                     </div>
                     {/* Ürün kalemleri özeti */}
@@ -336,26 +348,41 @@ export default function Customers() {
     } finally { setSyncingInv(false); }
   };
 
-  // Uyumsoft'tan tam UBL çekerek adres/telefon/e-posta zenginleştir
+  // Uyumsoft’tan tam UBL çekerek adres/telefon/e-posta zenginleştir (auto-batch)
   const enrichContacts = async () => {
-    setEnriching(true); setEnrichLog(null);
+    setEnriching(true);
+    const totals = { processed: 0, enriched: 0, errors: [], skipped: 0 };
+    setEnrichLog({ ...totals, running: true });
+
     try {
-      const r = await fetch('/api/enrich-contacts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'inbox', limit: 10, onlyMissing: true }),
-      });
-      const data = await r.json();
-      setEnrichLog(data.results);
-      if (data.success) {
-        await loadCustomers();
-        showToast(`${data.results?.enriched || 0} cari zenginleştirildi ✓ (${data.results?.processed || 0} işlendi, ${data.results?.skipped || 0} atlandı)`);
-      } else {
-        showToast(data.error || 'Zenginleştirme hatası', 'error');
+      let keepGoing = true;
+      while (keepGoing) {
+        const r = await fetch('/api/enrich-contacts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'inbox', limit: 10, onlyMissing: true }),
+        });
+        const data = await r.json();
+        const res  = data.results || {};
+
+        totals.processed += res.processed || 0;
+        totals.enriched  += res.enriched  || 0;
+        totals.skipped   += res.skipped   || 0;
+        totals.errors     = [...totals.errors, ...(res.errors || [])];
+
+        setEnrichLog({ ...totals, running: true });
+
+        // İşlenecek bir şey kalmadıysa dur
+        if (!data.success || (res.processed || 0) === 0) keepGoing = false;
       }
     } catch (e) {
-      showToast(e.message, 'error');
-    } finally { setEnriching(false); }
+      totals.errors.push(e.message);
+    } finally {
+      setEnriching(false);
+      setEnrichLog(prev => ({ ...prev, running: false }));
+      await loadCustomers();
+      showToast(`${totals.enriched} cari zenginleştirildi ✓ (${totals.processed} işlendi)`);
+    }
   };
 
   const deleteCustomer = async (id, name) => {
@@ -419,19 +446,26 @@ export default function Customers() {
         {enrichLog && (
           <div className="mb-4 p-4 rounded-2xl text-xs" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)' }}>
             <div className="flex items-center justify-between mb-2">
-              <p className="font-bold text-emerald-400">Zenginleştirme Sonucu</p>
-              <button onClick={() => setEnrichLog(null)} className="text-slate-500 hover:text-white"><X size={13} /></button>
+              <div className="flex items-center gap-2">
+                {enrichLog.running && <Loader2 size={12} className="animate-spin text-emerald-400" />}
+                <p className="font-bold text-emerald-400">
+                  {enrichLog.running ? `Zenginleştiriliyor... (${enrichLog.processed} işlendi)` : 'Zenginleştirme Tamamlandı'}
+                </p>
+              </div>
+              {!enrichLog.running && (
+                <button onClick={() => setEnrichLog(null)} className="text-slate-500 hover:text-white"><X size={13} /></button>
+              )}
             </div>
             <div className="flex gap-4 text-slate-300 mb-2">
-              <span>✅ Zenginleştirilen: <strong>{enrichLog.enriched}</strong></span>
+              <span>✅ Zenginleştirilen: <strong className="text-emerald-400">{enrichLog.enriched}</strong></span>
               <span>🔄 İşlenen: <strong>{enrichLog.processed}</strong></span>
               <span>⏩ Atlanan: <strong>{enrichLog.skipped}</strong></span>
             </div>
             {enrichLog.errors?.length > 0 && (
               <div className="mt-2">
-                <p className="text-amber-400 font-semibold mb-1">Hatalar:</p>
-                {enrichLog.errors.slice(0, 5).map((e, i) => (
-                  <p key={i} className="text-red-400 font-mono truncate">{e}</p>
+                <p className="text-amber-400 font-semibold mb-1">Hatalar ({enrichLog.errors.length}):</p>
+                {enrichLog.errors.slice(0, 3).map((e, i) => (
+                  <p key={i} className="text-red-400 font-mono truncate">{typeof e === 'string' ? e.slice(0, 80) : e}</p>
                 ))}
               </div>
             )}
