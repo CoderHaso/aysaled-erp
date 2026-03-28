@@ -155,11 +155,46 @@ export default async function handler(req, res) {
     }
 
     console.log(`[sync-invoices] ${upsertPayload.length} fatura Supabase'e yazıldı.`);
+
+    // ── Contact upsert: fatura listesindeki alanlardan zenginleştirilmiş veri ──
+    // Uyumsoft InvoiceList'te TargetTcknVkn ve TargetTitle zaten var.
+    // Detaylı adres için raw_data gerekli ama listelenmiş alanlarla en azından
+    // isim + VKN güncelleniyor. Tam adres enrichment için trigger zaten çalışıyor.
+    const contactsByVkn = {};
+    list.forEach(inv => {
+      const vkn = inv.TargetTcknVkn;
+      if (!vkn || vkn === '') return;
+      if (contactsByVkn[vkn]) return; // dedup
+      contactsByVkn[vkn] = {
+        name:       inv.TargetTitle  || 'Bilinmiyor',
+        vkntckn:    vkn,
+        source:     'invoice_sync',
+        updated_at: new Date().toISOString(),
+      };
+    });
+
+    const contactList = Object.values(contactsByVkn);
+    if (contactList.length > 0) {
+      const table = type === 'inbox' ? 'customers' : 'suppliers';
+      const { error: contactErr } = await supabase
+        .from(table)
+        .upsert(contactList, {
+          onConflict: 'vkntckn',
+          ignoreDuplicates: false,
+        });
+      if (contactErr) {
+        console.warn(`[sync-invoices] ${table} upsert uyarısı:`, contactErr.message);
+      } else {
+        console.log(`[sync-invoices] ${contactList.length} ${table} kaydı güncellendi/eklendi.`);
+      }
+    }
+
     res.json({
       success: true,
       message: `${upsertPayload.length} fatura başarıyla senkronize edildi.`,
       inserted: upsertPayload.length
     });
+
 
   } catch (err) {
     console.error('[sync-invoices]', err.message, err.stack);

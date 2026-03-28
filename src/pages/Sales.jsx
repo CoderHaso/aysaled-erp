@@ -210,16 +210,21 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
   });
 
   const [form, setForm] = useState({
-    customer_id:      order?.customer_id || '',
-    customer_name:    order?.customer_name || '',
-    customer_vkntckn: order?.customer_vkntckn || '',
-    order_number:     order?.order_number || '',
-    status:           order?.status || 'pending',
-    currency:         order?.currency || 'TRY',
-    due_date:         order?.due_date ? order.due_date.slice(0, 10) : addDays(new Date(), 7).toISOString().slice(0, 10),
-    delivery_address: order?.delivery_address || '',
-    billing_address:  order?.billing_address || '',
-    notes:            order?.notes || '',
+    customer_id:         order?.customer_id || '',
+    customer_name:       order?.customer_name || '',
+    customer_vkntckn:    order?.customer_vkntckn || '',
+    customer_tax_office: order?.customer_tax_office || '',
+    customer_address:    order?.customer_address || '',
+    customer_city:       order?.customer_city || '',
+    customer_phone:      order?.customer_phone || '',
+    customer_email:      order?.customer_email || '',
+    order_number:        order?.order_number || '',
+    status:              order?.status || 'pending',
+    currency:            order?.currency || 'TRY',
+    due_date:            order?.due_date ? order.due_date.slice(0, 10) : addDays(new Date(), 7).toISOString().slice(0, 10),
+    delivery_address:    order?.delivery_address || '',
+    billing_address:     order?.billing_address || '',
+    notes:               order?.notes || '',
   });
   const [lines, setLines]   = useState(order?.items?.length ? order.items.map(i => ({ ...i, _key: Math.random() })) : [blankLine()]);
   const [saving, setSaving] = useState(false);
@@ -230,10 +235,24 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
   const [draftLoading,  setDraftLoading]  = useState(false);
   const [draftPreviewUrl, setDraftPreviewUrl] = useState(null);  // string URL veya null
 
-  // Müşteri seçince otomatik sipariş no üret
+  // Müşteri seçince: sipariş no üret + adres/iletişim auto-fill
   const selectCustomer = async (cust) => {
     const num = await generateOrderNumber(cust.name);
-    setForm(f => ({ ...f, customer_id: cust.id, customer_name: cust.name, customer_vkntckn: cust.vkntckn || '', order_number: isEdit ? f.order_number : num }));
+    setForm(f => ({
+      ...f,
+      customer_id:         cust.id,
+      customer_name:       cust.name,
+      customer_vkntckn:    cust.vkntckn    || '',
+      customer_tax_office: cust.tax_office || '',
+      customer_address:    cust.address    || '',
+      customer_city:       cust.city       || '',
+      customer_phone:      cust.phone      || '',
+      customer_email:      cust.email      || '',
+      // Teslimat/fatura adresi boşsa otomatik doldur
+      delivery_address: f.delivery_address || [cust.address, cust.city].filter(Boolean).join(', '),
+      billing_address:  f.billing_address  || [cust.address, cust.city].filter(Boolean).join(', '),
+      order_number: isEdit ? f.order_number : num,
+    }));
     setCustOpen(false); setCustQ('');
   };
 
@@ -302,11 +321,14 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customerName:    form.customer_name,
-          customerVkntckn: form.customer_vkntckn || '',
-          currency:        form.currency,
-          invoiceDate:     new Date().toISOString().slice(0, 10),
-          notes:           form.notes,
+          customerName:       form.customer_name,
+          customerVkntckn:    form.customer_vkntckn    || '',
+          customerAddress:    form.customer_address    || form.billing_address || '',
+          customerCity:       form.customer_city       || '',
+          customerTaxOffice:  form.customer_tax_office || '',
+          currency:           form.currency,
+          invoiceDate:        new Date().toISOString().slice(0, 10),
+          notes:              form.notes,
           lines: lines.filter(l => l.item_name).map(l => ({
             name:      l.item_name,
             quantity:  l.quantity,
@@ -700,7 +722,7 @@ export default function Sales() {
     setLoading(true);
     const [ordRes, custRes, itemRes] = await Promise.all([
       supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }),
-      supabase.from('customers').select('id, name, vkntckn').order('name'),
+      supabase.from('customers').select('id, name, vkntckn, tax_office, phone, email, address, city').order('name'),
       supabase.from('items').select('id, name, item_type, unit, purchase_price, stock_count, sku').order('name'),
     ]);
     setOrders((ordRes.data || []).map(o => ({ ...o, items: o.order_items || [] })));

@@ -464,10 +464,12 @@ export default function Invoices({ type = 'inbox' }) {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b" style={{ borderColor: c.border, background: c.hover }}>
-                  {['Tarih','Fatura No', isInbox?'Gönderen Cari':'Alıcı Cari','Durum','Tutar','İşlem'].map(h => (
-                    <th key={h} className={`px-5 py-4 text-xs font-bold uppercase tracking-wider ${h==='Tutar'?'text-right':h==='İşlem'?'text-center':''}`}
-                      style={{ color: c.muted }}>{h}</th>
-                  ))}
+                  <th className="px-4 py-4 text-xs font-bold uppercase tracking-wider whitespace-nowrap" style={{ color: c.muted, width: '100px' }}>Tarih</th>
+                  <th className="px-4 py-4 text-xs font-bold uppercase tracking-wider" style={{ color: c.muted, width: '160px' }}>Fatura No</th>
+                  <th className="px-4 py-4 text-xs font-bold uppercase tracking-wider" style={{ color: c.muted }}>{isInbox ? 'Gönderen Cari' : 'Alıcı Cari'}</th>
+                  <th className="px-4 py-4 text-xs font-bold uppercase tracking-wider" style={{ color: c.muted, width: '130px' }}>Durum</th>
+                  <th className="px-4 py-4 text-xs font-bold uppercase tracking-wider text-right" style={{ color: c.muted, width: '130px' }}>Tutar</th>
+                  <th className="px-4 py-4 text-xs font-bold uppercase tracking-wider text-center" style={{ color: c.muted, width: '160px' }}>İşlem</th>
                 </tr>
               </thead>
               <tbody>
@@ -493,43 +495,43 @@ export default function Invoices({ type = 'inbox' }) {
                       onMouseEnter={e => e.currentTarget.style.background = c.hover}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                       onClick={() => setSelected(inv)}>
-                      <td className="px-5 py-3.5 whitespace-nowrap text-sm" style={{ color: c.muted }}>
+                      <td className="px-4 py-3.5 whitespace-nowrap text-sm" style={{ color: c.muted }}>
                         {inv.issue_date ? new Date(inv.issue_date).toLocaleDateString('tr-TR') : '-'}
                       </td>
-                      <td className="px-5 py-3.5 whitespace-nowrap">
-                        <span className="px-2.5 py-1 text-xs font-bold rounded-lg font-mono"
+                      <td className="px-4 py-3.5 whitespace-nowrap" style={{ maxWidth:'160px' }}>
+                        <span className="px-2 py-1 text-xs font-bold rounded-lg font-mono block truncate"
                           style={{ background:`${currentColor}15`, color:currentColor }}>
                           {inv.invoice_id}
                         </span>
                       </td>
-                      <td className="px-5 py-3.5 text-sm font-medium" style={{ color: c.text, maxWidth:'220px' }}>
-                        <p className="truncate">{inv.cari_name || '-'}</p>
+                      <td className="px-4 py-3.5 text-sm font-medium" style={{ color: c.text }}>
+                        <p className="truncate max-w-[200px]">{inv.cari_name || '-'}</p>
                         <p className="text-xs font-mono mt-0.5" style={{ color: c.muted }}>{inv.vkntckn}</p>
                       </td>
-                      <td className="px-5 py-3.5"><StatusBadge status={inv.status} /></td>
-                      <td className="px-5 py-3.5 whitespace-nowrap text-sm font-bold text-right" style={{ color: c.text }}>
+                      <td className="px-4 py-3.5 whitespace-nowrap"><StatusBadge status={inv.status} /></td>
+                      <td className="px-4 py-3.5 whitespace-nowrap text-sm font-bold text-right" style={{ color: c.text }}>
                         {Number(inv.amount).toLocaleString('tr-TR', { minimumFractionDigits:2 })}
                         <span className="text-xs font-normal ml-1" style={{ color: c.muted }}>{inv.currency}</span>
                       </td>
-                      <td className="px-5 py-3.5 text-center">
+                      <td className="px-4 py-3.5 whitespace-nowrap" style={{ width:'160px' }}>
                         <div className="flex items-center justify-center gap-1.5">
                           <button
                             onClick={e => { e.stopPropagation(); setSelected(inv); }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all"
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap"
                             style={{ background:`${currentColor}15`, color:currentColor }}
-                            title="Detayları Görüntüle">
+                            title="Kalemleri Görüntüle">
                             {hasCached
-                              ? <CheckCircle2 size={13} className="text-emerald-400" />
-                              : <Eye size={13} />}
+                              ? <CheckCircle2 size={12} className="text-emerald-400" />
+                              : <Eye size={12} />}
                             Detay
                           </button>
                           {inv.document_id && (
                             <button
                               onClick={e => { e.stopPropagation(); setPreviewInv({ invoiceId: inv.invoice_id, documentId: inv.document_id, type: inv.type }); }}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all"
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap"
                               style={{ background:'rgba(139,92,246,0.12)', color:'#a78bfa' }}
-                              title="Fatura Görselini Önizle">
-                              <ScanEye size={13} />Önizle
+                              title="Fatura Belgesi Önizle">
+                              <ScanEye size={12} />Önizle
                             </button>
                           )}
                         </div>
