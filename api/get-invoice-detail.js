@@ -165,7 +165,77 @@ export default async function handler(req, res) {
 
     if (updateErr) {
       console.error('[get-invoice-detail] Supabase update hatası:', updateErr.message);
-      // Hata olsa bile veriyi döndür
+    }
+
+    // 5) Contact zenginleştirme: UBL'den adres/telefon/e-posta çek
+    try {
+      // inbox=gelen fatura: biz alıcıyız, karşı taraf AccountingSupplierParty (tedarikçi)
+      // outbox=giden fatura: biz satıcıyız, karşı taraf AccountingCustomerParty (müşteri)
+      const partyNode = type === 'inbox'
+        ? (invoice.AccountingSupplierParty || invoice['cac:AccountingSupplierParty'])
+        : (invoice.AccountingCustomerParty || invoice['cac:AccountingCustomerParty']);
+
+      const party = partyNode?.Party || partyNode?.['cac:Party'] || partyNode;
+
+      // İsim
+      const partyName = val(party?.PartyName?.Name ?? party?.['cac:PartyName']?.['cbc:Name']) || '';
+
+      // VKN
+      const taxScheme = party?.PartyTaxScheme || party?.['cac:PartyTaxScheme'];
+      const vkn = val(taxScheme?.CompanyID ?? taxScheme?.['cbc:CompanyID']) || '';
+
+      // Adres
+      const addrNode = party?.PostalAddress || party?.['cac:PostalAddress']
+                    || party?.Address       || party?.['cac:Address'];
+      const street    = val(addrNode?.StreetName           ?? addrNode?.['cbc:StreetName']) || '';
+      const buildingN = val(addrNode?.BuildingNumber       ?? addrNode?.['cbc:BuildingNumber']) || '';
+      const buildingNm= val(addrNode?.BuildingName         ?? addrNode?.['cbc:BuildingName']) || '';
+      const cityName  = val(addrNode?.CityName             ?? addrNode?.['cbc:CityName']) || '';
+      const citySubdiv= val(addrNode?.CitySubdivisionName  ?? addrNode?.['cbc:CitySubdivisionName']) || '';
+      const postal    = val(addrNode?.PostalZone           ?? addrNode?.['cbc:PostalZone']) || '';
+      const country   = val(addrNode?.Country?.Name        ?? addrNode?.['cac:Country']?.['cbc:Name']) || 'Türkiye';
+
+      const address = [street, buildingN, buildingNm].filter(Boolean).join(' ').trim() || null;
+      const city    = cityName || citySubdiv || null;
+
+      // Vergi dairesi
+      const taxOfficeName = val(taxScheme?.RegistrationName ?? taxScheme?.['cbc:RegistrationName']) || '';
+
+      // İletişim
+      const contactNode = party?.Contact || party?.['cac:Contact'];
+      const phone = val(contactNode?.Telephone       ?? contactNode?.['cbc:Telephone']) || '';
+      const email = val(contactNode?.ElectronicMail  ?? contactNode?.['cbc:ElectronicMail']) || '';
+      const fax   = val(contactNode?.Telefax         ?? contactNode?.['cbc:Telefax']) || '';
+
+      // VKN yoksa sync yapma
+      if (vkn) {
+        const table       = type === 'inbox' ? 'suppliers' : 'customers';
+        const contactData = {
+          vkntckn:    vkn,
+          name:       partyName || 'Bilinmiyor',
+          source:     'invoice_sync',
+          updated_at: new Date().toISOString(),
+        };
+        if (phone || fax)   contactData.phone       = phone || fax;
+        if (email)          contactData.email        = email;
+        if (address)        contactData.address      = address;
+        if (city)           contactData.city         = city;
+        if (postal)         contactData.postal_code  = postal;
+        if (taxOfficeName)  contactData.tax_office   = taxOfficeName;
+
+        const { error: ce } = await supabase
+          .from(table)
+          .upsert(contactData, { onConflict: 'vkntckn', ignoreDuplicates: false });
+
+        if (ce) {
+          console.warn(`[get-invoice-detail] ${table} contact upsert uyarısı:`, ce.message);
+        } else {
+          console.log(`[get-invoice-detail] ${table} contact zenginleştirildi: ${vkn}`);
+        }
+      }
+    } catch (contactErr) {
+      // Contact sync hatası ana akışı etkilemesin
+      console.warn('[get-invoice-detail] Contact sync hatası:', contactErr.message);
     }
 
     res.json({ success: true, source: 'api', line_items, raw_detail: invoice });
@@ -175,3 +245,4 @@ export default async function handler(req, res) {
     res.status(500).json({ success: false, error: err.message });
   }
 }
+

@@ -26,14 +26,24 @@ export default function InvoicePreviewModal({ invoiceId, documentId, type = 'out
   const iframeRef = useRef(null);
   const blobRef   = useRef(null);
 
-  // Iframe'e HTML yaz (srcDoc kullanamıyoruz, blob URL kullanıyoruz)
-  const renderHtmlToIframe = (htmlStr) => {
+  // Iframe'e HTML yaz
+  // Uyumsoft HTML'i için: sandbox olmadan blob URL (blob URL zaten null origin ile izole)
+  // Taslak HTML'i için: srcdoc kullanıyoruz
+  const renderHtmlToIframe = (htmlStr, isDraft = false) => {
     if (!iframeRef.current) return;
-    // Önceki blob'u temizle
+    if (isDraft) {
+      // Kendi HTML'imiz — srcdoc ile sandbox'lı render
+      // allow-scripts var ama allow-same-origin YOK: güvenli
+      iframeRef.current.removeAttribute('src');
+      iframeRef.current.setAttribute('srcdoc', htmlStr);
+      return;
+    }
+    // Uyumsoft HTML'i — blob URL ile (sandbox kullanmıyoruz, null origin zaten izole)
     if (blobRef.current) URL.revokeObjectURL(blobRef.current);
     const blob = new Blob([htmlStr], { type: 'text/html;charset=utf-8' });
     const url  = URL.createObjectURL(blob);
     blobRef.current = url;
+    iframeRef.current.removeAttribute('srcdoc');
     iframeRef.current.src = url;
   };
 
@@ -49,7 +59,7 @@ export default function InvoicePreviewModal({ invoiceId, documentId, type = 'out
 
   // HTML yüklenince iframe'e yaz
   useEffect(() => {
-    if (html && iframeRef.current) renderHtmlToIframe(html);
+    if (html && iframeRef.current) renderHtmlToIframe(html, !!previewHtml);
   }, [html]);
 
   const fetchHtml = async () => {
@@ -216,13 +226,16 @@ export default function InvoicePreviewModal({ invoiceId, documentId, type = 'out
               </div>
             )}
 
-            {/* iframe — HTML içeriği blob URL ile render edilir */}
+            {/* iframe
+                - Uyumsoft HTML: blob URL, sandbox YOK (blob → null origin = zaten izole)
+                - Taslak HTML  : srcdoc, sandbox="allow-scripts" (allow-same-origin YOK)
+            */}
             <iframe
               ref={iframeRef}
               className="w-full h-full border-0"
               title="Fatura Önizleme"
               style={{ display: loading || error ? 'none' : 'block', background: '#fff' }}
-              sandbox="allow-same-origin allow-scripts allow-popups allow-modals"
+              {...(previewHtml ? { sandbox: 'allow-scripts' } : {})}
             />
           </div>
 
