@@ -8,6 +8,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import InvoicePreviewModal from '../components/InvoicePreviewModal';
 import { useLocation } from 'react-router-dom';
+import { pageCache } from '../lib/pageCache';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const STATUS_MAP = {
@@ -328,7 +329,7 @@ function DR({ label, value, mono, small }) {
   );
 }
 
-// Modül-seviyesi cache
+// Modül-seviyesi in-memory cache (sekme boyunca)
 const invoiceCache = new Map();
 
 // ─── Ana Sayfa ────────────────────────────────────────────────────────────────
@@ -336,8 +337,9 @@ export default function Invoices({ type = 'inbox' }) {
   const { effectiveMode, currentColor } = useTheme();
   const isDark = effectiveMode === 'dark';
 
-  const [invoices, setInvoices]   = useState(() => invoiceCache.get(type) || []);
-  const [loading, setLoading]     = useState(!invoiceCache.has(type));
+  const cacheKey = `invoices_${type}`;
+  const [invoices, setInvoices]   = useState(() => invoiceCache.get(type) || pageCache.get(`invoices_${type}`) || []);
+  const [loading, setLoading]     = useState(!invoiceCache.has(type) && !pageCache.get(`invoices_${type}`));
   const [syncing, setSyncing]     = useState(false);
   const [error, setError]         = useState(null);
   const [search, setSearch]       = useState('');
@@ -374,19 +376,37 @@ export default function Invoices({ type = 'inbox' }) {
   };
 
   const fetchInvoices = useCallback(async (force = false) => {
+    const ck = `invoices_${type}`;
+    // 1) Memory cache (sekme boyunca en hızlı)
     if (!force && invoiceCache.has(type)) {
       setInvoices(invoiceCache.get(type));
       setLoading(false);
       return;
     }
+    // 2) sessionStorage cache (sayfa yenilemede hızlı)
+    if (!force) {
+      const cached = pageCache.get(ck);
+      if (cached) {
+        invoiceCache.set(type, cached);
+        setInvoices(cached);
+        setLoading(false);
+        return;
+      }
+    }
     setLoading(true); setError(null);
     try {
+      // raw_detail ve html_view colonialı çekme — bunlar büyük JSON, timeout'a yol açıyor.
+      // Detay açılınca get-invoice-detail endpoint'i ayrıca çeker.
       const { data, error: dbErr } = await supabase
-        .from('invoices').select('*').eq('type', type)
-        .order('issue_date', { ascending: false }).limit(500);
+        .from('invoices')
+        .select('id, invoice_id, document_id, type, cari_name, vkntckn, amount, currency, issue_date, status, line_items')
+        .eq('type', type)
+        .order('issue_date', { ascending: false })
+        .limit(500);
       if (dbErr) throw dbErr;
       const rows = data || [];
       invoiceCache.set(type, rows);
+      pageCache.set(ck, rows); // sessionStorage'a da kaydet
       setInvoices(rows);
     } catch (err) {
       setError(err.message);
@@ -418,6 +438,7 @@ export default function Invoices({ type = 'inbox' }) {
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.detail || data.error);
       invoiceCache.delete(type);
+      pageCache.invalidate(`invoices_${type}`);
       await fetchInvoices(true);
       alert(data.message);
     } catch (err) { setError(err.message); }
