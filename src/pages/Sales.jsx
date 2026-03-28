@@ -317,8 +317,8 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
         }),
       });
       const data = await r.json();
-      if (data.success && data.previewUrl) {
-        setDraftPreviewUrl(data.previewUrl);
+      if (data.success && data.html) {
+        setDraftPreviewUrl(data.html);   // HTML string — modal bunu blob URL'e çevirir
       } else {
         alert(data.error || 'Önizleme alınamadı');
       }
@@ -574,10 +574,11 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
     {draftPreviewUrl && (
       <InvoicePreviewModal
         invoiceId="TASLAK"
-        previewUrl={draftPreviewUrl}
+        previewHtml={draftPreviewUrl}
         onClose={() => setDraftPreviewUrl(null)}
       />
     )}
+
   </>
   );
 }

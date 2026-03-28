@@ -2,22 +2,18 @@ import { createUyumsoftClient, callSoap } from './_uyumsoft-client.js';
 
 /**
  * Sipariş formundan gelen verileri Uyumsoft'a "Draft" olarak kaydeder,
- * ardından GenerateDocumentUrl ile HTML önizleme URL'i döner.
+ * ardından GetOutboxInvoiceView ile HTML önizleme içeriğini döner,
+ * sonunda taslağı CancelDraft ile iptal eder.
  *
- * POST body:
- * {
- *   customerName, customerVkntckn,
- *   currency, invoiceDate,
- *   lines: [{ name, quantity, unit, unitPrice, taxRate }],
- *   notes
- * }
+ * POST body: { customerName, customerVkntckn, currency, invoiceDate, lines, notes }
+ * Response:  { success, html }  ← HTML string (iframe'de gösterilir)
  */
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== 'POST')   return res.status(405).json({ error: 'Method not allowed' });
 
   const { customerName, customerVkntckn, currency = 'TRY', invoiceDate, lines = [], notes } = req.body || {};
 
@@ -27,10 +23,10 @@ export default async function handler(req, res) {
 
   const today = invoiceDate || new Date().toISOString().slice(0, 10);
 
-  // UBL InvoiceLine[] dizisi oluştur
+  // ── UBL InvoiceLine[] dizisi ───────────────────────────────────────────────
   const invoiceLines = lines.map((l, idx) => {
-    const lineTotal  = (l.quantity || 0) * (l.unitPrice || 0);
-    const taxAmount  = lineTotal * (l.taxRate || 0) / 100;
+    const lineTotal = (l.quantity || 0) * (l.unitPrice || 0);
+    const taxAmount = lineTotal * (l.taxRate || 0) / 100;
     return {
       ID: String(idx + 1),
       Item: { Name: l.name || 'Ürün' },
@@ -40,14 +36,11 @@ export default async function handler(req, res) {
         PriceAmount: { _: (l.unitPrice || 0).toFixed(2), attributes: { currencyID: currency } },
       },
       TaxTotal: {
-        TaxAmount:    { _: taxAmount.toFixed(2), attributes: { currencyID: currency } },
+        TaxAmount: { _: taxAmount.toFixed(2), attributes: { currencyID: currency } },
         TaxSubtotal: {
           TaxableAmount: { _: lineTotal.toFixed(2), attributes: { currencyID: currency } },
           TaxAmount:     { _: taxAmount.toFixed(2), attributes: { currencyID: currency } },
-          TaxCategory: {
-            TaxScheme: { Name: 'KDV' },
-            Percent: String(l.taxRate || 0),
-          },
+          TaxCategory: { TaxScheme: { Name: 'KDV' }, Percent: String(l.taxRate || 0) },
         },
       },
     };
@@ -57,7 +50,6 @@ export default async function handler(req, res) {
   const taxTotal   = lines.reduce((s, l) => s + (l.quantity||0) * (l.unitPrice||0) * (l.taxRate||0) / 100, 0);
   const grandTotal = subtotal + taxTotal;
 
-  // Minimal UBL Invoice nesnesi — Uyumsoft SaveAsDraft için
   const invoice = {
     ID:                   `TASLAK-${Date.now()}`,
     IssueDate:            today,
@@ -86,6 +78,8 @@ export default async function handler(req, res) {
     'InvoiceLine[]': invoiceLines,
   };
 
+  let documentId = null;
+
   try {
     const client = await createUyumsoftClient();
 
@@ -94,41 +88,62 @@ export default async function handler(req, res) {
       invoices: [{ Invoice: invoice }],
     });
 
-    const savedInvoices = saveResult?.SaveAsDraftResult?.Value
-      || saveResult?.SaveAsDraftResult?.['Value[]']
-      || [];
-    const firstSaved = Array.isArray(savedInvoices) ? savedInvoices[0] : savedInvoices;
-    const documentId = firstSaved?.InvoiceId || firstSaved?.DocumentId;
+    const saved = saveResult?.SaveAsDraftResult?.Value
+               || saveResult?.SaveAsDraftResult?.['Value[]'];
+    const first = Array.isArray(saved) ? saved[0] : saved;
+    documentId  = first?.InvoiceId || first?.DocumentId;
 
     if (!documentId) {
-      const msg = saveResult?.SaveAsDraftResult?.attributes?.Message || 'Taslak kaydedilemedi';
-      return res.status(400).json({ success: false, error: msg, raw: saveResult });
+      const msg = saveResult?.SaveAsDraftResult?.attributes?.Message || 'Taslak kaydı başarısız';
+      console.error('[draft-invoice-preview] Save failed:', msg);
+      return res.status(400).json({ success: false, error: msg });
     }
 
-    // 2) HTML önizleme URL'i üret
-    const urlResult = await callSoap(client, 'GenerateDocumentUrl', {
-      documentAccessInfo: {
-        DocumentId:       documentId,
-        DocumentType:     'OutboxInvoice',
-        AllowedFileTypes: 'Html',
-        FileType:         'Html',
-      },
-    });
+    console.log('[draft-invoice-preview] Taslak oluşturuldu:', documentId);
 
-    const ur  = urlResult?.GenerateDocumentUrlResult;
-    const url = ur?.attributes?.Message || ur?.Message || '';
+    // 2) HTML görünümü al
+    const viewResult = await callSoap(client, 'GetOutboxInvoiceView', { invoiceId: documentId });
+    const vr = viewResult?.GetOutboxInvoiceViewResult;
+    const ok = String(vr?.attributes?.IsSucceded).toLowerCase() === 'true';
 
-    // 3) Taslağı iptal et (iç sipariş kaydı amacıyla kullanıldı, gerçek fatura değil)
+    let html = null;
+    if (ok) {
+      html = vr?.Value?.Html || null;
+    } else {
+      console.warn('[draft-invoice-preview] GetOutboxInvoiceView başarısız:', vr?.attributes?.Message);
+    }
+
+    // 3) Taslağı iptal et (önizleme amaçlıydı)
     try {
       await callSoap(client, 'CancelDraft', {
         invoiceIds: { 'string[]': documentId },
       });
-    } catch (_) { /* iptal başarısız olursa sorun değil */ }
+      console.log('[draft-invoice-preview] Taslak iptal edildi:', documentId);
+    } catch (cancelErr) {
+      console.warn('[draft-invoice-preview] Taslak iptal hatası:', cancelErr.message);
+    }
 
-    return res.json({ success: true, documentId, previewUrl: url });
+    if (!html) {
+      return res.status(400).json({
+        success: false,
+        error: 'Taslak oluşturuldu ancak HTML görünümü alınamadı. Uyumsoft XSLT tanımlı olmayabilir.',
+        documentId,
+      });
+    }
+
+    return res.json({ success: true, html, documentId });
 
   } catch (err) {
     console.error('[draft-invoice-preview]', err.message);
+
+    // Hata durumunda taslağı iptal etmeye çalış
+    if (documentId) {
+      try {
+        const client2 = await createUyumsoftClient();
+        await callSoap(client2, 'CancelDraft', { invoiceIds: { 'string[]': documentId } });
+      } catch (_) {}
+    }
+
     return res.status(500).json({ success: false, error: err.message });
   }
 }
