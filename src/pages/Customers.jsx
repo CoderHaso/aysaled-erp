@@ -286,6 +286,8 @@ export default function Customers() {
   const [showNew, setShowNew]     = useState(false);
   const [toast, setToast]         = useState(null);
   const [syncingInv, setSyncingInv] = useState(false);
+  const [enriching,  setEnriching]  = useState(false);
+  const [enrichLog,  setEnrichLog]  = useState(null);  // { enriched, processed, errors[]}
 
   const c = {
     card:   isDark ? 'rgba(30,41,59,0.7)' : '#ffffff',
@@ -334,6 +336,28 @@ export default function Customers() {
     } finally { setSyncingInv(false); }
   };
 
+  // Uyumsoft'tan tam UBL çekerek adres/telefon/e-posta zenginleştir
+  const enrichContacts = async () => {
+    setEnriching(true); setEnrichLog(null);
+    try {
+      const r = await fetch('/api/enrich-contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'inbox', limit: 50, onlyMissing: true }),
+      });
+      const data = await r.json();
+      setEnrichLog(data.results);
+      if (data.success) {
+        await loadCustomers();
+        showToast(`${data.results?.enriched || 0} cari zenginleştirildi ✓`);
+      } else {
+        showToast(data.error || 'Zenginleştirme hatası', 'error');
+      }
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally { setEnriching(false); }
+  };
+
   const deleteCustomer = async (id, name) => {
     if (!window.confirm(`"${name}" silinsin mi?`)) return;
     const { error } = await supabase.from('customers').delete().eq('id', id);
@@ -377,6 +401,12 @@ export default function Customers() {
               {syncingInv ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
               Faturalardan Senkronize Et
             </button>
+            <button onClick={enrichContacts} disabled={enriching}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
+              style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981', border: '1px solid rgba(16,185,129,0.2)' }}>
+              {enriching ? <Loader2 size={14} className="animate-spin" /> : <Building2 size={14} />}
+              {enriching ? 'Zenginleştiriliyor...' : 'Adres/İletişim Çek'}
+            </button>
             <button onClick={() => setShowNew(true)}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-bold"
               style={{ background: currentColor }}>
@@ -384,6 +414,29 @@ export default function Customers() {
             </button>
           </div>
         </div>
+
+        {/* Zenginleştirme log paneli */}
+        {enrichLog && (
+          <div className="mb-4 p-4 rounded-2xl text-xs" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)' }}>
+            <div className="flex items-center justify-between mb-2">
+              <p className="font-bold text-emerald-400">Zenginleştirme Sonucu</p>
+              <button onClick={() => setEnrichLog(null)} className="text-slate-500 hover:text-white"><X size={13} /></button>
+            </div>
+            <div className="flex gap-4 text-slate-300 mb-2">
+              <span>✅ Zenginleştirilen: <strong>{enrichLog.enriched}</strong></span>
+              <span>🔄 İşlenen: <strong>{enrichLog.processed}</strong></span>
+              <span>⏩ Atlanan: <strong>{enrichLog.skipped}</strong></span>
+            </div>
+            {enrichLog.errors?.length > 0 && (
+              <div className="mt-2">
+                <p className="text-amber-400 font-semibold mb-1">Hatalar:</p>
+                {enrichLog.errors.slice(0, 5).map((e, i) => (
+                  <p key={i} className="text-red-400 font-mono truncate">{e}</p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
