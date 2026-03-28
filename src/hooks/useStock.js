@@ -1,20 +1,23 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { pageCache } from '../lib/pageCache';
+
+const CACHE_KEY = 'stock_items';
 
 export function useStock() {
-  const [items,   setItems]   = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [items,   setItems]   = useState(() => pageCache.get(CACHE_KEY) || []);
+  const [loading, setLoading] = useState(!pageCache.get(CACHE_KEY));
   const [error,   setError]   = useState(null);
   const [saving,  setSaving]  = useState(false);
 
-  const fetchItems = useCallback(async () => {
+  const fetchItems = useCallback(async (force = false) => {
     setLoading(true);
     setError(null);
-    const { data, error } = await supabase
-      .from('items')
-      .select('*')
-      .order('name');
-
+    const { data, error } = await pageCache.cachedQuery(
+      CACHE_KEY,
+      () => supabase.from('items').select('*').order('name'),
+      force
+    );
     if (error) setError(error.message);
     else setItems(data ?? []);
     setLoading(false);
@@ -22,11 +25,15 @@ export function useStock() {
 
   useEffect(() => {
     fetchItems();
+    // Realtime: değişiklik olunca cache'i geçersiz kıl ve yenile
     const channel = supabase
       .channel('items-realtime')
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'items' },
-        () => fetchItems()
+        () => {
+          pageCache.invalidate(CACHE_KEY);
+          fetchItems(true);
+        }
       )
       .subscribe();
     return () => supabase.removeChannel(channel);
@@ -38,6 +45,7 @@ export function useStock() {
     const { error } = await supabase.from('items').insert([payload]);
     setSaving(false);
     if (error) throw new Error(error.message);
+    pageCache.invalidate(CACHE_KEY);
   };
 
   const updateItem = async (id, payload) => {
@@ -45,11 +53,13 @@ export function useStock() {
     const { error } = await supabase.from('items').update(payload).eq('id', id);
     setSaving(false);
     if (error) throw new Error(error.message);
+    pageCache.invalidate(CACHE_KEY);
   };
 
   const deleteItem = async (id) => {
     const { error } = await supabase.from('items').delete().eq('id', id);
     if (error) throw new Error(error.message);
+    pageCache.invalidate(CACHE_KEY);
   };
 
   const adjustStock = async (id, delta) => {
@@ -58,6 +68,7 @@ export function useStock() {
     const newCount = Math.max(0, (item.stock_count || 0) + delta);
     const { error } = await supabase.from('items').update({ stock_count: newCount }).eq('id', id);
     if (error) throw new Error(error.message);
+    pageCache.invalidate(CACHE_KEY);
   };
 
   // ── Türev değerler ──────────────────────────────────────────────────────
@@ -78,7 +89,7 @@ export function useStock() {
     items, rawItems, productItems,
     loading, error, saving,
     addItem, updateItem, deleteItem, adjustStock,
-    refetch: fetchItems,
+    refetch: (force = true) => fetchItems(force),
     criticalItems, criticalRaw, criticalProd,
     totalValue,
   };

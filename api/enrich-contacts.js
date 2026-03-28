@@ -16,7 +16,6 @@ function val(node) {
 
 function extractContact(party, fallbackName, fallbackVkn) {
   if (!party) return null;
-
   const rawName = party?.PartyName?.Name ?? party?.PartyName;
   const name = val(rawName) || fallbackName || '';
 
@@ -53,11 +52,10 @@ function extractContact(party, fallbackName, fallbackVkn) {
  * Mevcut customers/suppliers kayıtlarındaki boş alanları (adres, telefon, e-posta)
  * Uyumsoft'taki fatura detaylarından doldurur.
  *
- * ÖNEMLİ: Yeni kayıt OLUŞTURMAZ — sadece mevcut kayıtları günceller.
- *
- * Tablo:
- *   - customers → outbox faturalar (biz sattık, karşı taraf müşteri)
- *   - suppliers → inbox faturalar (biz aldık, karşı taraf tedarikçi)
+ * ÖNEMLİ:
+ * - Yeni kayıt OLUŞTURMAZ — sadece mevcut kayıtları günceller
+ * - "enrich_attempted_at" timestamp'i set ederek aynı kaydı tekrar işlemez
+ * - Bu yüzden customers/suppliers tablosunda enrich_attempted_at kolonu gerekli
  *
  * Body: { limit: 10, type: 'customers'|'suppliers'|'both' }
  */
@@ -69,135 +67,167 @@ export default async function handler(req, res) {
   if (req.method !== 'POST')   return res.status(405).json({ error: 'Method not allowed' });
 
   const { limit = 10, type = 'customers' } = req.body || {};
-
-  console.log(`[enrich-contacts] Başlıyor: type=${type}, limit=${limit}`);
+  console.log(`[enrich-contacts] Start: type=${type}, limit=${limit}`);
 
   const results = { processed: 0, enriched: 0, errors: [], skipped: 0 };
 
   try {
     const client = await createUyumsoftClient();
 
-    // ── customers: outbox faturalardan (biz sattık = müşteri)
-    // ── suppliers: inbox faturalardan (biz aldık = tedarikçi)
     const jobs = [];
-    if (type === 'customers' || type === 'both') jobs.push({ table: 'customers', invoiceType: 'outbox', partyKey: 'AccountingCustomerParty', method: 'GetOutboxInvoice', resKey: 'GetOutboxInvoiceResult' });
-    if (type === 'suppliers' || type === 'both') jobs.push({ table: 'suppliers', invoiceType: 'inbox',  partyKey: 'AccountingSupplierParty', method: 'GetInboxInvoice',  resKey: 'GetInboxInvoiceResult'  });
+    if (type === 'customers' || type === 'both') jobs.push({
+      table: 'customers', invoiceType: 'outbox',
+      partyKey: 'AccountingCustomerParty',
+      method: 'GetOutboxInvoice', resKey: 'GetOutboxInvoiceResult'
+    });
+    if (type === 'suppliers' || type === 'both') jobs.push({
+      table: 'suppliers', invoiceType: 'inbox',
+      partyKey: 'AccountingSupplierParty',
+      method: 'GetInboxInvoice', resKey: 'GetInboxInvoiceResult'
+    });
 
     for (const job of jobs) {
-      // 1) Adres/telefon bilgisi EKSİK olan mevcut kayıtları al
+      // HENÜz denenmeyen (enrich_attempted_at IS NULL) kayıtları al
+      // Bu sayede aynı kayıt bir sonraki batch'te tekrar işlenmez
       const { data: contacts, error: cErr } = await supabase
         .from(job.table)
-        .select('id, vkntckn, name')
+        .select('id, vkntckn, name, phone, email, address, city, tax_office, postal_code')
         .not('vkntckn', 'is', null)
         .neq('vkntckn', '')
-        .or('phone.is.null,address.is.null,city.is.null')  // boş alanı olanlar
+        .is('enrich_attempted_at', null)   // ← sadece hiç denenmemişler
         .limit(limit);
 
-      if (cErr) { results.errors.push(`${job.table} fetch: ${cErr.message}`); continue; }
-      if (!contacts?.length) {
-        console.log(`[enrich-contacts] ${job.table}: tüm kayıtlar zaten dolu, işlem yok.`);
+      if (cErr) {
+        // Kolon yoksa (migration yapılmamış) fallback: phone IS NULL olanlar + MAX 1 round
+        console.warn('[enrich-contacts] enrich_attempted_at kolonu yok, fallback modu');
+        const { data: fallback } = await supabase
+          .from(job.table)
+          .select('id, vkntckn, name, phone, email, address, city, tax_office, postal_code')
+          .not('vkntckn', 'is', null).neq('vkntckn', '')
+          .is('phone', null)
+          .limit(limit);
+
+        if (!fallback?.length) continue;
+        await processContacts(client, job, fallback, results, true);
         continue;
       }
 
-      console.log(`[enrich-contacts] ${job.table}: ${contacts.length} kayıt eksik bilgi içeriyor`);
-
-      for (const contact of contacts) {
-        results.processed++;
-
-        // Bu VKN'ye ait bir fatura bul
-        const { data: invRow } = await supabase
-          .from('invoices')
-          .select('invoice_id, document_id, raw_detail')
-          .eq('type', job.invoiceType)
-          .eq('vkntckn', contact.vkntckn)
-          .limit(1)
-          .single();
-
-        if (!invRow) { results.skipped++; continue; }
-
-        // raw_detail varsa direkt kullan (Uyumsoft'a gitme)
-        let invoice = invRow.raw_detail;
-
-        if (!invoice) {
-          // raw_detail yok, Uyumsoft'tan çek
-          try {
-            const uyumsoftId = invRow.document_id || invRow.invoice_id;
-            const result = await callSoap(client, job.method, { invoiceId: uyumsoftId });
-            const r      = result?.[job.resKey];
-            const ok     = String(r?.attributes?.IsSucceded).toLowerCase() === 'true';
-            if (!ok) { results.skipped++; continue; }
-            invoice = r?.Value?.Invoice || r?.Value?.invoice || r?.Value;
-            if (!invoice) { results.skipped++; continue; }
-
-            // raw_detail'i kaydet (cache)
-            await supabase.from('invoices')
-              .update({ raw_detail: invoice, updated_at: new Date().toISOString() })
-              .eq('invoice_id', invRow.invoice_id).eq('type', job.invoiceType);
-
-            await new Promise(r => setTimeout(r, 150));
-          } catch (e) {
-            results.errors.push(`SOAP ${contact.vkntckn}: ${e.message.slice(0, 60)}`);
-            results.skipped++;
-            continue;
-          }
-        }
-
-        // Contact bilgilerini çıkar
-        const partyNode = invoice[job.partyKey] ?? invoice[`cac:${job.partyKey}`];
-        const party = partyNode?.Party ?? partyNode?.['cac:Party'] ?? partyNode;
-        const extracted = extractContact(party, contact.name, contact.vkntckn);
-
-        if (!extracted) { results.skipped++; continue; }
-
-        // Sadece boş alanları güncelle (dolu olanları üzerine yazma)
-        const patch = { updated_at: new Date().toISOString() };
-        if (extracted.phone     && !contact.phone)     patch.phone      = extracted.phone;
-        if (extracted.email     && !contact.email)     patch.email      = extracted.email;
-        if (extracted.address   && !contact.address)   patch.address    = extracted.address;
-        if (extracted.city      && !contact.city)      patch.city       = extracted.city;
-        if (extracted.postal    && !contact.postal_code) patch.postal_code = extracted.postal;
-        if (extracted.taxOffice && !contact.tax_office)  patch.tax_office  = extracted.taxOffice;
-
-        if (Object.keys(patch).length === 1) {
-          // Sadece updated_at var, hiç boş alan yok aslında
-          results.skipped++;
-          continue;
-        }
-
-        // UPDATE (yeni kayıt oluşturmaz!)
-        const { error: upErr } = await supabase
-          .from(job.table)
-          .update(patch)
-          .eq('id', contact.id);
-
-        if (upErr) {
-          results.errors.push(`Update ${contact.vkntckn}: ${upErr.message}`);
-        } else {
-          results.enriched++;
-          console.log(`[enrich-contacts] ✓ ${job.table}[${contact.vkntckn}] güncellendi`);
-        }
+      if (!contacts?.length) {
+        console.log(`[enrich-contacts] ${job.table}: tüm kayıtlar işlendi.`);
+        continue;
       }
+
+      console.log(`[enrich-contacts] ${job.table}: ${contacts.length} kayıt işlenecek`);
+      await processContacts(client, job, contacts, results, false);
     }
 
-    // Kalan eksik sayısını hesapla
+    // Kalan: henüz denenmeyen kayıt sayısı
     let remaining = 0;
     for (const job of jobs) {
-      const { count } = await supabase.from(job.table)
-        .select('id', { count: 'exact', head: true })
-        .not('vkntckn', 'is', null).neq('vkntckn', '')
-        .or('phone.is.null,address.is.null,city.is.null');
-      remaining += count || 0;
+      try {
+        const { count } = await supabase
+          .from(job.table)
+          .select('id', { count: 'exact', head: true })
+          .not('vkntckn', 'is', null).neq('vkntckn', '')
+          .is('enrich_attempted_at', null);
+        remaining += count || 0;
+      } catch { /* kolon yoksa 0 */ }
     }
 
     return res.json({
-      success: true,
-      results,
-      remaining,
-      message: `${results.enriched}/${results.processed} kayıt zenginleştirildi. Kalan: ${remaining}`,
+      success: true, results, remaining,
+      message: `${results.enriched}/${results.processed} zenginleştirildi. Kalan: ${remaining}`,
     });
 
   } catch (err) {
     console.error('[enrich-contacts]', err.message);
-    return res.status(500).json({ success: false, error: err.message, results });
+    return res.status(500).json({ success: false, error: err.message, results, remaining: -1 });
+  }
+}
+
+async function processContacts(client, job, contacts, results, isFallback) {
+  for (const contact of contacts) {
+    results.processed++;
+    const now = new Date().toISOString();
+
+    // En başta "denendi" diye işaretle — ne olursa olsun tekrar işlenmeyecek
+    if (!isFallback) {
+      await supabase.from(job.table)
+        .update({ enrich_attempted_at: now })
+        .eq('id', contact.id);
+    }
+
+    // Bu VKN'ye ait bir fatura bul (önce raw_detail olana bak)
+    const { data: invRow } = await supabase
+      .from('invoices')
+      .select('invoice_id, document_id, raw_detail')
+      .eq('type', job.invoiceType)
+      .eq('vkntckn', contact.vkntckn)
+      .not('raw_detail', 'is', null)   // önce detayı olan faturayı tercih et
+      .limit(1)
+      .maybeSingle();
+
+    // raw_detail'li fatura yoksa raw_detail'siz olanı bul
+    const { data: invRowAny } = invRow ? { data: invRow } : await supabase
+      .from('invoices')
+      .select('invoice_id, document_id, raw_detail')
+      .eq('type', job.invoiceType)
+      .eq('vkntckn', contact.vkntckn)
+      .limit(1)
+      .maybeSingle();
+
+    const inv = invRow || invRowAny;
+    if (!inv) { results.skipped++; continue; }
+
+    let invoice = inv.raw_detail;
+
+    if (!invoice) {
+      try {
+        const uyumsoftId = inv.document_id || inv.invoice_id;
+        const result = await callSoap(client, job.method, { invoiceId: uyumsoftId });
+        const r      = result?.[job.resKey];
+        const ok     = String(r?.attributes?.IsSucceded).toLowerCase() === 'true';
+        if (!ok) { results.skipped++; continue; }
+        invoice = r?.Value?.Invoice || r?.Value?.invoice || r?.Value;
+        if (!invoice) { results.skipped++; continue; }
+
+        await supabase.from('invoices')
+          .update({ raw_detail: invoice, updated_at: now })
+          .eq('invoice_id', inv.invoice_id).eq('type', job.invoiceType);
+
+        await new Promise(r => setTimeout(r, 150));
+      } catch (e) {
+        results.errors.push(`SOAP ${contact.vkntckn}: ${e.message.slice(0, 60)}`);
+        results.skipped++;
+        continue;
+      }
+    }
+
+    const partyNode = invoice[job.partyKey] ?? invoice[`cac:${job.partyKey}`];
+    const party = partyNode?.Party ?? partyNode?.['cac:Party'] ?? partyNode;
+    const extracted = extractContact(party, contact.name, contact.vkntckn);
+
+    if (!extracted) { results.skipped++; continue; }
+
+    // Sadece boş alanları güncelle
+    const patch = { updated_at: now };
+    if (extracted.phone     && !contact.phone)      patch.phone       = extracted.phone;
+    if (extracted.email     && !contact.email)      patch.email       = extracted.email;
+    if (extracted.address   && !contact.address)    patch.address     = extracted.address;
+    if (extracted.city      && !contact.city)       patch.city        = extracted.city;
+    if (extracted.postal    && !contact.postal_code) patch.postal_code = extracted.postal;
+    if (extracted.taxOffice && !contact.tax_office)  patch.tax_office  = extracted.taxOffice;
+
+    if (Object.keys(patch).length === 1) { results.skipped++; continue; }
+
+    const { error: upErr } = await supabase
+      .from(job.table).update(patch).eq('id', contact.id);
+
+    if (upErr) {
+      results.errors.push(`Update ${contact.vkntckn}: ${upErr.message}`);
+    } else {
+      results.enriched++;
+      console.log(`[enrich-contacts] ✓ ${job.table}[${contact.vkntckn}]`);
+    }
   }
 }

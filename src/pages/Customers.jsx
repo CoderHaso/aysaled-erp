@@ -8,6 +8,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import { useNavigate } from 'react-router-dom';
+import { pageCache } from '../lib/pageCache';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n) => n != null ? Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2 }) : '0,00';
@@ -51,6 +52,7 @@ function CustomerDrawer({ customer, onClose, onSaved }) {
 
   const handleSave = async () => {
     setSaving(true);
+    pageCache.invalidate('customers');
     try {
       if (isNew) {
         await supabase.from('customers').insert({ ...form, source: 'manual' });
@@ -311,9 +313,13 @@ export default function Customers() {
 
   const showToast = (msg, type = 'success') => setToast({ msg, type });
 
-  const loadCustomers = useCallback(async () => {
+  const loadCustomers = useCallback(async (force = false) => {
     setLoading(true);
-    const { data } = await supabase.from('customers').select('*').order('name');
+    const { data } = await pageCache.cachedQuery(
+      'customers',
+      () => supabase.from('customers').select('*').order('name'),
+      force
+    );
     setCustomers(data || []);
     setLoading(false);
   }, []);
@@ -332,7 +338,7 @@ export default function Customers() {
       if (rows.length > 0) {
         await supabase.from('customers').upsert(rows, { onConflict: 'vkntckn', ignoreDuplicates: true });
       }
-      await loadCustomers();
+      await loadCustomers(true);
       showToast(`${rows.length} cari senkronize edildi ✓`);
     } catch (e) {
       showToast(e.message, 'error');
@@ -371,7 +377,7 @@ export default function Customers() {
     } finally {
       setEnriching(false);
       setEnrichLog(prev => ({ ...prev, running: false }));
-      await loadCustomers();
+      await loadCustomers(true);
       showToast(`${totals.enriched} cari zenginleştirildi ✓`);
     }
   };
@@ -379,9 +385,10 @@ export default function Customers() {
 
   const deleteCustomer = async (id, name) => {
     if (!window.confirm(`"${name}" silinsin mi?`)) return;
+    pageCache.invalidate('customers');
     const { error } = await supabase.from('customers').delete().eq('id', id);
     if (error) showToast(error.message, 'error');
-    else { showToast('Cari silindi'); loadCustomers(); }
+    else { showToast('Cari silindi'); loadCustomers(true); }
   };
 
   const filtered = customers.filter(c => {

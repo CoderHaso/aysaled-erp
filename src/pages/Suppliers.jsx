@@ -8,6 +8,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import { useNavigate } from 'react-router-dom';
+import { pageCache } from '../lib/pageCache';
 
 const fmt = (n) => n != null ? Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2 }) : '0,00';
 const fmtD = (d) => d ? new Date(d).toLocaleDateString('tr-TR') : '-';
@@ -60,6 +61,7 @@ function SupplierDrawer({ supplier, onClose, onSaved }) {
 
   const handleSave = async () => {
     setSaving(true);
+    pageCache.invalidate('suppliers');
     try {
       if (isNew) {
         await supabase.from('suppliers').insert({ ...form, source: 'manual' });
@@ -307,9 +309,13 @@ export default function Suppliers() {
 
   const showToast = (msg, type = 'success') => setToast({ msg, type });
 
-  const loadSuppliers = useCallback(async () => {
+  const loadSuppliers = useCallback(async (force = false) => {
     setLoading(true);
-    const { data } = await supabase.from('suppliers').select('*').order('name');
+    const { data } = await pageCache.cachedQuery(
+      'suppliers',
+      () => supabase.from('suppliers').select('*').order('name'),
+      force
+    );
     setSuppliers(data || []);
     setLoading(false);
   }, []);
@@ -327,7 +333,7 @@ export default function Suppliers() {
       if (rows.length > 0) {
         await supabase.from('suppliers').upsert(rows, { onConflict: 'vkntckn', ignoreDuplicates: false });
       }
-      await loadSuppliers();
+      await loadSuppliers(true);
       showToast(`${rows.length} tedarikçi senkronize edildi ✓`);
     } catch (e) { showToast(e.message, 'error'); }
     finally { setSyncing(false); }
@@ -364,16 +370,17 @@ export default function Suppliers() {
     } finally {
       setEnriching(false);
       setEnrichLog(prev => ({ ...prev, running: false }));
-      await loadSuppliers();
-      showToast(`${totals.enriched} tedarikçi zenginleştirildi ✓ (${totals.processed} işlendi)`);
+      await loadSuppliers(true);
+      showToast(`${totals.enriched} tedarikçi zenginleştirildi ✓`);
     }
   };
 
   const deleteSupplier = async (id, name) => {
     if (!window.confirm(`"${name}" silinsin mi?`)) return;
+    pageCache.invalidate('suppliers');
     const { error } = await supabase.from('suppliers').delete().eq('id', id);
     if (error) showToast(error.message, 'error');
-    else { showToast('Tedarikçi silindi'); loadSuppliers(); }
+    else { showToast('Tedarikçi silindi'); loadSuppliers(true); }
   };
 
   const filtered = suppliers.filter(s => {
