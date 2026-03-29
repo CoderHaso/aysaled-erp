@@ -11,17 +11,21 @@ import Sales      from './pages/Sales';
 import Settings   from './pages/Settings';
 import QRDetail   from './pages/QRDetail';
 import Invoices   from './pages/Invoices';
+import Quotes     from './pages/Quotes';
+import Media      from './pages/Media';
 
 const PAGES = {
-  '/':           { title: 'Dashboard',     sub: 'Genel Bakış' },
-  '/stock':      { title: 'Stok Merkezi',  sub: 'Hammadde & Mamül' },
-  '/suppliers':  { title: 'Tedarikçiler',  sub: 'Tedarikçi Yönetimi' },
-  '/contacts':   { title: 'Cari Takip',    sub: 'Müşteri & Tedarikçi' },
+  '/':           { title: 'Dashboard',      sub: 'Genel Bakış' },
+  '/stock':      { title: 'Stok Merkezi',   sub: 'Hammadde & Mamül' },
+  '/suppliers':  { title: 'Tedarikçiler',   sub: 'Tedarikçi Yönetimi' },
+  '/contacts':   { title: 'Cari Takip',     sub: 'Müşteri & Tedarikçi' },
   '/incoming-invoices': { title: 'Gelir Faturaları', sub: 'Uyumsoft Gelen Faturalar' },
   '/outgoing-invoices': { title: 'Gider Faturaları', sub: 'Uyumsoft Giden Faturalar' },
-  '/sales':      { title: 'Satış',         sub: 'Sipariş & Satış' },
-  '/reports':    { title: 'Raporlar',      sub: 'Finans & Analiz' },
-  '/settings':   { title: 'Ayarlar',       sub: 'Sistem Yapılandırması' },
+  '/sales':      { title: 'Satış',          sub: 'Sipariş & Satış' },
+  '/quotes':     { title: 'Teklifler',      sub: 'Teklif Formu Yönetimi' },
+  '/media':      { title: 'Medya',          sub: 'Görsel Kütüphanesi · Backblaze B2' },
+  '/reports':    { title: 'Raporlar',       sub: 'Finans & Analiz' },
+  '/settings':   { title: 'Ayarlar',        sub: 'Sistem Yapılandırması' },
 };
 
 const ROUTE_TO_ID = {
@@ -32,6 +36,8 @@ const ROUTE_TO_ID = {
   '/incoming-invoices': 'incoming-invoices',
   '/outgoing-invoices': 'outgoing-invoices',
   '/sales':     'sales',
+  '/quotes':    'quotes',
+  '/media':     'media',
   '/reports':   'reports',
   '/settings':  'settings',
 };
@@ -61,10 +67,11 @@ function AppShell() {
   const handleNavigate = (id) => {
     const routes = {
       dashboard: '/', stock: '/stock', suppliers: '/suppliers',
-      contacts: '/contacts', 
-      'incoming-invoices': '/incoming-invoices', 
-      'outgoing-invoices': '/outgoing-invoices', 
-      sales: '/sales', reports: '/reports', settings: '/settings',
+      contacts: '/contacts',
+      'incoming-invoices': '/incoming-invoices',
+      'outgoing-invoices': '/outgoing-invoices',
+      sales: '/sales', quotes: '/quotes', media: '/media',
+      reports: '/reports', settings: '/settings',
     };
     navigate(routes[id] || '/');
     // Mobilde gezindikten sonra sidebar kapat
@@ -152,6 +159,8 @@ function AppShell() {
             <Route path="/incoming-invoices" element={<Invoices type="inbox" />} />
             <Route path="/outgoing-invoices" element={<Invoices type="outbox" />} />
             <Route path="/sales"      element={<Sales />} />
+            <Route path="/quotes"     element={<Quotes />} />
+            <Route path="/media"      element={<Media />} />
             <Route path="/reports"    element={<ComingSoon title="Raporlar"   icon="📊" />} />
           </Routes>
         </main>

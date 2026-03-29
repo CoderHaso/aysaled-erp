@@ -19,8 +19,5 @@ ALTER TABLE invoices
   ALTER COLUMN raw_detail   SET STORAGE EXTERNAL,
   ALTER COLUMN html_view    SET STORAGE EXTERNAL;
 
--- 4) Mevcut veriler için storage'ı güncelle (vacuum gerektirir)
--- Not: Bu işlem arka planda çalışır, birkaç dakika sürebilir
-VACUUM FULL ANALYZE invoices;
 
 SELECT 'OK: indexes created, column storage optimized.' AS status;
