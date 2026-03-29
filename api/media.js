@@ -70,7 +70,8 @@ export default async function handler(req, res) {
       ContentLength: buffer.length,
     }));
 
-    const publicUrl = `${process.env.B2_ENDPOINT}/${BUCKET}/${fileKey}`;
+    // Proxy URL — bucket private kalıyor, görseller /api/media-proxy üzerinden sunulur
+    const publicUrl = `/api/media-proxy?key=${encodeURIComponent(fileKey)}`;
 
     // Supabase'e kaydet
     const { data: mediaRow, error: dbErr } = await supabase.from('media').insert({

@@ -22,7 +22,7 @@ function emptyLine() {
 }
 
 // ── Ürün satırı ────────────────────────────────────────────────────────────────
-function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, rowHeight = 58 }) {
+function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, rowHeight = 58, imgWidth = 68 }) {
   const [showSugg, setShowSugg] = useState(false);
   const [q, setQ]               = useState(line.name || '');
 
@@ -69,9 +69,10 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, rowHei
       <td className={`${cell} w-7 text-center text-gray-400 font-medium`}>{idx + 1}</td>
 
       {/* Görsel */}
-      <td className={`${cell} w-14`}>
+      <td className={cell} style={{ padding: 2 }}>
         <div onClick={() => onAddImage(line.id)}
-          className="w-11 h-11 mx-auto flex items-center justify-center rounded-lg overflow-hidden cursor-pointer border-2 border-dashed border-gray-300 hover:border-green-500 transition-colors">
+          style={{ width: imgWidth - 8, height: rowHeight - 8, minWidth: 24, minHeight: 24 }}
+          className="mx-auto flex items-center justify-center rounded-lg overflow-hidden cursor-pointer border-2 border-dashed border-gray-300 hover:border-green-500 transition-colors">
           {line.image_url
             ? <img src={line.image_url} alt="" className="w-full h-full object-cover" />
             : <ImageIcon size={14} className="text-gray-400" />}
@@ -376,9 +377,41 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
   const [mediaSearch, setMediaSearch] = useState('');
   const [uploadingImg, setUploadingImg] = useState(false);
   const imgUploadRef = useRef();
-  // Satır yüksekliği ve sütun genişlikleri (px)
+  // Satır yüksekliği ve sütun genişlikleri — Excel gibi sürüklenerek ayarlanır
   const [rowHeight, setRowHeight]   = useState(58);
-  const [colWidths, setColWidths]   = useState({ img: 62, code: 58, power: 36, name: 0, desc: 100, qty: 28, unit: 28, price: 60, total: 65 });
+  const [colWidths, setColWidths]   = useState({
+    no: 32, img: 68, code: 78, power: 46, name: 160, desc: 120, qty: 52, unit: 52, price: 80, total: 80
+  });
+  const resizingCol = useRef(null);  // { key, startX, startW }
+  const resizingRow = useRef(null);  // { startY, startH }
+
+  // Genel mouse-move / mouse-up — window'a tek attach
+  useEffect(() => {
+    const onMove = (e) => {
+      if (resizingCol.current) {
+        const dx = e.clientX - resizingCol.current.startX;
+        const newW = Math.max(20, resizingCol.current.startW + dx);
+        setColWidths(p => ({ ...p, [resizingCol.current.key]: newW }));
+      }
+      if (resizingRow.current) {
+        const dy = e.clientY - resizingRow.current.startY;
+        setRowHeight(Math.max(28, resizingRow.current.startH + dy));
+      }
+    };
+    const onUp = () => { resizingCol.current = null; resizingRow.current = null; };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, []);
+
+  const startColResize = (key, e) => {
+    e.preventDefault();
+    resizingCol.current = { key, startX: e.clientX, startW: colWidths[key] };
+  };
+  const startRowResize = (e) => {
+    e.preventDefault();
+    resizingRow.current = { startY: e.clientY, startH: rowHeight };
+  };
 
   // Firma adı autocomplete
   const [custQ, setCustQ]           = useState('');
@@ -683,41 +716,72 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
           </div>
         </div>
 
-        {/* ── Tablo Ayarları ── */}
-        <div className="rounded-xl border border-gray-200 mb-3 px-5 py-3 bg-gray-50 flex flex-wrap items-center gap-4">
-          <p className="text-xs font-semibold text-gray-600 mr-2">Tablo Ayarları:</p>
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-gray-500">Satır Yks.</label>
-            <input type="number" value={rowHeight} onChange={e => setRowHeight(Number(e.target.value))} min={30} max={150}
-              className="w-16 px-2 py-1 rounded-lg border border-gray-200 text-xs outline-none bg-white text-gray-800" />
-            <span className="text-xs text-gray-400">px</span>
-          </div>
-          {[['Görsel', 'img', 30, 150], ['Kod', 'code', 30, 120], ['Güç', 'power', 20, 80],
-            ['Açıklama', 'desc', 40, 200], ['Miktar', 'qty', 20, 60], ['Birim Fiyat', 'price', 40, 120], ['Toplam', 'total', 40, 130]].map(([lbl, key, mn, mx]) => (
-            <div key={key} className="flex items-center gap-1.5">
-              <label className="text-xs text-gray-500">{lbl}</label>
-              <input type="number" value={colWidths[key]} onChange={e => setColWidths(p => ({ ...p, [key]: Number(e.target.value) }))}
-                min={mn} max={mx} className="w-14 px-2 py-1 rounded-lg border border-gray-200 text-xs outline-none bg-white text-gray-800" />
-            </div>
-          ))}
-        </div>
 
-        {/* ── Kalem Tablosu ── */}
+        {/* ── Kalem Tablosu — Excel-like resize ── */}
         <div className="rounded-xl border border-gray-200 mb-6 overflow-hidden">
           <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-between" style={{ background: '#f0faf3' }}>
-            <p className="font-semibold text-gray-700 text-sm">Ürün Kalemleri</p>
+            <p className="font-semibold text-gray-700 text-sm">Ürün Kalemleri <span className="text-xs text-gray-400 font-normal ml-1">· sütun başlıklarının sağ kenarından sürükleyerek boyutlandırın</span></p>
             <button onClick={addLine}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
               style={{ background: '#1a6b2c' }}>
               <Plus size={13} /> Satır Ekle
             </button>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse" style={{ minWidth: 800 }}>
+          <div className="overflow-x-auto" style={{ userSelect: 'none' }}>
+            <table className="border-collapse" style={{ minWidth: 600, tableLayout: 'fixed', width: Object.values(colWidths).reduce((a, b) => a + b, 16) }}>
+              <colgroup>
+                <col style={{ width: colWidths.no }} />
+                <col style={{ width: colWidths.img }} />
+                <col style={{ width: colWidths.code }} />
+                <col style={{ width: colWidths.power }} />
+                <col style={{ width: colWidths.name }} />
+                <col style={{ width: colWidths.desc }} />
+                <col style={{ width: colWidths.qty }} />
+                <col style={{ width: colWidths.unit }} />
+                <col style={{ width: colWidths.price }} />
+                <col style={{ width: colWidths.total }} />
+              </colgroup>
               <thead>
                 <tr style={{ background: '#1a6b2c' }}>
-                  {['No','Görsel','Ürün Kodu','Güç (W)','Ürün Adı','Açıklama','Miktar','BR','Birim Fiyat','Toplam'].map(h => (
-                    <th key={h} className="px-2 py-2 text-[11px] font-semibold text-white border-r border-green-900 last:border-r-0 text-left">{h}</th>
+                  {[
+                    ['no',    'No'],
+                    ['img',   'Görsel'],
+                    ['code',  'Ürün Kodu'],
+                    ['power', 'Güç (W)'],
+                    ['name',  'Ürün Adı'],
+                    ['desc',  'Açıklama'],
+                    ['qty',   'Miktar'],
+                    ['unit',  'BR'],
+                    ['price', 'Birim Fiyat'],
+                    ['total', 'Toplam'],
+                  ].map(([key, label]) => (
+                    <th key={key} className="text-left text-white text-[11px] font-semibold"
+                      style={{ position: 'relative', padding: '8px 6px', whiteSpace: 'nowrap', overflow: 'hidden', borderRight: '1px solid #146025' }}>
+                      {/* Satır yükseklik handle'u — sadece ilk (No) sütununda */}
+                      {key === 'no' && (
+                        <div
+                          onMouseDown={startRowResize}
+                          title="Satır yüksekliği — aşağı sürükle"
+                          style={{
+                            position: 'absolute', bottom: 0, left: 0, right: 0,
+                            height: 4, cursor: 'row-resize',
+                            background: 'rgba(255,255,255,0.25)',
+                          }}
+                        />
+                      )}
+                      {label}
+                      {/* Sütun genişlik handle'u */}
+                      <div
+                        onMouseDown={(e) => startColResize(key, e)}
+                        title="Sütun genişliği — sağa sürükle"
+                        style={{
+                          position: 'absolute', top: 0, right: 0, bottom: 0,
+                          width: 5, cursor: 'col-resize',
+                          background: 'rgba(255,255,255,0)',
+                        }}
+                        className="hover:bg-white/40 transition-colors"
+                      />
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -725,7 +789,7 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
                 {lines.map((line, i) => (
                   <QuoteLine key={line.id} line={line} idx={i} allItems={allItems}
                     onUpdate={updateLine} onDelete={deleteLine} onAddImage={openImageModal}
-                    rowHeight={rowHeight} />
+                    rowHeight={rowHeight} imgWidth={colWidths.img} />
                 ))}
               </tbody>
             </table>
