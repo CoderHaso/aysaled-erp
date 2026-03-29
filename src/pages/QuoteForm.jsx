@@ -161,7 +161,7 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage }) {
   );
 }
 
-// ── Teklif Önizleme (A4) ──────────────────────────────────────────────────────
+// ── Teklif Önizleme (A4 Dikey) ──────────────────────────────────────────────
 export function QuotePreview({ quote, onClose }) {
   const lines      = quote.line_items || [];
   const subtotal   = lines.reduce((s, l) => s + Number(l.total || 0), 0);
@@ -170,118 +170,142 @@ export function QuotePreview({ quote, onClose }) {
 
   return (
     <div className="fixed inset-0 z-[500] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.75)' }}>
-      <div className="bg-white w-full max-w-5xl max-h-[95vh] overflow-auto rounded-2xl shadow-2xl">
+      <div className="bg-white w-full max-w-4xl max-h-[97vh] overflow-auto rounded-2xl shadow-2xl">
 
         {/* Araç çubuğu */}
         <div className="no-print flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-gray-50">
           <p className="font-bold text-gray-700">Teklif Önizleme · {quote.quote_no}</p>
           <div className="flex gap-2">
             <button onClick={() => window.print()}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700">
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-700 text-white text-sm font-semibold hover:bg-green-800">
               <Printer size={15} /> Yazdır / PDF
             </button>
             <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-200"><X size={18} /></button>
           </div>
         </div>
 
-        {/* A4 içerik */}
-        <div id="quote-print" className="p-10 font-sans text-gray-800" style={{ minWidth: 900 }}>
+        {/* A4 içerik — 210mm genislik baz, dikey */}
+        <div id="quote-print" style={{
+          fontFamily: 'Arial, sans-serif',
+          fontSize: 11,
+          Color: '#1a1a1a',
+          padding: '12mm 14mm',
+          minWidth: 680,
+          maxWidth: 794,  /* 210mm @ 96dpi ≈8.27in × 96 ≈ 794px */
+          margin: '0 auto',
+          boxSizing: 'border-box',
+        }}>
 
-          {/* ── Üst: Logo + Teklif bilgileri ── */}
-          <div className="flex items-start justify-between mb-6">
-            <div>
-              <img src="/firmalogo.jpg" alt="AYSALED" className="h-16 object-contain mb-1"
-                onError={e => { e.target.style.display = 'none'; }} />
-            </div>
-            <div className="inline-block text-left border border-gray-300 rounded-lg overflow-hidden">
-              {[
-                ['Teklif No',          quote.quote_no || '-'],
-                ['Düzenleme Tarihi',   fmtDate(quote.issue_date)],
-                ['Geçerlilik Tarihi',  fmtDate(quote.valid_until)],
-                ['Düzenleyen',         quote.prepared_by || 'Merkez'],
-              ].map(([k, v]) => (
-                <div key={k} className="flex border-b last:border-b-0 border-gray-200">
-                  <span className="px-3 py-1.5 text-[11px] font-semibold text-gray-600 bg-gray-50 w-44">{k}</span>
-                  <span className="px-3 py-1.5 text-[11px] text-gray-800 min-w-[130px]">{v}</span>
-                </div>
-              ))}
-            </div>
+          {/* ── Logo — tam genişlik ── */}
+          <div style={{ borderBottom: '2px solid #1a6b2c', marginBottom: 8, paddingBottom: 6 }}>
+            <img src="/firmalogo.jpg" alt="AYSALED"
+              style={{ height: 56, objectFit: 'contain' }}
+              onError={e => { e.target.style.display = 'none'; }} />
           </div>
 
-          {/* ── Müşteri Bilgileri ── */}
-          <div className="mb-5 border border-gray-200 rounded-lg p-4 bg-gray-50">
-            <p className="text-[10px] font-bold text-gray-400 uppercase mb-2 tracking-wider">Müşteri Bilgileri</p>
-            <div className="grid grid-cols-2 gap-x-8 gap-y-0.5">
+          {/* ── Müşteri + Teklif bilgileri (eşit genislikte, aynı hızada) ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+            {/* Sol: Müşteri */}
+            <div style={{ border: '1px solid #d1d5db', borderRadius: 6, overflow: 'hidden' }}>
+              <div style={{ background: '#1a6b2c', color: '#fff', padding: '4px 10px', fontSize: 10, fontWeight: 700, letterSpacing: 1 }}>MÜŞTERİ BİLGİLERİ</div>
               {[
                 ['Firma Adı',   quote.company_name],
                 ['Adres',       quote.address],
                 ['Telefon',     quote.phone],
                 ['İlgili Kişi', quote.contact_person],
                 ['E-Posta',     quote.email],
-              ].filter(([, v]) => v).map(([k, v]) => (
-                <div key={k} className="flex gap-2">
-                  <span className="text-[11px] text-gray-500 w-24 shrink-0">{k}:</span>
-                  <span className="text-[11px] text-gray-800">{v}</span>
+              ].map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', borderBottom: '1px solid #e5e7eb' }}>
+                  <span style={{ width: 90, padding: '4px 8px', background: '#f9fafb', fontSize: 10, fontWeight: 600, color: '#4b5563', flexShrink: 0 }}>{k}</span>
+                  <span style={{ padding: '4px 8px', fontSize: 10, color: '#111827', flex: 1 }}>{v || '-'}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Sağ: Teklif meta */}
+            <div style={{ border: '1px solid #d1d5db', borderRadius: 6, overflow: 'hidden' }}>
+              <div style={{ background: '#1a6b2c', color: '#fff', padding: '4px 10px', fontSize: 10, fontWeight: 700, letterSpacing: 1 }}>TEKLİF BİLGİLERİ</div>
+              {[
+                ['Teklif No',         quote.quote_no || '-'],
+                ['Düzenleme Tarihi',   fmtDate(quote.issue_date)],
+                ['Geçerlilik Tarihi',  fmtDate(quote.valid_until)],
+                ['Düzenleyen',         quote.prepared_by || 'Merkez'],
+              ].map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', borderBottom: '1px solid #e5e7eb' }}>
+                  <span style={{ width: 130, padding: '4px 8px', background: '#f9fafb', fontSize: 10, fontWeight: 600, color: '#4b5563', flexShrink: 0 }}>{k}</span>
+                  <span style={{ padding: '4px 8px', fontSize: 10, color: '#111827', flex: 1 }}>{v}</span>
                 </div>
               ))}
             </div>
           </div>
 
           {/* ── Kalem Tablosu ── */}
-          <table className="w-full border-collapse text-xs mb-5">
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 10, tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: 22 }} />   {/* No */}
+              <col style={{ width: 62 }} />   {/* Görsel */}
+              <col style={{ width: 58 }} />   {/* Kod */}
+              <col style={{ width: 32 }} />   {/* Güç */}
+              <col />                          {/* Ad */}
+              <col style={{ width: 100 }} />  {/* Açıklama */}
+              <col style={{ width: 28 }} />   {/* Miktar */}
+              <col style={{ width: 28 }} />   {/* BR */}
+              <col style={{ width: 60 }} />   {/* Fiyat */}
+              <col style={{ width: 65 }} />   {/* Toplam */}
+            </colgroup>
             <thead>
-              <tr style={{ background: '#1a6b2c' }}>
-                {['No','Görsel','Ürün Kodu','Güç (W)','Ürün Adı','Açıklama','Miktar','BR','Birim Fiyat','Toplam Fiyat'].map(h => (
-                  <th key={h} className="border border-green-900 px-2 py-2 text-left text-white font-semibold text-[11px]">{h}</th>
+              <tr style={{ background: '#1a6b2c', color: '#fff' }}>
+                {['No','Görsel','Kodu','Güç(W)','Ürün Adı','Açıklama','Mkt','BR','Birim','Toplam'].map(h => (
+                  <th key={h} style={{ border: '1px solid #146025', padding: '4px 4px', fontSize: 10, fontWeight: 700, textAlign: 'left' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {lines.map((ln, i) => (
-                <tr key={ln.id || i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                  <td className="border border-gray-300 px-2 py-1 text-center text-gray-500">{i + 1}</td>
-                  <td className="border border-gray-300 px-1 py-1">
+                <tr key={ln.id || i} style={{ background: i % 2 === 0 ? '#fff' : '#f9fafb' }}>
+                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', textAlign: 'center', fontSize: 10, color: '#6b7280' }}>{i + 1}</td>
+                  <td style={{ border: '1px solid #d1d5db', padding: 2, textAlign: 'center' }}>
                     {ln.image_url
-                      ? <img src={ln.image_url} alt="" className="w-12 h-12 object-cover mx-auto rounded" />
-                      : <div className="w-12 h-12 bg-gray-100 mx-auto rounded" />}
+                      ? <img src={ln.image_url} alt="" style={{ width: 54, height: 54, objectFit: 'cover', borderRadius: 4, display: 'block', margin: 'auto' }} />
+                      : <div style={{ width: 54, height: 54, background: '#f3f4f6', borderRadius: 4, margin: 'auto' }} />}
                   </td>
-                  <td className="border border-gray-300 px-2 py-1">{ln.item_code}</td>
-                  <td className="border border-gray-300 px-2 py-1 text-center">{ln.power_w}</td>
-                  <td className="border border-gray-300 px-2 py-1 font-medium">{ln.name}</td>
-                  <td className="border border-gray-300 px-2 py-1 text-gray-600">{ln.description}</td>
-                  <td className="border border-gray-300 px-2 py-1 text-center">{ln.quantity}</td>
-                  <td className="border border-gray-300 px-2 py-1 text-center">{ln.unit}</td>
-                  <td className="border border-gray-300 px-2 py-1 text-right">{fmt(ln.unit_price)}</td>
-                  <td className="border border-gray-300 px-2 py-1 text-right font-semibold">{fmt(ln.total)}</td>
+                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10 }}>{ln.item_code}</td>
+                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, textAlign: 'center' }}>{ln.power_w}</td>
+                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, fontWeight: 600 }}>{ln.name}</td>
+                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, color: '#4b5563' }}>{ln.description}</td>
+                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, textAlign: 'center' }}>{ln.quantity}</td>
+                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, textAlign: 'center' }}>{ln.unit}</td>
+                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, textAlign: 'right' }}>{fmt(ln.unit_price)}</td>
+                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, textAlign: 'right', fontWeight: 700 }}>{fmt(ln.total)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
 
           {/* ── Açıklamalar + Toplamlar ── */}
-          <div className="grid grid-cols-3 gap-6 mb-6">
-            <div className="col-span-2">
-              <p className="text-[10px] font-bold text-gray-400 uppercase mb-1 tracking-wider">Açıklamalar</p>
-              <div className="border border-gray-200 rounded-lg p-3 min-h-[80px] text-[11px] text-gray-600 whitespace-pre-wrap">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: 10, marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Açıklamalar</div>
+              <div style={{ border: '1px solid #e5e7eb', borderRadius: 6, padding: '6px 8px', minHeight: 64, fontSize: 10, color: '#374151', whiteSpace: 'pre-wrap' }}>
                 {quote.notes || ''}
               </div>
             </div>
             <div>
-              <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+              <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #e5e7eb', borderRadius: 6, overflow: 'hidden' }}>
                 <tbody>
-                  <tr className="border-b border-gray-200">
-                    <td className="px-3 py-2 text-gray-600 bg-gray-50 text-[11px]">Toplam</td>
-                    <td className="px-3 py-2 text-right font-semibold text-[11px]">{fmt(subtotal)} ₺</td>
+                  <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                    <td style={{ padding: '4px 8px', background: '#f9fafb', fontSize: 10, color: '#4b5563' }}>Toplam</td>
+                    <td style={{ padding: '4px 8px', textAlign: 'right', fontSize: 10, fontWeight: 600 }}>{fmt(subtotal)} ₺</td>
                   </tr>
                   {quote.vat_rate && (
-                    <tr className="border-b border-gray-200">
-                      <td className="px-3 py-2 text-gray-600 bg-gray-50 text-[11px]">KDV %{quote.vat_rate}</td>
-                      <td className="px-3 py-2 text-right text-[11px]">{fmt(vatAmt)} ₺</td>
+                    <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                      <td style={{ padding: '4px 8px', background: '#f9fafb', fontSize: 10, color: '#4b5563' }}>KDV %{quote.vat_rate}</td>
+                      <td style={{ padding: '4px 8px', textAlign: 'right', fontSize: 10 }}>{fmt(vatAmt)} ₺</td>
                     </tr>
                   )}
                   <tr style={{ background: '#1a6b2c' }}>
-                    <td className="px-3 py-2 text-white font-bold text-[11px]">Genel Toplam</td>
-                    <td className="px-3 py-2 text-right text-white font-bold text-[12px]">{fmt(grandTotal)} ₺</td>
+                    <td style={{ padding: '5px 8px', color: '#fff', fontSize: 11, fontWeight: 700 }}>Genel Toplam</td>
+                    <td style={{ padding: '5px 8px', textAlign: 'right', color: '#fff', fontSize: 12, fontWeight: 700 }}>{fmt(grandTotal)} ₺</td>
                   </tr>
                 </tbody>
               </table>
@@ -289,23 +313,25 @@ export function QuotePreview({ quote, onClose }) {
           </div>
 
           {/* ── İmza ── */}
-          <div className="grid grid-cols-2 gap-10 mb-6">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 12 }}>
             {['Üretici Firma', 'Müşteri'].map(lbl => (
-              <div key={lbl} className="border-t-2 border-gray-300 pt-3">
-                <p className="text-[11px] text-gray-500 font-semibold">{lbl} Kaşe / İmza</p>
-                <div className="h-16" />
+              <div key={lbl} style={{ borderTop: '2px solid #d1d5db', paddingTop: 8 }}>
+                <p style={{ fontSize: 10, color: '#6b7280', fontWeight: 600 }}>{lbl} Kaşe / İmza</p>
+                <div style={{ height: 52 }} />
                 {lbl === 'Üretici Firma' && (
-                  <p className="text-[11px] text-gray-700 font-bold">AYSALED LED AYDINLATMA</p>
+                  <p style={{ fontSize: 10, fontWeight: 700, color: '#374151' }}>AYSALED LED AYDINLATMA</p>
                 )}
               </div>
             ))}
           </div>
 
-          {/* ── Alt: Sertifika logoları + Türkiye görseli ── */}
-          <div className="flex items-center justify-between pt-4 border-t border-gray-200">
-            <img src="/tsecevs.jpg" alt="TSE CE ENEC RoHS" className="h-12 object-contain"
+          {/* ── Alt: sertifika + Türkiye görseli ── */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: '1px solid #e5e7eb', paddingTop: 8 }}>
+            <img src="/tsecevs.jpg" alt="TSE CE ENEC RoHS"
+              style={{ height: 32, objectFit: 'contain' }}
               onError={e => { e.target.style.display = 'none'; }} />
-            <img src="/turkiyegucunu.png" alt="Türkiye'nin Gücü" className="h-12 object-contain"
+            <img src="/turkiyegucunu.png" alt="Türkiye’nin Gücu"
+              style={{ height: 32, objectFit: 'contain' }}
               onError={e => { e.target.style.display = 'none'; }} />
           </div>
         </div>
@@ -313,10 +339,17 @@ export function QuotePreview({ quote, onClose }) {
 
       <style>{`
         @media print {
+          @page { size: A4 portrait; margin: 0; }
           .no-print { display: none !important; }
           body > * { visibility: hidden; }
           #quote-print, #quote-print * { visibility: visible; }
-          #quote-print { position: fixed; inset: 0; padding: 20mm; }
+          #quote-print {
+            position: fixed; inset: 0;
+            padding: 12mm 14mm;
+            max-width: none;
+            margin: 0;
+            font-size: 10pt;
+          }
         }
       `}</style>
     </div>
@@ -440,20 +473,30 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
     setImageModal(null);
   };
 
-  // Görsel modal içinde direkt yükleme
+  // Görsel modal içinde direkt yükleme (base64 → API → B2)
   const uploadImageDirect = async (file) => {
     if (!file || !imageModal) return;
     setUploadingImg(true);
     try {
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload  = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
       const r = await fetch('/api/media', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          fileName: file.name, mimeType: file.type, fileSize: file.size,
+          fileName: file.name,
+          mimeType: file.type,
+          fileSize: file.size,
+          fileData: base64,
           name: file.name.replace(/\.[^.]+$/, ''),
         }),
       });
-      const { uploadUrl, publicUrl, error } = await r.json();
+      const { publicUrl, error } = await r.json();
       if (error) throw new Error(error);
       await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
       // Seç ve modalı güncelle

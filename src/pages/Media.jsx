@@ -58,7 +58,15 @@ export default function Media() {
     if (!file) return;
     setUploading(true);
     try {
-      // 1) Presigned URL al
+      // Dosyayı base64'e çevir
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result); // data:mime;base64,...
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      // API'ye gönder — server B2'ye yükler (CORS yok)
       const r = await fetch('/api/media', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -66,19 +74,12 @@ export default function Media() {
           fileName: file.name,
           mimeType: file.type,
           fileSize: file.size,
+          fileData: base64,
           name: file.name.replace(/\.[^.]+$/, ''),
         }),
       });
-      const { uploadUrl, publicUrl, mediaId, error } = await r.json();
-      if (error) throw new Error(error);
-
-      // 2) Direkt B2'ye yükle
-      const uploadRes = await fetch(uploadUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': file.type },
-        body: file,
-      });
-      if (!uploadRes.ok) throw new Error('B2 yükleme başarısız');
+      const json = await r.json();
+      if (json.error) throw new Error(json.error);
 
       showToast(`"${file.name}" yüklendi ✓`);
       await load();
@@ -90,16 +91,14 @@ export default function Media() {
   };
 
   const handleFileInput = (e) => {
-    const files = Array.from(e.target.files || []);
-    files.forEach(uploadFile);
+    Array.from(e.target.files || []).forEach(uploadFile);
     e.target.value = '';
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
     setDragOver(false);
-    const files = Array.from(e.dataTransfer.files || []);
-    files.forEach(uploadFile);
+    Array.from(e.dataTransfer.files || []).forEach(uploadFile);
   };
 
   const deleteItem = async (item) => {
