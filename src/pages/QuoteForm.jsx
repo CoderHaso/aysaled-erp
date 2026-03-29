@@ -22,7 +22,7 @@ function emptyLine() {
 }
 
 // ── Ürün satırı ────────────────────────────────────────────────────────────────
-function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage }) {
+function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, rowHeight = 58 }) {
   const [showSugg, setShowSugg] = useState(false);
   const [q, setQ]               = useState(line.name || '');
 
@@ -65,7 +65,7 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage }) {
   const inp   = 'w-full bg-transparent outline-none text-xs text-gray-800';
 
   return (
-    <tr className="hover:bg-gray-50 group relative">
+    <tr className="hover:bg-gray-50 group relative" style={{ height: rowHeight }}>
       <td className={`${cell} w-7 text-center text-gray-400 font-medium`}>{idx + 1}</td>
 
       {/* Görsel */}
@@ -161,8 +161,8 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage }) {
   );
 }
 
-// ── Teklif Önizleme (A4 Dikey) ──────────────────────────────────────────────
-export function QuotePreview({ quote, onClose }) {
+// ── Teklif Önizleme (A4 Dikey) ────────────────────────────────────────────
+export function QuotePreview({ quote, onClose, colWidths = {}, rowHeight = 58 }) {
   const lines      = quote.line_items || [];
   const subtotal   = lines.reduce((s, l) => s + Number(l.total || 0), 0);
   const vatAmt     = quote.vat_rate ? subtotal * Number(quote.vat_rate) / 100 : 0;
@@ -196,10 +196,10 @@ export function QuotePreview({ quote, onClose }) {
           boxSizing: 'border-box',
         }}>
 
-          {/* ── Logo — tam genişlik ── */}
-          <div style={{ borderBottom: '2px solid #1a6b2c', marginBottom: 8, paddingBottom: 6 }}>
+          {/* ── Logo — ortalanmış, tam genişlik ── */}
+          <div style={{ borderBottom: '2px solid #1a6b2c', marginBottom: 8, paddingBottom: 6, textAlign: 'center' }}>
             <img src="/firmalogo.jpg" alt="AYSALED"
-              style={{ height: 56, objectFit: 'contain' }}
+              style={{ height: 56, objectFit: 'contain', display: 'inline-block' }}
               onError={e => { e.target.style.display = 'none'; }} />
           </div>
 
@@ -214,9 +214,9 @@ export function QuotePreview({ quote, onClose }) {
                 ['Telefon',     quote.phone],
                 ['İlgili Kişi', quote.contact_person],
                 ['E-Posta',     quote.email],
-              ].map(([k, v]) => (
-                <div key={k} style={{ display: 'flex', borderBottom: '1px solid #e5e7eb' }}>
-                  <span style={{ width: 90, padding: '4px 8px', background: '#f9fafb', fontSize: 10, fontWeight: 600, color: '#4b5563', flexShrink: 0 }}>{k}</span>
+              ].map(([k, v], idx, arr) => (
+                <div key={k} style={{ display: 'flex', borderBottom: idx < arr.length - 1 ? '1px solid #e5e7eb' : 'none' }}>
+                  <span style={{ width: 90, padding: '4px 8px', background: '#f9fafb', fontSize: 10, fontWeight: 600, color: '#4b5563', flexShrink: 0, borderRight: '1px solid #e5e7eb' }}>{k}</span>
                   <span style={{ padding: '4px 8px', fontSize: 10, color: '#111827', flex: 1 }}>{v || '-'}</span>
                 </div>
               ))}
@@ -227,12 +227,13 @@ export function QuotePreview({ quote, onClose }) {
               <div style={{ background: '#1a6b2c', color: '#fff', padding: '4px 10px', fontSize: 10, fontWeight: 700, letterSpacing: 1 }}>TEKLİF BİLGİLERİ</div>
               {[
                 ['Teklif No',         quote.quote_no || '-'],
+                ['Proje Adı',         quote.project_name || '-'],
                 ['Düzenleme Tarihi',   fmtDate(quote.issue_date)],
                 ['Geçerlilik Tarihi',  fmtDate(quote.valid_until)],
                 ['Düzenleyen',         quote.prepared_by || 'Merkez'],
-              ].map(([k, v]) => (
-                <div key={k} style={{ display: 'flex', borderBottom: '1px solid #e5e7eb' }}>
-                  <span style={{ width: 130, padding: '4px 8px', background: '#f9fafb', fontSize: 10, fontWeight: 600, color: '#4b5563', flexShrink: 0 }}>{k}</span>
+              ].map(([k, v], idx, arr) => (
+                <div key={k} style={{ display: 'flex', borderBottom: idx < arr.length - 1 ? '1px solid #e5e7eb' : 'none' }}>
+                  <span style={{ width: 130, padding: '4px 8px', background: '#f9fafb', fontSize: 10, fontWeight: 600, color: '#4b5563', flexShrink: 0, borderRight: '1px solid #e5e7eb' }}>{k}</span>
                   <span style={{ padding: '4px 8px', fontSize: 10, color: '#111827', flex: 1 }}>{v}</span>
                 </div>
               ))}
@@ -242,16 +243,16 @@ export function QuotePreview({ quote, onClose }) {
           {/* ── Kalem Tablosu ── */}
           <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 10, tableLayout: 'fixed' }}>
             <colgroup>
-              <col style={{ width: 22 }} />   {/* No */}
-              <col style={{ width: 62 }} />   {/* Görsel */}
-              <col style={{ width: 58 }} />   {/* Kod */}
-              <col style={{ width: 32 }} />   {/* Güç */}
-              <col />                          {/* Ad */}
-              <col style={{ width: 100 }} />  {/* Açıklama */}
-              <col style={{ width: 28 }} />   {/* Miktar */}
-              <col style={{ width: 28 }} />   {/* BR */}
-              <col style={{ width: 60 }} />   {/* Fiyat */}
-              <col style={{ width: 65 }} />   {/* Toplam */}
+              <col style={{ width: 22 }} />
+              <col style={{ width: colWidths.img  || 62 }} />
+              <col style={{ width: colWidths.code || 58 }} />
+              <col style={{ width: colWidths.power || 36 }} />
+              <col />
+              <col style={{ width: colWidths.desc  || 100 }} />
+              <col style={{ width: colWidths.qty   || 28 }} />
+              <col style={{ width: colWidths.unit  || 28 }} />
+              <col style={{ width: colWidths.price || 60 }} />
+              <col style={{ width: colWidths.total || 65 }} />
             </colgroup>
             <thead>
               <tr style={{ background: '#1a6b2c', color: '#fff' }}>
@@ -262,21 +263,21 @@ export function QuotePreview({ quote, onClose }) {
             </thead>
             <tbody>
               {lines.map((ln, i) => (
-                <tr key={ln.id || i} style={{ background: i % 2 === 0 ? '#fff' : '#f9fafb' }}>
-                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', textAlign: 'center', fontSize: 10, color: '#6b7280' }}>{i + 1}</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: 2, textAlign: 'center' }}>
+                <tr key={ln.id || i} style={{ background: i % 2 === 0 ? '#fff' : '#f9fafb', height: rowHeight }}>
+                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', textAlign: 'center', fontSize: 10, color: '#6b7280', verticalAlign: 'middle' }}>{i + 1}</td>
+                  <td style={{ border: '1px solid #d1d5db', padding: 2, textAlign: 'center', verticalAlign: 'middle' }}>
                     {ln.image_url
-                      ? <img src={ln.image_url} alt="" style={{ width: 54, height: 54, objectFit: 'cover', borderRadius: 4, display: 'block', margin: 'auto' }} />
-                      : <div style={{ width: 54, height: 54, background: '#f3f4f6', borderRadius: 4, margin: 'auto' }} />}
+                      ? <img src={ln.image_url} alt="" style={{ width: (colWidths.img || 54) - 8, height: rowHeight - 6, objectFit: 'cover', borderRadius: 4, display: 'block', margin: 'auto' }} />
+                      : <div style={{ width: (colWidths.img || 54) - 8, height: rowHeight - 6, background: '#f3f4f6', borderRadius: 4, margin: 'auto' }} />}
                   </td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10 }}>{ln.item_code}</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, textAlign: 'center' }}>{ln.power_w}</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, fontWeight: 600 }}>{ln.name}</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, color: '#4b5563' }}>{ln.description}</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, textAlign: 'center' }}>{ln.quantity}</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, textAlign: 'center' }}>{ln.unit}</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, textAlign: 'right' }}>{fmt(ln.unit_price)}</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, textAlign: 'right', fontWeight: 700 }}>{fmt(ln.total)}</td>
+                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, verticalAlign: 'middle' }}>{ln.item_code}</td>
+                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, textAlign: 'center', verticalAlign: 'middle' }}>{ln.power_w}</td>
+                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, fontWeight: 600, verticalAlign: 'middle' }}>{ln.name}</td>
+                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, color: '#4b5563', verticalAlign: 'middle' }}>{ln.description}</td>
+                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, textAlign: 'center', verticalAlign: 'middle' }}>{ln.quantity}</td>
+                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, textAlign: 'center', verticalAlign: 'middle' }}>{ln.unit}</td>
+                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, textAlign: 'right', verticalAlign: 'middle' }}>{fmt(ln.unit_price)}</td>
+                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, textAlign: 'right', fontWeight: 700, verticalAlign: 'middle' }}>{fmt(ln.total)}</td>
                 </tr>
               ))}
             </tbody>
@@ -318,9 +319,7 @@ export function QuotePreview({ quote, onClose }) {
               <div key={lbl} style={{ borderTop: '2px solid #d1d5db', paddingTop: 8 }}>
                 <p style={{ fontSize: 10, color: '#6b7280', fontWeight: 600 }}>{lbl} Kaşe / İmza</p>
                 <div style={{ height: 52 }} />
-                {lbl === 'Üretici Firma' && (
-                  <p style={{ fontSize: 10, fontWeight: 700, color: '#374151' }}>AYSALED LED AYDINLATMA</p>
-                )}
+                <div style={{ height: 10 }} />
               </div>
             ))}
           </div>
@@ -364,7 +363,7 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
   const [allCustomers, setAllCustomers] = useState([]);
   const [previewQuoteNo, setPreviewQuoteNo] = useState(''); // Önce kaydetmeden görüntülenen no
   const [form, setForm] = useState({
-    quote_no: '', status: 'draft',
+    quote_no: '', status: 'draft', project_name: '',
     company_name: '', address: '', phone: '', contact_person: '', email: '',
     issue_date: today(), valid_until: addDays(today(), 9),
     prepared_by: 'Merkez', notes: '', currency: 'TRY', vat_rate: '',
@@ -372,11 +371,14 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
   });
   const [saving, setSaving]     = useState(false);
   const [preview, setPreview]   = useState(false);
-  const [imageModal, setImageModal] = useState(null); // lineId
+  const [imageModal, setImageModal] = useState(null);
   const [mediaItems, setMediaItems] = useState([]);
   const [mediaSearch, setMediaSearch] = useState('');
   const [uploadingImg, setUploadingImg] = useState(false);
   const imgUploadRef = useRef();
+  // Satır yüksekliği ve sütun genişlikleri (px)
+  const [rowHeight, setRowHeight]   = useState(58);
+  const [colWidths, setColWidths]   = useState({ img: 62, code: 58, power: 36, name: 0, desc: 100, qty: 28, unit: 28, price: 60, total: 65 });
 
   // Firma adı autocomplete
   const [custQ, setCustQ]           = useState('');
@@ -498,9 +500,9 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
       });
       const { publicUrl, error } = await r.json();
       if (error) throw new Error(error);
-      await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
-      // Seç ve modalı güncelle
-      selectMedia(publicUrl, imageModal);
+      // Görseli satıra ata ve modalı kapat
+      updateLine(imageModal, { image_url: publicUrl });
+      setImageModal(null);
       const { data } = await supabase.from('media').select('*').order('created_at', { ascending: false });
       setMediaItems(data || []);
     } catch (e) {
@@ -672,8 +674,32 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
                 <input type="number" value={form.vat_rate || ''} onChange={e => setF('vat_rate', e.target.value)}
                   placeholder="Opsiyonel" min={0} max={100} className={fieldCls} />
               </div>
+              <div className="col-span-2">
+                <label className={labelCls}>Proje Adı</label>
+                <input value={form.project_name || ''} onChange={e => setF('project_name', e.target.value)}
+                  placeholder="Opsiyonel" className={fieldCls} />
+              </div>
             </div>
           </div>
+        </div>
+
+        {/* ── Tablo Ayarları ── */}
+        <div className="rounded-xl border border-gray-200 mb-3 px-5 py-3 bg-gray-50 flex flex-wrap items-center gap-4">
+          <p className="text-xs font-semibold text-gray-600 mr-2">Tablo Ayarları:</p>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-500">Satır Yks.</label>
+            <input type="number" value={rowHeight} onChange={e => setRowHeight(Number(e.target.value))} min={30} max={150}
+              className="w-16 px-2 py-1 rounded-lg border border-gray-200 text-xs outline-none bg-white text-gray-800" />
+            <span className="text-xs text-gray-400">px</span>
+          </div>
+          {[['Görsel', 'img', 30, 150], ['Kod', 'code', 30, 120], ['Güç', 'power', 20, 80],
+            ['Açıklama', 'desc', 40, 200], ['Miktar', 'qty', 20, 60], ['Birim Fiyat', 'price', 40, 120], ['Toplam', 'total', 40, 130]].map(([lbl, key, mn, mx]) => (
+            <div key={key} className="flex items-center gap-1.5">
+              <label className="text-xs text-gray-500">{lbl}</label>
+              <input type="number" value={colWidths[key]} onChange={e => setColWidths(p => ({ ...p, [key]: Number(e.target.value) }))}
+                min={mn} max={mx} className="w-14 px-2 py-1 rounded-lg border border-gray-200 text-xs outline-none bg-white text-gray-800" />
+            </div>
+          ))}
         </div>
 
         {/* ── Kalem Tablosu ── */}
@@ -687,10 +713,10 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
             </button>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse" style={{ minWidth: 900 }}>
+            <table className="w-full border-collapse" style={{ minWidth: 800 }}>
               <thead>
                 <tr style={{ background: '#1a6b2c' }}>
-                  {['No','Görsel','Ürün Kodu','Güç (W)','Ürün Adı','Açıklama','Miktar','BR','Birim Fiyat','Toplam',''].map(h => (
+                  {['No','Görsel','Ürün Kodu','Güç (W)','Ürün Adı','Açıklama','Miktar','BR','Birim Fiyat','Toplam'].map(h => (
                     <th key={h} className="px-2 py-2 text-[11px] font-semibold text-white border-r border-green-900 last:border-r-0 text-left">{h}</th>
                   ))}
                 </tr>
@@ -698,7 +724,8 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
               <tbody>
                 {lines.map((line, i) => (
                   <QuoteLine key={line.id} line={line} idx={i} allItems={allItems}
-                    onUpdate={updateLine} onDelete={deleteLine} onAddImage={openImageModal} />
+                    onUpdate={updateLine} onDelete={deleteLine} onAddImage={openImageModal}
+                    rowHeight={rowHeight} />
                 ))}
               </tbody>
             </table>
@@ -745,6 +772,8 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
         <QuotePreview
           quote={{ ...form, quote_no: displayQuoteNo, line_items: lines, subtotal, vat_amount: vatAmt, grand_total: grandTotal }}
           onClose={() => setPreview(false)}
+          colWidths={colWidths}
+          rowHeight={rowHeight}
         />
       )}
 
