@@ -357,44 +357,40 @@ async function handleFormalize(body, res) {
     LineCountNumeric: String(lines.length),
     AccountingSupplierParty: {
       $xml: `
-        <cac:AccountingSupplierParty xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
-          <cac:Party>
-            <cac:PartyIdentification>
-              <cbc:ID schemeID="VKN">${(process.env.COMPANY_VKN || process.env.VITE_COMPANY_VKN || '').replace(/^["']|["']$/g, '')}</cbc:ID>
-            </cac:PartyIdentification>
-            <cac:PartyName>
-              <cbc:Name>${(process.env.COMPANY_NAME || process.env.VITE_COMPANY_NAME || 'AYS LED').replace(/^["']|["']$/g, '').replace(/&/g, '&amp;')}</cbc:Name>
-            </cac:PartyName>
-            <cac:PostalAddress>
-              <cbc:CityName>${(process.env.COMPANY_CITY || process.env.VITE_COMPANY_CITY || '').replace(/^["']|["']$/g, '')}</cbc:CityName>
-              <cac:Country><cbc:Name>Türkiye</cbc:Name></cac:Country>
-            </cac:PostalAddress>
-            <cac:PartyTaxScheme>
-              <cac:TaxScheme><cbc:Name>${(process.env.COMPANY_TAX_OFFICE || process.env.VITE_COMPANY_TAX_OFFICE || '').replace(/^["']|["']$/g, '')}</cbc:Name></cac:TaxScheme>
-            </cac:PartyTaxScheme>
-          </cac:Party>
-        </cac:AccountingSupplierParty>
+        <cac:Party xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+          <cac:PartyIdentification>
+            <cbc:ID schemeID="VKN">${(process.env.COMPANY_VKN || process.env.VITE_COMPANY_VKN || '').replace(/^["']|["']$/g, '')}</cbc:ID>
+          </cac:PartyIdentification>
+          <cac:PartyName>
+            <cbc:Name>${(process.env.COMPANY_NAME || process.env.VITE_COMPANY_NAME || 'AYS LED').replace(/^["']|["']$/g, '').replace(/&/g, '&amp;')}</cbc:Name>
+          </cac:PartyName>
+          <cac:PostalAddress>
+            <cbc:CityName>${(process.env.COMPANY_CITY || process.env.VITE_COMPANY_CITY || '').replace(/^["']|["']$/g, '')}</cbc:CityName>
+            <cac:Country><cbc:Name>Türkiye</cbc:Name></cac:Country>
+          </cac:PostalAddress>
+          <cac:PartyTaxScheme>
+            <cac:TaxScheme><cbc:Name>${(process.env.COMPANY_TAX_OFFICE || process.env.VITE_COMPANY_TAX_OFFICE || '').replace(/^["']|["']$/g, '')}</cbc:Name></cac:TaxScheme>
+          </cac:PartyTaxScheme>
+        </cac:Party>
       `
     },
     AccountingCustomerParty: {
       $xml: `
-        <cac:AccountingCustomerParty xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
-          <cac:Party>
-            <cac:PartyIdentification>
-              <cbc:ID schemeID="${(inv.vkntckn || '').length === 11 ? 'TCKN' : 'VKN'}">${inv.vkntckn || ''}</cbc:ID>
-            </cac:PartyIdentification>
-            <cac:PartyName>
-              <cbc:Name>${(inv.cari_name || '').replace(/&/g, '&amp;')}</cbc:Name>
-            </cac:PartyName>
-            <cac:PostalAddress>
-              <cbc:CityName></cbc:CityName>
-              <cac:Country><cbc:Name>Türkiye</cbc:Name></cac:Country>
-            </cac:PostalAddress>
-            <cac:PartyTaxScheme>
-              <cac:TaxScheme><cbc:Name></cbc:Name></cac:TaxScheme>
-            </cac:PartyTaxScheme>
-          </cac:Party>
-        </cac:AccountingCustomerParty>
+        <cac:Party xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+          <cac:PartyIdentification>
+            <cbc:ID schemeID="${(inv.vkntckn || '').length === 11 ? 'TCKN' : 'VKN'}">${inv.vkntckn || ''}</cbc:ID>
+          </cac:PartyIdentification>
+          <cac:PartyName>
+            <cbc:Name>${(inv.cari_name || '').replace(/&/g, '&amp;')}</cbc:Name>
+          </cac:PartyName>
+          <cac:PostalAddress>
+            <cbc:CityName></cbc:CityName>
+            <cac:Country><cbc:Name>Türkiye</cbc:Name></cac:Country>
+          </cac:PostalAddress>
+          <cac:PartyTaxScheme>
+            <cac:TaxScheme><cbc:Name></cbc:Name></cac:TaxScheme>
+          </cac:PartyTaxScheme>
+        </cac:Party>
       `
     },
     TaxTotal: {
