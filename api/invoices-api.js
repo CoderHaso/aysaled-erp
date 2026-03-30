@@ -223,7 +223,7 @@ async function handleCreate(body, res) {
   const {
     cari_name, vkntckn = '', issue_date, lines = [],
     currency = 'TRY', notes = '', type = 'outbox',
-    exchange_rate = null
+    exchange_rate = null, city = '', district = '', address = '', tax_office = ''
   } = body;
 
   if (!cari_name) return res.status(400).json({ error: 'cari_name zorunlu' });
@@ -256,7 +256,7 @@ async function handleCreate(body, res) {
   }));
 
   const row = {
-    type, invoice_id, vkntckn, cari_name,
+    type, invoice_id, vkntckn, cari_name, city, district, address, tax_office,
     issue_date: issue_date || new Date().toISOString().slice(0, 10),
     amount: grandTotal, tax_exclusive_amount: subtotal, tax_total: taxTotal,
     currency, status: 'Draft', line_items: lineItems,
@@ -526,6 +526,44 @@ async function handleCancelDraft(body, res) {
   }
 }
 
+/**
+ * delete — Taslağı sil (Supabase'den sil, Uyumsoft'taki taslağı da iptal et)
+ * Body: { invoiceId }
+ */
+async function handleDelete(body, res) {
+  const { invoiceId } = body;
+  if (!invoiceId) return res.status(400).json({ error: 'invoiceId gerekli' });
+
+  const { data: inv } = await supabase.from('invoices').select('document_id, status')
+    .eq('invoice_id', invoiceId).single();
+  if (!inv) return res.status(404).json({ success: false, error: 'Fatura bulunamadı.' });
+
+  if (['Sent', 'Approved'].includes(inv.status)) {
+    return res.status(400).json({ success: false, error: 'Resmileştirilmiş faturalar silinemez.' });
+  }
+
+  try {
+    // Eğer Uyumsoft'ta taslak olarak varsa iptal kodunu çağır, bulamazsa yoksay
+    if (inv.document_id && inv.status === 'Queued') {
+      try {
+        const client = await createUyumsoftClient();
+        await callSoap(client, 'CancelDraft', { invoiceIds: { string: [inv.document_id] } });
+      } catch (err) {
+        console.warn('[delete] Uyumsoft iptali esnasında hata (belki zaten iptal edilmiş):', err.message);
+      }
+    }
+
+    // Supabase'den sil
+    const { error: delErr } = await supabase.from('invoices').delete().eq('invoice_id', invoiceId);
+    if (delErr) throw delErr;
+
+    return res.json({ success: true, message: 'Fatura başarıyla silindi.' });
+  } catch (err) {
+    console.error('[invoices-api][delete]', err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+}
+
 // ── Main handler ─────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin',  '*');
@@ -546,7 +584,8 @@ export default async function handler(req, res) {
       case 'formalize':   return await handleFormalize(req.body || {}, res);
       case 'sendDraft':   return await handleSendDraft(req.body || {}, res);
       case 'cancelDraft': return await handleCancelDraft(req.body || {}, res);
-      default:            return res.status(400).json({ error: `Bilinmeyen action: ${action}. list|detail|view|url|create|formalize|sendDraft|cancelDraft` });
+      case 'delete':      return await handleDelete(req.body || {}, res);
+      default:            return res.status(400).json({ error: `Bilinmeyen action: ${action}. list|detail|view|url|create|formalize|sendDraft|cancelDraft|delete` });
     }
   } catch (err) {
     console.error(`[invoices-api][${action}]`, err.message);

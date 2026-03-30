@@ -349,7 +349,7 @@ export default function Invoices({ type = 'inbox' }) {
   // Manuel fatura oluşturma
   const EMPTY_LINE = () => ({ id: Date.now(), name: '', quantity: 1, unit: 'Adet', unitPrice: 0, taxRate: 20 });
   const [createModal, setCreateModal] = useState(false);
-  const [createForm, setCreateForm]   = useState({ cari_name: '', vkntckn: '', issue_date: new Date().toISOString().slice(0,10), currency: 'TRY', notes: '', exchange_rate: '', lines: [EMPTY_LINE()] });
+  const [createForm, setCreateForm]   = useState({ cari_name: '', vkntckn: '', city: '', district: '', address: '', tax_office: '', issue_date: new Date().toISOString().slice(0,10), currency: 'TRY', notes: '', exchange_rate: '', lines: [EMPTY_LINE()] });
   const [exchangeRate, setExchangeRate] = useState(null);  // { rate, buyRate, source, date }
   const [fetchingRate, setFetchingRate] = useState(false);
   const [creating, setCreating]       = useState(false);
@@ -489,7 +489,7 @@ export default function Invoices({ type = 'inbox' }) {
     setEntityOpen(false);
     setEntitySearch('');
     setQuickEntityForm(null);
-    setCreateForm({ cari_name: '', vkntckn: '', issue_date: new Date().toISOString().slice(0,10), currency: 'TRY', notes: '', lines: [EMPTY_LINE()] });
+    setCreateForm({ cari_name: '', vkntckn: '', city: '', district: '', address: '', tax_office: '', issue_date: new Date().toISOString().slice(0,10), currency: 'TRY', notes: '', lines: [EMPTY_LINE()] });
   };
   const addLine = () => setCreateForm(p => ({ ...p, lines: [...p.lines, EMPTY_LINE()] }));
   const removeLine = (id) => setCreateForm(p => ({ ...p, lines: p.lines.filter(l => l.id !== id) }));
@@ -515,7 +515,7 @@ export default function Invoices({ type = 'inbox' }) {
 
   // Seçim yapıldığında formu doldur
   const selectEntity = (e) => {
-    setCreateForm(p => ({ ...p, cari_name: e.name, vkntckn: e.vkntckn || '' }));
+    setCreateForm(p => ({ ...p, cari_name: e.name, vkntckn: e.vkntckn || '', city: e.city || '', district: e.district || '', address: e.address || '', tax_office: e.tax_office || '' }));
     setEntitySearch(e.name);
     setEntityOpen(false);
     setQuickEntityForm(null);
@@ -609,6 +609,9 @@ export default function Invoices({ type = 'inbox' }) {
 
   const handleCreate = async () => {
     if (!createForm.cari_name) return alert('Cari adı zorunlu');
+    if (createType === 'outbox' && (!createForm.city || !createForm.district || !createForm.address || !createForm.tax_office)) {
+      return alert('Gelir faturası için Ülke(TR), Şehir, İlçe, Adres ve Vergi Dairesi alanları Uyumsoft tarafından zorunlu tutulmaktadır.');
+    }
     if (!createForm.lines.some(l => l.name)) return alert('En az 1 kalem giriniz');
     if (createForm.currency !== 'TRY' && !createForm.exchange_rate) return alert('Döviz kuru gerekli');
     setCreating(true);
@@ -653,6 +656,21 @@ export default function Invoices({ type = 'inbox' }) {
     setFormalizing(invoiceId);
     try {
       const r = await fetch('/api/invoices-api?action=sendDraft', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invoiceId }) });
+      const data = await r.json();
+      if (!data.success) throw new Error(data.error);
+      invoiceCache.delete(type);
+      pageCache.invalidate(`invoices_${type}`);
+      await fetchInvoices(true);
+      alert(data.message);
+    } catch (err) { alert('Hata: ' + err.message); }
+    finally { setFormalizing(null); }
+  };
+
+  const handleDeleteDraft = async (inv) => {
+    if (!confirm(`"${inv.invoice_id}" faturasını ve (varsa) Uyumsoft üzerindeki taslağını iptal edip silmek istediğinizden emin misiniz?`)) return;
+    setFormalizing(inv.invoice_id);
+    try {
+      const r = await fetch('/api/invoices-api?action=delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invoiceId: inv.invoice_id }) });
       const data = await r.json();
       if (!data.success) throw new Error(data.error);
       invoiceCache.delete(type);
@@ -834,6 +852,20 @@ export default function Invoices({ type = 'inbox' }) {
                                 ? <Loader2 size={11} className="animate-spin" />
                                 : <CheckCheck size={11} />}
                               Resmileştir
+                            </button>
+                          )}
+                          {/* Sil Butonu — Draft ya da Queued */}
+                          {(inv.status === 'Draft' || inv.status === 'Queued') && (
+                            <button
+                              onClick={e => { e.stopPropagation(); handleDeleteDraft(inv); }}
+                              disabled={formalizing === inv.invoice_id}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap"
+                              style={{ background:'rgba(239,68,68,0.12)', color:'#ef4444' }}
+                              title="Taslağı Sil">
+                              {formalizing === inv.invoice_id
+                                ? <Loader2 size={11} className="animate-spin" />
+                                : <X size={11} />}
+                              Sil
                             </button>
                           )}
                         </div>
@@ -1018,6 +1050,34 @@ export default function Invoices({ type = 'inbox' }) {
                       style={{ background: c.card, borderColor: c.border, color: c.text }}
                       placeholder="1234567890" />
                   </div>
+                  {createType === 'outbox' && (
+                    <>
+                      <div>
+                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Şehir *</label>
+                        <input value={createForm.city} onChange={e => setCreateForm(p => ({...p, city: e.target.value}))}
+                          className="w-full px-3 py-2 text-sm rounded-xl border outline-none uppercase"
+                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Örn: İZMİR" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>İlçe *</label>
+                        <input value={createForm.district} onChange={e => setCreateForm(p => ({...p, district: e.target.value}))}
+                          className="w-full px-3 py-2 text-sm rounded-xl border outline-none uppercase"
+                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Örn: BAYRAKLI" />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Adres *</label>
+                        <input value={createForm.address} onChange={e => setCreateForm(p => ({...p, address: e.target.value}))}
+                          className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
+                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Tam Adres..." />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Vergi Dairesi *</label>
+                        <input value={createForm.tax_office} onChange={e => setCreateForm(p => ({...p, tax_office: e.target.value}))}
+                          className="w-full px-3 py-2 text-sm rounded-xl border outline-none uppercase"
+                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Örn: BORNOVA" />
+                      </div>
+                    </>
+                  )}
                   <div>
                     <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Fatura Tarihi</label>
                     <input type="date" value={createForm.issue_date} onChange={e => setCreateForm(p => ({...p, issue_date: e.target.value}))}

@@ -1,0 +1,96 @@
+{
+  "WhoAmIResult": {
+    "attributes": {
+      "IsSucceded": "true"
+    },
+    "Value": {
+      "User": {
+        "Username": "AysaLedAydinlatma_WebServis",
+        "Name": "AysaLedAydinlatma_WebServis",
+        "Surname": "AysaLedAydinlatma_WebServis",
+        "Email": ""
+      },
+      "Customer": {
+        "Name": "AYSA LED AYDINLATMA GIDA SANAYİ VE TİCARET LİMİTED ŞİRKETİ",
+        "VkTckNo": "1231009459",
+        "TypeEnum": "Enterprise",
+        "TaxOffice": "BORNOVA",
+        "OwnerTypeEnum": "Private",
+        "AddressCountry": "TÜRKİYE",
+        "AddressCity": "İZMİR",
+        "AddressSubDivisionName": "BAYRAKLI",
+        "AddressStreetName": "OSMANGAZİ MAH. İBRAHİM ETHEM CAD. NO: 75 A BAYRAKLI/ İZMİR",
+        "AddressStreetName2": "",
+        "ContactName": "AYDOĞAN KOYUGÖLGE",
+        "ContactPhone": "5541299952",
+        "ContactEmail": "koyugolgemusavirlik@outlook.com",
+        "ParentCustomer": 0,
+        "SourceType": 0,
+        "SourceTypeEnum": "Default"
+      },
+      "Company": {
+        "BusinessDescription": "274003",
+        "Email": "koyugolgemusavirlik@outlook.com",
+        "FiscalYearMonth": 1,
+        "PhoneNumber": "05444670034",
+        "PhoneTypeEnum": "Bookkeeper",
+        "LedgerStartDate": "2024-12-31T21:00:00.000Z",
+        "LedgerMasterCounter": 0,
+        "LedgerDetailCounter": 0,
+        "LedgerDocumentId": 0,
+        "LedgerSendingPeriod": 0,
+        "AssetsLedgerMasterCounter": 0,
+        "AssetsLedgerDetailCounter": 0,
+        "AssetsLedgerDocumentId": 0
+      },
+      "Services": {
+        "attributes": {
+          "HasEarchive": "true",
+          "HasEInvoice": "true",
+          "HasELedger": "false",
+          "HasETicket": "false",
+          "HasVoucher": "false",
+          "HasProducerReceipt": "false",
+          "HasEDespatch": "false",
+          "HasEGuestCheck": "false",
+          "HasEForeignExchange": "false",
+          "HasEGibArchive": "false",
+          "HasEInsuranceCommission": "false",
+          "HasPreAccounting": "false",
+          "HasLucaIntegration": "true"
+        }
+      },
+      "DetailedServiceInfo": [
+        {
+          "ServiceTypeEnum": "EInvoice",
+          "StatusEnum": "Active",
+          "LastActivatedDateUtc": "2025-01-17T15:00:17.260Z"
+        },
+        {
+          "ServiceTypeEnum": "EArchiveArchive",
+          "StatusEnum": "Active",
+          "LastActivatedDateUtc": "2025-01-17T15:02:11.850Z"
+        },
+        {
+          "ServiceTypeEnum": "SubscriveArchive",
+          "StatusEnum": "Active",
+          "LastActivatedDateUtc": "2025-01-17T15:00:57.230Z"
+        },
+        {
+          "ServiceTypeEnum": "EArchive",
+          "StatusEnum": "Active",
+          "LastActivatedDateUtc": "2025-01-17T15:01:37.370Z"
+        },
+        {
+          "ServiceTypeEnum": "LucaIntegration",
+          "StatusEnum": "Active"
+        },
+        {
+          "ServiceTypeEnum": "DocumentAccess",
+          "StatusEnum": "Active",
+          "LastActivatedDateUtc": "2025-01-01T05:27:50.917Z"
+        }
+      ]
+    }
+  }
+}

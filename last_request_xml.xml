@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"  xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd" xmlns:msc="http://schemas.microsoft.com/ws/2005/12/wsdl/contract" xmlns:tns="http://tempuri.org/"><soap:Header><wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd" xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd"><wsse:UsernameToken xmlns:wsu="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd" wsu:Id="SecurityToken-2026-03-30T19:59:33Z"><wsse:Username></wsse:Username><wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText"></wsse:Password></wsse:UsernameToken></wsse:Security></soap:Header><soap:Body><SaveAsDraft xmlns="http://tempuri.org/"><invoices><InvoiceInfo LocalDocumentId="MNL-2026-003">
+    <q1:Invoice xmlns:q1="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+                xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+                xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+      <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
+      <cac:AccountingSupplierParty>
+        <cac:Party>
+          <cac:PartyIdentification><cbc:ID schemeID="VKN">1231009459</cbc:ID></cac:PartyIdentification>
+        </cac:Party>
+      </cac:AccountingSupplierParty>
+    </q1:Invoice>
+  </InvoiceInfo></invoices></SaveAsDraft></soap:Body></soap:Envelope>
