@@ -246,15 +246,15 @@ export function QuotePreview({ quote, onClose, colWidths = {}, rowHeight = 58 })
           <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 10, tableLayout: 'fixed' }}>
             <colgroup>
               <col style={{ width: 22 }} />
-              <col style={{ width: colWidths.img  || 62 }} />
-              <col style={{ width: colWidths.code || 58 }} />
-              <col style={{ width: colWidths.power || 36 }} />
-              <col />
-              <col style={{ width: colWidths.desc  || 100 }} />
-              <col style={{ width: colWidths.qty   || 28 }} />
-              <col style={{ width: colWidths.unit  || 28 }} />
-              <col style={{ width: colWidths.price || 60 }} />
-              <col style={{ width: colWidths.total || 65 }} />
+              <col style={{ width: colWidths.img   || 68 }} />
+              <col style={{ width: colWidths.code  || 78 }} />
+              <col style={{ width: colWidths.power || 46 }} />
+              <col style={{ width: colWidths.name  || 160 }} />
+              <col style={{ width: colWidths.desc  || 120 }} />
+              <col style={{ width: colWidths.qty   || 52 }} />
+              <col style={{ width: colWidths.unit  || 52 }} />
+              <col style={{ width: colWidths.price || 80 }} />
+              <col style={{ width: colWidths.total || 80 }} />
             </colgroup>
             <thead>
               <tr style={{ background: '#1a6b2c', color: '#fff' }}>
@@ -274,7 +274,7 @@ export function QuotePreview({ quote, onClose, colWidths = {}, rowHeight = 58 })
                   </td>
                   <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, verticalAlign: 'middle' }}>{ln.item_code}</td>
                   <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, textAlign: 'center', verticalAlign: 'middle' }}>{ln.power_w}</td>
-                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, fontWeight: 600, verticalAlign: 'middle' }}>{ln.name}</td>
+                  <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, fontWeight: 600, verticalAlign: 'middle', wordBreak: 'break-word', overflowWrap: 'break-word' }}>{ln.name}</td>
                   <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, color: '#4b5563', verticalAlign: 'middle' }}>{ln.description}</td>
                   <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, textAlign: 'center', verticalAlign: 'middle' }}>{ln.quantity}</td>
                   <td style={{ border: '1px solid #d1d5db', padding: '2px 4px', fontSize: 10, textAlign: 'center', verticalAlign: 'middle' }}>{ln.unit}</td>
@@ -736,13 +736,17 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
             </button>
           </div>
           <div className="overflow-x-auto" style={{ userSelect: 'none' }}>
-            <table className="border-collapse" style={{ minWidth: 600, tableLayout: 'fixed', width: Object.values(colWidths).reduce((a, b) => a + b, 16) }}>
+            <table className="border-collapse" style={{
+              width: Math.max(Object.values(colWidths).reduce((a, b) => a + b, 28), 600),
+              minWidth: '100%',
+              tableLayout: 'fixed'
+            }}>
               <colgroup>
                 <col style={{ width: colWidths.no }} />
                 <col style={{ width: colWidths.img }} />
                 <col style={{ width: colWidths.code }} />
                 <col style={{ width: colWidths.power }} />
-                <col style={{ width: colWidths.name }} />
+                <col style={{ width: colWidths.name }} />{/* name — editörde de fixed, preview ile aynı */}
                 <col style={{ width: colWidths.desc }} />
                 <col style={{ width: colWidths.qty }} />
                 <col style={{ width: colWidths.unit }} />
