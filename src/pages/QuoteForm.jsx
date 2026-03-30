@@ -349,7 +349,7 @@ export function QuotePreview({ quote, onClose, colWidths = {}, rowHeight = 58 })
             <img src="/tsecevs.jpg" alt="TSE CE ENEC RoHS"
               style={{ height: 32, objectFit: 'contain' }}
               onError={e => { e.target.style.display = 'none'; }} />
-            <img src="/turkiyegucunu.png" alt="Türkiye’nin Gücu"
+            <img src="/turkiyegucunu.svg" alt="Türkiye’nin Gücu"
               style={{ height: 32, objectFit: 'contain' }}
               onError={e => { e.target.style.display = 'none'; }} />
           </div>
