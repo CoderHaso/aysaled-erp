@@ -315,19 +315,19 @@ async function handleFormalize(body, res) {
       TaxSubtotal: {
         TaxableAmount: { $value: String(l.line_total || 0), attributes: { currencyID: currency } },
         TaxAmount: { $value: String(l.tax_amount || 0), attributes: { currencyID: currency } },
-        Percent: String(l.tax_percent || 0),
+        Percent: { $value: String(l.tax_percent || 0) },
         TaxCategory: {
-          TaxScheme: { Name: 'KDV', TaxTypeCode: '0015' }
+          TaxScheme: { Name: { $value: 'KDV' }, TaxTypeCode: { $value: '0015' } }
         }
       }
     },
-    Item: { Name: l.name || '-' },
+    Item: { Name: { $value: l.name || '-' } },
     Price: {
       PriceAmount: { $value: String(l.unit_price || 0), attributes: { currencyID: currency } }
     },
     AllowanceCharge: {
-      ChargeIndicator: 'false',
-      MultiplierFactorNumeric: '0',
+      ChargeIndicator: { $value: 'false' },
+      MultiplierFactorNumeric: { $value: '0' },
       Amount: { $value: '0', attributes: { currencyID: currency } },
       BaseAmount: { $value: String(l.line_total || 0), attributes: { currencyID: currency } }
     }
@@ -337,9 +337,9 @@ async function handleFormalize(body, res) {
   const taxSubtotals = Object.entries(vatGroups).map(([pct, v]) => ({
     TaxableAmount: { $value: String(v.taxable), attributes: { currencyID: currency } },
     TaxAmount: { $value: String(v.tax), attributes: { currencyID: currency } },
-    Percent: String(pct),
+    Percent: { $value: String(pct) },
     TaxCategory: {
-      TaxScheme: { Name: 'KDV', TaxTypeCode: '0015' }
+      TaxScheme: { Name: { $value: 'KDV' }, TaxTypeCode: { $value: '0015' } }
     }
   }));
 
@@ -349,35 +349,35 @@ async function handleFormalize(body, res) {
     CustomizationID: { $value: 'TR1.2.1' },
     ProfileID: { $value: 'TEMELFATURA' },
     ID: { $value: invoiceId },
-    CopyIndicator: false,
-    IssueDate: issueDate,
-    IssueTime: '00:00:00',
+    CopyIndicator: { $value: 'false' },
+    IssueDate: { $value: issueDate },
+    IssueTime: { $value: '00:00:00' },
     InvoiceTypeCode: { $value: 'SATIS' },
     DocumentCurrencyCode: { $value: currency },
-    LineCountNumeric: String(lines.length),
+    LineCountNumeric: { $value: String(lines.length) },
     AccountingSupplierParty: {
       Party: {
-        PartyName: { Name: process.env.COMPANY_NAME || 'AYS LED' },
+        PartyName: { Name: { $value: process.env.COMPANY_NAME || 'AYS LED' } },
         PartyIdentification: { ID: { $value: process.env.COMPANY_VKN || '', attributes: { schemeID: 'VKN' } } },
         PostalAddress: {
-          CityName: process.env.COMPANY_CITY || '',
-          Country: { Name: 'Türkiye' }
+          CityName: { $value: process.env.COMPANY_CITY || '' },
+          Country: { Name: { $value: 'Türkiye' } }
         },
         PartyTaxScheme: {
-          TaxScheme: { Name: process.env.COMPANY_TAX_OFFICE || '' }
+          TaxScheme: { Name: { $value: process.env.COMPANY_TAX_OFFICE || '' } }
         }
       }
     },
     AccountingCustomerParty: {
       Party: {
         PartyIdentification: { ID: { $value: inv.vkntckn || '', attributes: { schemeID: (inv.vkntckn || '').length === 11 ? 'TCKN' : 'VKN' } } },
-        PartyName: { Name: inv.cari_name },
+        PartyName: { Name: { $value: inv.cari_name } },
         PostalAddress: {
-          CityName: '',
-          Country: { Name: 'Türkiye' }
+          CityName: { $value: '' },
+          Country: { Name: { $value: 'Türkiye' } }
         },
         PartyTaxScheme: {
-          TaxScheme: { Name: '' }
+          TaxScheme: { Name: { $value: '' } }
         }
       }
     },
@@ -400,10 +400,10 @@ async function handleFormalize(body, res) {
     ublInvoice.PricingCurrencyCode = { $value: currency };
     ublInvoice.TaxCurrencyCode = { $value: 'TRY' };
     ublInvoice.PricingExchangeRate = {
-      SourceCurrencyCode: currency,
-      TargetCurrencyCode: 'TRY',
-      CalculationRate: String(exchangeRate),
-      Date: issueDate
+      SourceCurrencyCode: { $value: currency },
+      TargetCurrencyCode: { $value: 'TRY' },
+      CalculationRate: { $value: String(exchangeRate) },
+      Date: { $value: issueDate }
     };
   }
 
