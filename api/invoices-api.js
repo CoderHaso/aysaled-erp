@@ -3,10 +3,12 @@
  * Tüm Uyumsoft fatura endpoint'lerini tek serverless function'da toplar.
  * Vercel Hobby limiti aşımını önler (max 12 fonksiyon).
  *
- * POST /api/invoices-api?action=list       → get-invoices
- * POST /api/invoices-api?action=detail     → get-invoice-detail
- * POST /api/invoices-api?action=view       → get-invoice-view
- * POST /api/invoices-api?action=url        → get-invoice-url
+ * POST /api/invoices-api?action=list       → fatura listesi
+ * POST /api/invoices-api?action=detail     → fatura detay
+ * POST /api/invoices-api?action=view       → HTML/PDF görünüm
+ * POST /api/invoices-api?action=url        → belge URL
+ * POST /api/invoices-api?action=create     → manuel fatura oluştur (Supabase'e kaydet)
+ * POST /api/invoices-api?action=formalize  → taslak faturayı Uyumsoft'a gönder (SaveAsDraft)
  */
 
 import { createUyumsoftClient, callSoap } from './_uyumsoft-client.js';
@@ -144,6 +146,7 @@ async function handleDetail(body, res) {
     const phone = val(contactNode?.Telephone ?? contactNode?.['cbc:Telephone']) || '';
     const email = val(contactNode?.ElectronicMail ?? contactNode?.['cbc:ElectronicMail']) || '';
     if (vkn) {
+      // inbox = bize gelen fatura → tedarikçi; outbox = bizim kestiğimiz → müşteri
       const table = type === 'inbox' ? 'suppliers' : 'customers';
       const cd = { vkntckn: vkn, name: partyName || 'Bilinmiyor', source: 'invoice_sync', updated_at: new Date().toISOString() };
       if (phone) cd.phone = phone;
@@ -212,6 +215,113 @@ async function handleUrl(body, res) {
   return res.json({ success: true, url, fileType });
 }
 
+/**
+ * create — Manuel fatura oluştur (Supabase'e kaydet, type='outbox')
+ * Body: { cari_name, vkntckn, issue_date, lines[], currency, notes }
+ */
+async function handleCreate(body, res) {
+  const {
+    cari_name, vkntckn = '', issue_date, lines = [],
+    currency = 'TRY', notes = '', type = 'outbox'
+  } = body;
+
+  if (!cari_name) return res.status(400).json({ error: 'cari_name zorunlu' });
+  if (!lines.length) return res.status(400).json({ error: 'En az 1 kalem gerekli' });
+
+  const subtotal = lines.reduce((s, l) => s + (l.quantity || 0) * (l.unitPrice || 0), 0);
+  const taxTotal = lines.reduce((s, l) => s + (l.quantity || 0) * (l.unitPrice || 0) * (l.taxRate || 0) / 100, 0);
+  const grandTotal = subtotal + taxTotal;
+
+  // Otomatik fatura no: MNL-YYYY-NNN
+  const year = new Date().getFullYear();
+  const { data: last } = await supabase.from('invoices')
+    .select('invoice_id').ilike('invoice_id', `MNL-${year}-%`)
+    .order('created_at', { ascending: false }).limit(1).maybeSingle();
+  let seq = 1;
+  if (last?.invoice_id) {
+    const parts = last.invoice_id.split('-');
+    seq = (parseInt(parts[parts.length - 1]) || 0) + 1;
+  }
+  const invoice_id = `MNL-${year}-${String(seq).padStart(3, '0')}`;
+
+  const lineItems = lines.map((l, i) => ({
+    id: String(i + 1), name: l.name, item_code: l.item_code || null,
+    quantity: l.quantity, unit: l.unit || 'Adet',
+    unit_price: l.unitPrice, tax_percent: l.taxRate || 0,
+    tax_amount: (l.quantity || 0) * (l.unitPrice || 0) * (l.taxRate || 0) / 100,
+    line_total: (l.quantity || 0) * (l.unitPrice || 0),
+  }));
+
+  const row = {
+    type, invoice_id, vkntckn, cari_name,
+    issue_date: issue_date || new Date().toISOString().slice(0, 10),
+    amount: grandTotal, tax_exclusive_amount: subtotal, tax_total: taxTotal,
+    currency, status: 'Draft', line_items: lineItems,
+    message: notes, source: 'manual',
+    updated_at: new Date().toISOString()
+  };
+
+  const { error } = await supabase.from('invoices').insert(row);
+  if (error) return res.status(500).json({ success: false, error: error.message });
+  return res.json({ success: true, invoice_id });
+}
+
+/**
+ * formalize — Taslak (Draft) faturayı Uyumsoft'a SaveAsDraft ile gönder
+ * Body: { invoiceId } — Supabase'deki invoice_id
+ */
+async function handleFormalize(body, res) {
+  const { invoiceId } = body;
+  if (!invoiceId) return res.status(400).json({ error: 'invoiceId gerekli' });
+
+  // Faturayı Supabase'den al
+  const { data: inv, error: fetchErr } = await supabase
+    .from('invoices').select('*').eq('invoice_id', invoiceId).single();
+  if (fetchErr || !inv) return res.status(404).json({ success: false, error: 'Fatura bulunamadı' });
+
+  if (inv.status !== 'Draft') {
+    return res.status(400).json({ success: false, error: `Yalnızca taslak faturalar resmileştirilebilir (mevcut durum: ${inv.status})` });
+  }
+
+  // Uyumsoft SaveAsDraft çağrısı için basit UBL-benzeri yapı (Uyumsoft kendi XML'e dönüştürür)
+  const invoiceData = {
+    InvoiceId: inv.invoice_id,
+    TargetTitle: inv.cari_name,
+    TargetTcknVkn: inv.vkntckn || '',
+    DocumentCurrencyCode: inv.currency || 'TRY',
+    ExecutionDate: inv.issue_date,
+    PayableAmount: inv.amount,
+    TaxExclusiveAmount: inv.tax_exclusive_amount,
+    TaxTotal: inv.tax_total,
+    Lines: (inv.line_items || []).map(l => ({
+      Name: l.name, Quantity: l.quantity, UnitCode: l.unit || 'C62',
+      UnitPrice: l.unit_price, LineExtensionAmount: l.line_total,
+      TaxPercent: l.tax_percent || 0, TaxAmount: l.tax_amount || 0,
+    }))
+  };
+
+  try {
+    const client = await createUyumsoftClient();
+    const result = await callSoap(client, 'SaveAsDraft', { invoices: [invoiceData] });
+    const r = result?.SaveAsDraftResult;
+    const ok = String(r?.attributes?.IsSucceded ?? 'true').toLowerCase() !== 'false';
+
+    if (!ok) {
+      const msg = r?.attributes?.Message || JSON.stringify(r);
+      return res.status(400).json({ success: false, error: msg });
+    }
+
+    // Durum güncelle
+    await supabase.from('invoices').update({ status: 'Queued', updated_at: new Date().toISOString() })
+      .eq('invoice_id', invoiceId);
+
+    return res.json({ success: true, message: 'Fatura Uyumsoft kuyruğuna alındı.' });
+  } catch (err) {
+    console.error('[invoices-api][formalize]', err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+}
+
 // ── Main handler ─────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin',  '*');
@@ -224,11 +334,13 @@ export default async function handler(req, res) {
 
   try {
     switch (action) {
-      case 'list':   return await handleList(req.body || {}, res);
-      case 'detail': return await handleDetail(req.body || {}, res);
-      case 'view':   return await handleView(req.body || {}, res);
-      case 'url':    return await handleUrl(req.body || {}, res);
-      default:       return res.status(400).json({ error: `Bilinmeyen action: ${action}. list|detail|view|url` });
+      case 'list':      return await handleList(req.body || {}, res);
+      case 'detail':    return await handleDetail(req.body || {}, res);
+      case 'view':      return await handleView(req.body || {}, res);
+      case 'url':       return await handleUrl(req.body || {}, res);
+      case 'create':    return await handleCreate(req.body || {}, res);
+      case 'formalize': return await handleFormalize(req.body || {}, res);
+      default:          return res.status(400).json({ error: `Bilinmeyen action: ${action}. list|detail|view|url|create|formalize` });
     }
   } catch (err) {
     console.error(`[invoices-api][${action}]`, err.message);

@@ -66,12 +66,13 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, rowHei
 
   return (
     <tr className="hover:bg-gray-50 group relative" style={{ height: rowHeight }}>
-      <td className={`${cell} w-7 text-center text-gray-400 font-medium`}>{idx + 1}</td>
+      {/* No */}
+      <td className={cell} style={{ textAlign: 'center', color: '#9ca3af', fontWeight: 500, overflow: 'hidden' }}>{idx + 1}</td>
 
       {/* Görsel */}
-      <td className={cell} style={{ padding: 2 }}>
+      <td className={cell} style={{ padding: 2, overflow: 'hidden' }}>
         <div onClick={() => onAddImage(line.id)}
-          style={{ width: imgWidth - 8, height: rowHeight - 8, minWidth: 24, minHeight: 24 }}
+          style={{ width: Math.max(24, imgWidth - 8), height: Math.max(24, rowHeight - 8) }}
           className="mx-auto flex items-center justify-center rounded-lg overflow-hidden cursor-pointer border-2 border-dashed border-gray-300 hover:border-green-500 transition-colors">
           {line.image_url
             ? <img src={line.image_url} alt="" className="w-full h-full object-cover" />
@@ -80,17 +81,17 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, rowHei
       </td>
 
       {/* Ürün Kodu */}
-      <td className={`${cell} w-24`}>
+      <td className={cell} style={{ overflow: 'hidden' }}>
         <input value={line.item_code} onChange={e => upd('item_code', e.target.value)} className={inp} placeholder="KOD" />
       </td>
 
       {/* Güç */}
-      <td className={`${cell} w-14`}>
+      <td className={cell} style={{ overflow: 'hidden' }}>
         <input value={line.power_w} onChange={e => upd('power_w', e.target.value)} className={inp} placeholder="W" />
       </td>
 
       {/* Ürün Adı — arama dropdown */}
-      <td className={`${cell} min-w-[160px] relative`} style={{ overflow: 'visible' }}>
+      <td className={cell} style={{ overflow: 'visible' }}>
         <input
           value={q}
           onChange={e => { upd('name', e.target.value); setShowSugg(true); }}
@@ -123,38 +124,38 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, rowHei
       </td>
 
       {/* Açıklama */}
-      <td className={`${cell} min-w-[110px]`}>
+      <td className={cell} style={{ overflow: 'hidden' }}>
         <input value={line.description} onChange={e => upd('description', e.target.value)} className={inp} placeholder="Açıklama" />
       </td>
 
       {/* Miktar */}
-      <td className={`${cell} w-14`}>
+      <td className={cell} style={{ overflow: 'hidden' }}>
         <input type="number" value={line.quantity} min={1}
           onChange={e => upd('quantity', e.target.value)} className={`${inp} text-center`} />
       </td>
 
       {/* BR */}
-      <td className={`${cell} w-14`}>
+      <td className={cell} style={{ overflow: 'hidden' }}>
         <select value={line.unit} onChange={e => upd('unit', e.target.value)} className={`${inp} cursor-pointer`}>
           {['Adet','Mt','Kg','M²','Rulo','Paket','Set'].map(u => <option key={u}>{u}</option>)}
         </select>
       </td>
 
       {/* Birim Fiyat */}
-      <td className={`${cell} w-24`}>
+      <td className={cell} style={{ overflow: 'hidden' }}>
         <input type="number" value={line.unit_price} min={0} step="0.01"
           onChange={e => upd('unit_price', e.target.value)} className={`${inp} text-right`} />
       </td>
 
       {/* Toplam */}
-      <td className={`${cell} w-24 text-right font-semibold text-gray-700`}>
+      <td className={cell} style={{ textAlign: 'right', fontWeight: 600, color: '#374151', overflow: 'hidden' }}>
         {fmt(line.total)}
       </td>
 
       {/* Sil */}
-      <td className="w-7 text-center border border-gray-300">
+      <td style={{ textAlign: 'center', borderRight: 'none', width: 28, padding: '2px 4px', borderBottom: '1px solid #d1d5db' }}>
         <button onClick={() => onDelete(line.id)}
-          className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity px-1">
+          className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity">
           <X size={13} />
         </button>
       </td>
@@ -362,7 +363,7 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
 
   const [allItems,   setAllItems]   = useState([]);
   const [allCustomers, setAllCustomers] = useState([]);
-  const [previewQuoteNo, setPreviewQuoteNo] = useState(''); // Önce kaydetmeden görüntülenen no
+  const [previewQuoteNo, setPreviewQuoteNo] = useState('');
   const [form, setForm] = useState({
     quote_no: '', status: 'draft', project_name: '',
     company_name: '', address: '', phone: '', contact_person: '', email: '',
@@ -377,21 +378,28 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
   const [mediaSearch, setMediaSearch] = useState('');
   const [uploadingImg, setUploadingImg] = useState(false);
   const imgUploadRef = useRef();
-  // Satır yüksekliği ve sütun genişlikleri — Excel gibi sürüklenerek ayarlanır
-  const [rowHeight, setRowHeight]   = useState(58);
-  const [colWidths, setColWidths]   = useState({
+
+  // Sütun/satır ayarları — localStorage'dan yüklenir, sürükleyerek ayarlanır
+  const SAVED_LAYOUT_KEY = 'quoteTableLayout';
+  const savedLayout = (() => { try { return JSON.parse(localStorage.getItem(SAVED_LAYOUT_KEY) || '{}'); } catch { return {}; } })();
+  const [rowHeight, setRowHeight] = useState(savedLayout.rowHeight || 58);
+  const [colWidths, setColWidths] = useState(savedLayout.colWidths || {
     no: 32, img: 68, code: 78, power: 46, name: 160, desc: 120, qty: 52, unit: 52, price: 80, total: 80
   });
-  const resizingCol = useRef(null);  // { key, startX, startW }
-  const resizingRow = useRef(null);  // { startY, startH }
+  const resizingCol = useRef(null);
+  const resizingRow = useRef(null);
 
-  // Genel mouse-move / mouse-up — window'a tek attach
+  // resize olunca localStorage'a kaydet
+  useEffect(() => {
+    localStorage.setItem(SAVED_LAYOUT_KEY, JSON.stringify({ rowHeight, colWidths }));
+  }, [rowHeight, colWidths]);
+
+  // Mouse resize handlers
   useEffect(() => {
     const onMove = (e) => {
       if (resizingCol.current) {
         const dx = e.clientX - resizingCol.current.startX;
-        const newW = Math.max(20, resizingCol.current.startW + dx);
-        setColWidths(p => ({ ...p, [resizingCol.current.key]: newW }));
+        setColWidths(p => ({ ...p, [resizingCol.current.key]: Math.max(20, resizingCol.current.startW + dx) }));
       }
       if (resizingRow.current) {
         const dy = e.clientY - resizingRow.current.startY;

@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Loader2, AlertCircle, FileDown, FileUp, Eye, RefreshCw,
-  X, Building2, Tag, Package, BarChart2, CheckCircle2, Receipt, Info, ScanEye
+  X, Building2, Tag, Package, BarChart2, CheckCircle2, Receipt, Info, ScanEye,
+  FilePlus2, Plus, Trash2, CheckCheck
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
@@ -344,7 +345,13 @@ export default function Invoices({ type = 'inbox' }) {
   const [error, setError]         = useState(null);
   const [search, setSearch]       = useState('');
   const [selected, setSelected]   = useState(null);
-  const [previewInv, setPreviewInv] = useState(null); // { invoiceId, documentId, type }
+  const [previewInv, setPreviewInv] = useState(null);
+  // Manuel fatura oluşturma
+  const EMPTY_LINE = () => ({ id: Date.now(), name: '', quantity: 1, unit: 'Adet', unitPrice: 0, taxRate: 20 });
+  const [createModal, setCreateModal] = useState(false);
+  const [createForm, setCreateForm]   = useState({ cari_name: '', vkntckn: '', issue_date: new Date().toISOString().slice(0,10), currency: 'TRY', notes: '', lines: [EMPTY_LINE()] });
+  const [creating, setCreating]       = useState(false);
+  const [formalizing, setFormalizing] = useState(null); // invoice_id
   const location = useLocation();
 
   // Cari/Tedarikçi drawer’dan yönlendirme gelirse faturayı otomatik aç
@@ -445,6 +452,47 @@ export default function Invoices({ type = 'inbox' }) {
     finally { setSyncing(false); }
   };
 
+  // Manuel fatura oluşturma
+  const openCreate = () => setCreateModal(true);
+  const closeCreate = () => { setCreateModal(false); setCreateForm({ cari_name: '', vkntckn: '', issue_date: new Date().toISOString().slice(0,10), currency: 'TRY', notes: '', lines: [EMPTY_LINE()] }); };
+  const addLine = () => setCreateForm(p => ({ ...p, lines: [...p.lines, EMPTY_LINE()] }));
+  const removeLine = (id) => setCreateForm(p => ({ ...p, lines: p.lines.filter(l => l.id !== id) }));
+  const updateLine = (id, key, val) => setCreateForm(p => ({ ...p, lines: p.lines.map(l => l.id === id ? { ...l, [key]: val } : l) }));
+
+  const handleCreate = async () => {
+    if (!createForm.cari_name) return alert('Cari adı zorunlu');
+    if (!createForm.lines.some(l => l.name)) return alert('En az 1 kalem giriniz');
+    setCreating(true);
+    try {
+      const body = { ...createForm, type: 'outbox', lines: createForm.lines.filter(l => l.name).map(l => ({ ...l, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), taxRate: Number(l.taxRate) })) };
+      const r = await fetch('/api/invoices-api?action=create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await r.json();
+      if (!data.success) throw new Error(data.error);
+      closeCreate();
+      invoiceCache.delete(type);
+      pageCache.invalidate(`invoices_${type}`);
+      await fetchInvoices(true);
+      alert(`Fatura oluşturuldu: ${data.invoice_id}`);
+    } catch (err) { alert('Hata: ' + err.message); }
+    finally { setCreating(false); }
+  };
+
+  // Resmileştir
+  const handleFormalize = async (invoiceId) => {
+    if (!confirm(`"${invoiceId}" faturasını Uyumsoft'a göndermek istediğinizden emin misiniz?`)) return;
+    setFormalizing(invoiceId);
+    try {
+      const r = await fetch('/api/invoices-api?action=formalize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invoiceId }) });
+      const data = await r.json();
+      if (!data.success) throw new Error(data.error);
+      invoiceCache.delete(type);
+      pageCache.invalidate(`invoices_${type}`);
+      await fetchInvoices(true);
+      alert(data.message);
+    } catch (err) { alert('Hata: ' + err.message); }
+    finally { setFormalizing(null); }
+  };
+
   const filtered = invoices.filter(inv => {
     const t = search.toLowerCase();
     return (inv.invoice_id||'').toLowerCase().includes(t)
@@ -480,6 +528,13 @@ export default function Invoices({ type = 'inbox' }) {
                 className="pl-9 pr-4 py-2 text-sm rounded-xl border outline-none min-w-[220px]"
                 style={{ background: c.card, borderColor: c.border, color: c.text }} />
             </div>
+            {!isInbox && (
+              <button onClick={openCreate}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold transition-all"
+                style={{ background: '#10b981' }}>
+                <FilePlus2 size={15} /> Fatura Oluştur
+              </button>
+            )}
             <button onClick={syncInvoices} disabled={syncing}
               className="btn-primary flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold transition-all"
               style={{ background: currentColor, opacity: syncing ? 0.7 : 1 }}>
@@ -574,6 +629,19 @@ export default function Invoices({ type = 'inbox' }) {
                               <ScanEye size={12} />Önizle
                             </button>
                           )}
+                          {inv.status === 'Draft' && (
+                            <button
+                              onClick={e => { e.stopPropagation(); handleFormalize(inv.invoice_id); }}
+                              disabled={formalizing === inv.invoice_id}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap"
+                              style={{ background:'rgba(16,185,129,0.12)', color:'#10b981' }}
+                              title="Uyumsoft'a Gönder">
+                              {formalizing === inv.invoice_id
+                                ? <Loader2 size={11} className="animate-spin" />
+                                : <CheckCheck size={11} />}
+                              Resmileştir
+                            </button>
+                          )}
                         </div>
                       </td>
                     </motion.tr>
@@ -604,6 +672,129 @@ export default function Invoices({ type = 'inbox' }) {
           onClose={() => setPreviewInv(null)}
         />
       )}
+
+      {/* ── Manuel Fatura Oluşturma Modalı ─────────────────────────────── */}
+      <AnimatePresence>
+        {createModal && (
+          <motion.div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeCreate} />
+            <motion.div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl shadow-2xl"
+              style={{ background: isDark ? '#0c1526' : '#fff', border: `1px solid ${isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0'}` }}
+              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}>
+
+              <div className="sticky top-0 flex items-center justify-between px-6 py-4 z-10"
+                style={{ background: isDark ? 'rgba(12,21,38,0.97)' : 'rgba(255,255,255,0.97)', backdropFilter: 'blur(12px)', borderBottom: `1px solid ${c.border}` }}>
+                <div className="flex items-center gap-3">
+                  <FilePlus2 size={20} style={{ color: '#10b981' }} />
+                  <h2 className="font-bold text-base" style={{ color: c.text }}>Manuel Fatura Oluştur</h2>
+                </div>
+                <button onClick={closeCreate} className="p-2 rounded-xl" style={{ color: c.muted }}><X size={18} /></button>
+              </div>
+
+              <div className="p-6 space-y-4">
+                {/* Üst bilgiler */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2">
+                    <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Alıcı Cari Adı *</label>
+                    <input value={createForm.cari_name} onChange={e => setCreateForm(p => ({...p, cari_name: e.target.value}))}
+                      className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
+                      style={{ background: c.card, borderColor: c.border, color: c.text }}
+                      placeholder="Müşteri / firma adı" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>VKN / TCKN</label>
+                    <input value={createForm.vkntckn} onChange={e => setCreateForm(p => ({...p, vkntckn: e.target.value}))}
+                      className="w-full px-3 py-2 text-sm rounded-xl border outline-none font-mono"
+                      style={{ background: c.card, borderColor: c.border, color: c.text }}
+                      placeholder="1234567890" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Fatura Tarihi</label>
+                    <input type="date" value={createForm.issue_date} onChange={e => setCreateForm(p => ({...p, issue_date: e.target.value}))}
+                      className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
+                      style={{ background: c.card, borderColor: c.border, color: c.text }} />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Para Birimi</label>
+                    <select value={createForm.currency} onChange={e => setCreateForm(p => ({...p, currency: e.target.value}))}
+                      className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
+                      style={{ background: c.card, borderColor: c.border, color: c.text }}>
+                      {['TRY','USD','EUR','GBP'].map(x => <option key={x}>{x}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Kalemler */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold uppercase tracking-wider" style={{ color: c.muted }}>Kalemler</span>
+                    <button onClick={addLine}
+                      className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg"
+                      style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981' }}>
+                      <Plus size={12} /> Kalem Ekle
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {createForm.lines.map((l, i) => (
+                      <div key={l.id} className="flex gap-2 items-center">
+                        <input value={l.name} onChange={e => updateLine(l.id, 'name', e.target.value)}
+                          className="flex-1 px-2 py-1.5 text-xs rounded-lg border outline-none"
+                          style={{ background: c.card, borderColor: c.border, color: c.text }}
+                          placeholder="Ürün / Hizmet adı" />
+                        <input type="number" value={l.quantity} onChange={e => updateLine(l.id, 'quantity', e.target.value)}
+                          className="w-14 px-2 py-1.5 text-xs rounded-lg border outline-none text-center"
+                          style={{ background: c.card, borderColor: c.border, color: c.text }}
+                          placeholder="Adet" min={1} />
+                        <input type="number" value={l.unitPrice} onChange={e => updateLine(l.id, 'unitPrice', e.target.value)}
+                          className="w-24 px-2 py-1.5 text-xs rounded-lg border outline-none text-right"
+                          style={{ background: c.card, borderColor: c.border, color: c.text }}
+                          placeholder="Birim fiyat" step="0.01" />
+                        <select value={l.taxRate} onChange={e => updateLine(l.id, 'taxRate', e.target.value)}
+                          className="w-16 px-1 py-1.5 text-xs rounded-lg border outline-none"
+                          style={{ background: c.card, borderColor: c.border, color: c.text }}>
+                          {[0,1,8,10,20].map(r => <option key={r} value={r}>%{r}</option>)}
+                        </select>
+                        {createForm.lines.length > 1 && (
+                          <button onClick={() => removeLine(l.id)} className="text-red-400 hover:text-red-500">
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {/* Toplam */}
+                  <div className="text-right mt-2 text-sm font-bold" style={{ color: c.text }}>
+                    Toplam:{' '}
+                    {Number(createForm.lines.reduce((s,l)=>s+(+l.quantity||0)*(+l.unitPrice||0)*(1+(+l.taxRate||0)/100),0)).toLocaleString('tr-TR',{minimumFractionDigits:2})} {createForm.currency}
+                  </div>
+                </div>
+
+                {/* Notlar */}
+                <div>
+                  <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Notlar</label>
+                  <textarea value={createForm.notes} onChange={e => setCreateForm(p => ({...p, notes: e.target.value}))}
+                    rows={2} className="w-full px-3 py-2 text-sm rounded-xl border outline-none resize-none"
+                    style={{ background: c.card, borderColor: c.border, color: c.text }}
+                    placeholder="İsteğe bağlı not..." />
+                </div>
+
+                <div className="flex gap-3 pt-2">
+                  <button onClick={closeCreate}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold border transition-all"
+                    style={{ borderColor: c.border, color: c.muted }}>İptal</button>
+                  <button onClick={handleCreate} disabled={creating}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-all flex items-center justify-center gap-2"
+                    style={{ background: '#10b981', opacity: creating ? 0.7 : 1 }}>
+                    {creating ? <Loader2 size={15} className="animate-spin" /> : <FilePlus2 size={15} />}
+                    {creating ? 'Oluşturuluyor...' : 'Taslak Fatura Oluştur'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }

@@ -175,7 +175,9 @@ export default async function handler(req, res) {
 
     const contactList = Object.values(contactsByVkn);
     if (contactList.length > 0) {
-      const table = type === 'inbox' ? 'customers' : 'suppliers';
+      // inbox = bize gelen fatura → karşı taraf tedarikçi (suppliers)
+      // outbox = bizim kestiğimiz → karşı taraf müşteri (customers)
+      const table = type === 'inbox' ? 'suppliers' : 'customers';
       const { error: contactErr } = await supabase
         .from(table)
         .upsert(contactList, {
