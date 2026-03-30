@@ -351,6 +351,7 @@ export default function Invoices({ type = 'inbox' }) {
   const [createModal, setCreateModal] = useState(false);
   const [createForm, setCreateForm]   = useState({ cari_name: '', vkntckn: '', issue_date: new Date().toISOString().slice(0,10), currency: 'TRY', notes: '', lines: [EMPTY_LINE()] });
   const [creating, setCreating]       = useState(false);
+  const [createType, setCreateType]   = useState('outbox'); // Hangi sekme açtı
   const [formalizing, setFormalizing] = useState(null); // invoice_id
   const location = useLocation();
 
@@ -453,7 +454,7 @@ export default function Invoices({ type = 'inbox' }) {
   };
 
   // Manuel fatura oluşturma
-  const openCreate = () => setCreateModal(true);
+  const openCreate = (t = 'outbox') => { setCreateType(t); setCreateModal(true); };
   const closeCreate = () => { setCreateModal(false); setCreateForm({ cari_name: '', vkntckn: '', issue_date: new Date().toISOString().slice(0,10), currency: 'TRY', notes: '', lines: [EMPTY_LINE()] }); };
   const addLine = () => setCreateForm(p => ({ ...p, lines: [...p.lines, EMPTY_LINE()] }));
   const removeLine = (id) => setCreateForm(p => ({ ...p, lines: p.lines.filter(l => l.id !== id) }));
@@ -464,7 +465,7 @@ export default function Invoices({ type = 'inbox' }) {
     if (!createForm.lines.some(l => l.name)) return alert('En az 1 kalem giriniz');
     setCreating(true);
     try {
-      const body = { ...createForm, type: 'outbox', lines: createForm.lines.filter(l => l.name).map(l => ({ ...l, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), taxRate: Number(l.taxRate) })) };
+      const body = { ...createForm, type: createType, lines: createForm.lines.filter(l => l.name).map(l => ({ ...l, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), taxRate: Number(l.taxRate) })) };
       const r = await fetch('/api/invoices-api?action=create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const data = await r.json();
       if (!data.success) throw new Error(data.error);
@@ -528,11 +529,20 @@ export default function Invoices({ type = 'inbox' }) {
                 className="pl-9 pr-4 py-2 text-sm rounded-xl border outline-none min-w-[220px]"
                 style={{ background: c.card, borderColor: c.border, color: c.text }} />
             </div>
+            {/* Gelir: Fatura Oluştur (outbox → Uyumsoft) */}
             {!isInbox && (
-              <button onClick={openCreate}
+              <button onClick={() => openCreate('outbox')}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold transition-all"
                 style={{ background: '#10b981' }}>
                 <FilePlus2 size={15} /> Fatura Oluştur
+              </button>
+            )}
+            {/* Gider: Fatura Ekle (inbox → sadece Supabase) */}
+            {isInbox && (
+              <button onClick={() => openCreate('inbox')}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold transition-all"
+                style={{ background: '#f59e0b' }}>
+                <FilePlus2 size={15} /> Fatura Ekle
               </button>
             )}
             <button onClick={syncInvoices} disabled={syncing}
@@ -629,7 +639,8 @@ export default function Invoices({ type = 'inbox' }) {
                               <ScanEye size={12} />Önizle
                             </button>
                           )}
-                          {inv.status === 'Draft' && (
+                          {/* Resmileştir — yalnızca Gelir (outbox) + taslak */}
+                          {inv.status === 'Draft' && inv.type === 'outbox' && (
                             <button
                               onClick={e => { e.stopPropagation(); handleFormalize(inv.invoice_id); }}
                               disabled={formalizing === inv.invoice_id}
@@ -686,8 +697,17 @@ export default function Invoices({ type = 'inbox' }) {
               <div className="sticky top-0 flex items-center justify-between px-6 py-4 z-10"
                 style={{ background: isDark ? 'rgba(12,21,38,0.97)' : 'rgba(255,255,255,0.97)', backdropFilter: 'blur(12px)', borderBottom: `1px solid ${c.border}` }}>
                 <div className="flex items-center gap-3">
-                  <FilePlus2 size={20} style={{ color: '#10b981' }} />
-                  <h2 className="font-bold text-base" style={{ color: c.text }}>Manuel Fatura Oluştur</h2>
+                  <FilePlus2 size={20} style={{ color: createType === 'inbox' ? '#f59e0b' : '#10b981' }} />
+                  <div>
+                    <h2 className="font-bold text-base" style={{ color: c.text }}>
+                      {createType === 'inbox' ? 'Gider Faturası Ekle' : 'Gelir Faturası Oluştur'}
+                    </h2>
+                    <p className="text-xs mt-0.5" style={{ color: c.muted }}>
+                      {createType === 'inbox'
+                        ? '⚠️ Yalnızca sisteme kaydedilir — Uyumsoft’a gönderilmez'
+                        : 'Taslak olarak kaydedilir — Resmileştir ile Uyumsoft’a gönderin'}
+                    </p>
+                  </div>
                 </div>
                 <button onClick={closeCreate} className="p-2 rounded-xl" style={{ color: c.muted }}><X size={18} /></button>
               </div>
@@ -696,7 +716,9 @@ export default function Invoices({ type = 'inbox' }) {
                 {/* Üst bilgiler */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="col-span-2">
-                    <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Alıcı Cari Adı *</label>
+                    <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>
+                      {createType === 'inbox' ? 'Gönderen Cari (Tedarikçi) *' : 'Alıcı Cari (Müşteri) *'}
+                    </label>
                     <input value={createForm.cari_name} onChange={e => setCreateForm(p => ({...p, cari_name: e.target.value}))}
                       className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
                       style={{ background: c.card, borderColor: c.border, color: c.text }}
@@ -785,9 +807,9 @@ export default function Invoices({ type = 'inbox' }) {
                     style={{ borderColor: c.border, color: c.muted }}>İptal</button>
                   <button onClick={handleCreate} disabled={creating}
                     className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-all flex items-center justify-center gap-2"
-                    style={{ background: '#10b981', opacity: creating ? 0.7 : 1 }}>
+                    style={{ background: createType === 'inbox' ? '#f59e0b' : '#10b981', opacity: creating ? 0.7 : 1 }}>
                     {creating ? <Loader2 size={15} className="animate-spin" /> : <FilePlus2 size={15} />}
-                    {creating ? 'Oluşturuluyor...' : 'Taslak Fatura Oluştur'}
+                    {creating ? 'Kaydediliyor...' : (createType === 'inbox' ? 'Gider Faturası Ekle' : 'Taslak Gelir Faturası Oluştur')}
                   </button>
                 </div>
               </div>
