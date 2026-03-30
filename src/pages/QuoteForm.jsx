@@ -12,6 +12,12 @@ const fmt     = (n, d = 2) => Number(n || 0).toLocaleString('tr-TR', { minimumFr
 const today   = () => new Date().toISOString().slice(0, 10);
 const addDays = (d, n) => { const dt = new Date(d); dt.setDate(dt.getDate() + n); return dt.toISOString().slice(0, 10); };
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('tr-TR') : '';
+const currSymbol = (c) => {
+  if (c === 'USD') return '$';
+  if (c === 'EUR') return '€';
+  if (c === 'GBP') return '£';
+  return '₺';
+};
 
 function emptyLine() {
   return {
@@ -22,7 +28,7 @@ function emptyLine() {
 }
 
 // ── Ürün satırı ────────────────────────────────────────────────────────────────
-function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, rowHeight = 58, imgWidth = 68 }) {
+function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, onAddNewItem, rowHeight = 58, imgWidth = 68, sym = '₺' }) {
   const [showSugg, setShowSugg] = useState(false);
   const [q, setQ]               = useState(line.name || '');
 
@@ -100,7 +106,7 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, rowHei
           className={inp}
           placeholder="Ürün yaz veya seç..."
         />
-        {showSugg && suggestions.length > 0 && (
+        {showSugg && q.trim().length >= 1 && (
           <div className="absolute left-0 top-full mt-0.5 z-[200] w-72 shadow-2xl rounded-xl overflow-hidden border border-gray-200 bg-white">
             {suggestions.map(s => (
               <div key={s.id} onMouseDown={() => selectItem(s)}
@@ -115,10 +121,26 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, rowHei
                   <p className="text-[10px] text-gray-400">{s.item_code}{s.power_w ? ` · ${s.power_w}W` : ''}</p>
                 </div>
                 <span className="text-[10px] text-green-700 font-semibold whitespace-nowrap">
-                  {fmt(s.sale_price || s.purchase_price)} ₺
+                  {fmt(s.sale_price || s.purchase_price)} {sym}
                 </span>
               </div>
             ))}
+            
+            {/* Yeni ürün ekle */}
+            <div onMouseDown={() => { setShowSugg(false); onAddNewItem && onAddNewItem(q.trim()); }}
+               className="flex items-center gap-2.5 px-3 py-2 border-t border-gray-100 cursor-pointer bg-emerald-50 hover:bg-emerald-100">
+               <Plus size={14} className="text-emerald-600" />
+               <span className="text-xs font-semibold text-emerald-700">"{q}" yeni ürün/hizmet kaydet</span>
+            </div>
+
+            {/* Kayıtsız devam et */}
+            {suggestions.length === 0 && (
+              <div onMouseDown={() => { setShowSugg(false); onUpdate(line.id, { name: q.trim() }); }}
+                 className="flex items-center gap-2.5 px-3 py-2 border-t border-gray-100 cursor-pointer bg-blue-50 hover:bg-blue-100">
+                 <Check size={14} className="text-blue-600" />
+                 <span className="text-xs font-semibold text-blue-700">Kayıtsız kullan</span>
+              </div>
+            )}
           </div>
         )}
       </td>
@@ -316,17 +338,17 @@ export function QuotePreview({ quote, onClose, colWidths = {}, rowHeight = 58 })
                 <tbody>
                   <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
                     <td style={{ padding: '4px 8px', background: '#f9fafb', fontSize: 10, color: '#4b5563' }}>Toplam</td>
-                    <td style={{ padding: '4px 8px', textAlign: 'right', fontSize: 10, fontWeight: 600 }}>{fmt(subtotal)} ₺</td>
+                    <td style={{ padding: '4px 8px', textAlign: 'right', fontSize: 10, fontWeight: 600 }}>{fmt(subtotal)} {currSymbol(quote.currency)}</td>
                   </tr>
                   {quote.vat_rate && (
                     <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
                       <td style={{ padding: '4px 8px', background: '#f9fafb', fontSize: 10, color: '#4b5563' }}>KDV %{quote.vat_rate}</td>
-                      <td style={{ padding: '4px 8px', textAlign: 'right', fontSize: 10 }}>{fmt(vatAmt)} ₺</td>
+                      <td style={{ padding: '4px 8px', textAlign: 'right', fontSize: 10 }}>{fmt(vatAmt)} {currSymbol(quote.currency)}</td>
                     </tr>
                   )}
                   <tr style={{ background: '#1a6b2c' }}>
                     <td style={{ padding: '5px 8px', color: '#fff', fontSize: 11, fontWeight: 700 }}>Genel Toplam</td>
-                    <td style={{ padding: '5px 8px', textAlign: 'right', color: '#fff', fontSize: 12, fontWeight: 700 }}>{fmt(grandTotal)} ₺</td>
+                    <td style={{ padding: '5px 8px', textAlign: 'right', color: '#fff', fontSize: 12, fontWeight: 700 }}>{fmt(grandTotal)} {currSymbol(quote.currency)}</td>
                   </tr>
                 </tbody>
               </table>
@@ -396,6 +418,10 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
   const [mediaSearch, setMediaSearch] = useState('');
   const [uploadingImg, setUploadingImg] = useState(false);
   const imgUploadRef = useRef();
+
+  // Quick modals
+  const [quickItemForm, setQuickItemForm] = useState(null);     // { lineId, name, type, code, price }
+  const [quickEntityForm, setQuickEntityForm] = useState(null); // { name, type, vkntckn, city, email, phone, address }
 
   // Sütun/satır ayarları — localStorage'dan yüklenir, sürükleyerek ayarlanır
   const SAVED_LAYOUT_KEY = 'quoteTableLayout';
@@ -507,17 +533,52 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
     setShowCustSugg(false);
   };
 
-  // Yeni müşteri kaydet
-  const saveNewCustomer = async () => {
+  const saveNewCustomer = () => {
     if (!custQ.trim()) return;
-    const { data, error } = await supabase.from('customers').insert({
-      name: custQ.trim(), phone: form.phone, email: form.email,
-      address: form.address, source: 'manual',
-    }).select().single();
-    if (!error && data) {
-      setAllCustomers(p => [data, ...p]);
-      setShowCustSugg(false);
-    }
+    setQuickEntityForm({ name: custQ.trim(), type: 'corporate', vkntckn: '', address: form.address || '', city: '', email: form.email || '', phone: form.phone || '' });
+    setShowCustSugg(false);
+  };
+
+  const submitQuickEntity = async () => {
+    if (!quickEntityForm?.name?.trim()) return;
+    setSaving(true);
+    try {
+      const { data, error } = await supabase.from('customers').insert({
+         name: quickEntityForm.name.trim(),
+         type: quickEntityForm.type || 'corporate',
+         vkntckn: quickEntityForm.vkntckn || null,
+         city: quickEntityForm.city || null,
+         address: quickEntityForm.address || null,
+         email: quickEntityForm.email || null,
+         phone: quickEntityForm.phone || null,
+         source: 'manual'
+      }).select().single();
+      if (error) throw error;
+      setAllCustomers(prev => [...prev, data]);
+      setForm(f => ({ ...f, company_name: data.name, address: data.address || '', phone: data.phone || '', email: data.email || '' }));
+      setCustQ(data.name);
+      setQuickEntityForm(null);
+    } catch (e) { alert('Müşteri kaydedilemedi: ' + e.message); }
+    finally { setSaving(false); }
+  };
+
+  const submitQuickItem = async () => {
+    if (!quickItemForm?.name?.trim()) return;
+    setSaving(true);
+    try {
+      const { data, error } = await supabase.from('items').insert({
+         name: quickItemForm.name.trim(),
+         item_type: quickItemForm.type || 'product',
+         item_code: quickItemForm.code || null,
+         sale_price: quickItemForm.price ? Number(quickItemForm.price) : 0,
+         unit: quickItemForm.unit || 'Adet'
+      }).select().single();
+      if (error) throw error;
+      setAllItems(prev => [...prev, data]);
+      updateLine(quickItemForm.lineId, { name: data.name, item_code: data.item_code || '', unit_price: data.sale_price || 0, unit: data.unit || 'Adet' });
+      setQuickItemForm(null);
+    } catch(e) { alert('Ürün eklendiğinde hata: ' + e.message); }
+    finally { setSaving(false); }
   };
 
   // Satır güncelle/sil/ekle
@@ -666,16 +727,24 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
                         </div>
                       </div>
                     ))}
-                    {/* Yeni müşteri kaydet */}
+                    {/* Yeni müşteri kaydet modal'ını aç */}
                     {custQ.trim() && !custExists && (
-                      <div onMouseDown={saveNewCustomer}
+                      <div onMouseDown={() => { setShowCustSugg(false); setQuickEntityForm({ name: custQ.trim(), type: 'corporate', vkntckn: '', address: '', city: '', email: '', phone: '' }); }}
                         className="flex items-center gap-3 px-4 py-3 bg-green-50 hover:bg-green-100 cursor-pointer">
                         <UserPlus size={16} className="text-green-700" />
                         <div>
-                          <p className="text-sm font-semibold text-green-800">"{custQ.trim()}" müşterisini kaydet</p>
-                          <p className="text-xs text-green-600">Cariler listesine eklenecek</p>
+                          <p className="text-sm font-semibold text-green-800">"{custQ.trim()}" için kayıt detayları gir</p>
+                          <p className="text-xs text-green-600">Cariler listesine detaylı olarak eklenecek</p>
                         </div>
                       </div>
+                    )}
+                    {/* Hızlı eklensin istersen kayıtsız geçsin? Quote is fine string only */}
+                    {custQ.trim() && !custExists && (
+                        <div onMouseDown={() => setShowCustSugg(false)}
+                        className="flex items-center gap-3 px-4 py-3 bg-blue-50 hover:bg-blue-100 cursor-pointer">
+                          <Check size={16} className="text-blue-700" />
+                          <p className="text-sm font-semibold text-blue-800">Sadece teklife "{custQ.trim()}" adıyla kayıtsız yaz</p>
+                        </div>
                     )}
                     {custQ.trim() && custExists && (
                       <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 text-xs text-gray-400">
@@ -858,17 +927,17 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">Toplam</span>
-                <span className="font-semibold">{fmt(subtotal)} ₺</span>
+                <span className="font-semibold">{fmt(subtotal)} {currSymbol(form.currency)}</span>
               </div>
               {vatRate > 0 && (
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">KDV %{vatRate}</span>
-                  <span>{fmt(vatAmt)} ₺</span>
+                  <span>{fmt(vatAmt)} {currSymbol(form.currency)}</span>
                 </div>
               )}
               <div className="border-t border-gray-200 pt-2 flex justify-between">
                 <span className="font-bold text-gray-800">Genel Toplam</span>
-                <span className="font-bold text-lg" style={{ color: '#1a6b2c' }}>{fmt(grandTotal)} ₺</span>
+                <span className="font-bold text-lg" style={{ color: '#1a6b2c' }}>{fmt(grandTotal)} {currSymbol(form.currency)}</span>
               </div>
             </div>
           </div>
@@ -944,6 +1013,100 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
                   )}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Hızlı Ürün Ekle Modal ── */}
+      {quickItemForm && (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(2px)' }}>
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-5 border border-gray-100">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-gray-800">Sisteme Ürün Kaydet</h3>
+              <button onClick={() => setQuickItemForm(null)} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-gray-500 mb-1 block">Ürün Adı *</label>
+                <input value={quickItemForm.name || ''} onChange={e => setQuickItemForm(p => ({...p, name: e.target.value}))} className={fieldCls} autoFocus />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Tür</label>
+                    <select value={quickItemForm.type} onChange={e => setQuickItemForm(p => ({...p, type: e.target.value}))} className={fieldCls}>
+                        <option value="product">Mamül</option>
+                        <option value="rawmaterial">Hammadde</option>
+                        <option value="service">Hizmet</option>
+                    </select>
+                </div>
+                <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Birim</label>
+                    <select value={quickItemForm.unit} onChange={e => setQuickItemForm(p => ({...p, unit: e.target.value}))} className={fieldCls}>
+                        {['Adet','Mt','Kg','M²','Rulo','Paket','Set'].map(u => <option key={u}>{u}</option>)}
+                    </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Satış Fiyatı (₺)</label>
+                    <input type="number" step="0.01" value={quickItemForm.price || ''} onChange={e => setQuickItemForm(p => ({...p, price: e.target.value}))} className={fieldCls} />
+                </div>
+                <div>
+                    <label className="text-xs font-semibold text-gray-500 mb-1 block">Ürün Kodu</label>
+                    <input value={quickItemForm.code || ''} onChange={e => setQuickItemForm(p => ({...p, code: e.target.value}))} className={fieldCls} />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button onClick={() => setQuickItemForm(null)} className="flex-1 py-2 text-sm font-semibold text-gray-500 hover:bg-gray-100 rounded-xl transition-colors">İptal</button>
+                <button onClick={submitQuickItem} disabled={saving || !quickItemForm.name.trim()} className="flex-1 py-2 text-sm font-bold text-white bg-green-600 hover:bg-green-700 rounded-xl transition-colors disabled:opacity-50">
+                    {saving ? 'Kaydediliyor...' : 'Kaydet ve Seç'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Hızlı Müşteri Ekle Modal ── */}
+      {quickEntityForm && (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(2px)' }}>
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-5 border border-gray-100">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-gray-800">Sisteme Müşteri Kaydet</h3>
+              <button onClick={() => setQuickEntityForm(null)} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-gray-500 mb-1 block">Müşteri / Firma Adı *</label>
+                <input value={quickEntityForm.name || ''} onChange={e => setQuickEntityForm(p => ({...p, name: e.target.value}))} className={fieldCls} autoFocus />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                   <label className="text-xs font-semibold text-gray-500 mb-1 block">VKN / TCKN</label>
+                   <input value={quickEntityForm.vkntckn || ''} onChange={e => setQuickEntityForm(p => ({...p, vkntckn: e.target.value}))} className={fieldCls} />
+                </div>
+                <div>
+                   <label className="text-xs font-semibold text-gray-500 mb-1 block">Telefon</label>
+                   <input value={quickEntityForm.phone || ''} onChange={e => setQuickEntityForm(p => ({...p, phone: e.target.value}))} className={fieldCls} />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-500 mb-1 block">E-Posta</label>
+                <input type="email" value={quickEntityForm.email || ''} onChange={e => setQuickEntityForm(p => ({...p, email: e.target.value}))} className={fieldCls} />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-500 mb-1 block">Adres / Şehir</label>
+                <input value={quickEntityForm.address || ''} onChange={e => setQuickEntityForm(p => ({...p, address: e.target.value}))} className={fieldCls} placeholder="Mahalle, sokak, no, şehir..." />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button onClick={() => setQuickEntityForm(null)} className="flex-1 py-2 text-sm font-semibold text-gray-500 hover:bg-gray-100 rounded-xl transition-colors">İptal</button>
+                <button onClick={submitQuickEntity} disabled={saving || !quickEntityForm.name.trim()} className="flex-1 py-2 text-sm font-bold text-white bg-green-600 hover:bg-green-700 rounded-xl transition-colors disabled:opacity-50">
+                    {saving ? 'Kaydediliyor...' : 'Kaydet ve Seç'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

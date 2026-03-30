@@ -66,7 +66,7 @@ function StatusBadge({ status, urgent }) {
 }
 
 // ─── Ürün Satırı ──────────────────────────────────────────────────────────────
-function LineRow({ line, idx, allItems, currency, onChange, onRemove, c }) {
+function LineRow({ line, idx, allItems, currency, onChange, onRemove, c, exchangeRate }) {
   const [open, setOpen] = useState(false);
   const [q, setQ]       = useState('');
   const matches = allItems.filter(i =>
@@ -116,10 +116,28 @@ function LineRow({ line, idx, allItems, currency, onChange, onRemove, c }) {
               </div>
               <div className="max-h-48 overflow-y-auto">
                 {matches.length === 0 && <p className="px-4 py-3 text-xs text-slate-500">Sonuç yok</p>}
+                
+                {q.trim().length > 0 && (
+                  <div onClick={() => {
+                    onChange({ item_id: null, item_name: q.trim(), item_type: 'product',
+                      unit: 'Adet', unit_price: 0, stock_count: null });
+                    setOpen(false); setQ('');
+                  }}
+                    className="flex items-center gap-2 px-4 py-3 cursor-pointer transition-colors"
+                    style={{ borderBottom: '1px solid rgba(148,163,184,0.06)' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(16,185,129,0.1)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                    <Plus size={14} className="text-emerald-400" />
+                    <span className="text-sm font-semibold text-emerald-400">"{q}" olarak kayıtsız seç</span>
+                  </div>
+                )}
+
                 {matches.map(item => (
                   <div key={item.id} onClick={() => {
+                    const basePrice = item.sale_price || item.purchase_price || 0;
+                    const finalPrice = (exchangeRate?.rate && currency !== 'TRY') ? (basePrice / exchangeRate.rate) : basePrice;
                     onChange({ item_id: item.id, item_name: item.name, item_type: item.item_type,
-                      unit: item.unit, unit_price: item.purchase_price || 0, stock_count: item.stock_count || 0 });
+                      unit: item.unit, unit_price: finalPrice, stock_count: item.stock_count || 0 });
                     setOpen(false); setQ('');
                   }}
                     className="flex items-center justify-between px-4 py-2.5 cursor-pointer transition-colors"
@@ -134,7 +152,11 @@ function LineRow({ line, idx, allItems, currency, onChange, onRemove, c }) {
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xs font-bold text-slate-300">{fmt(item.purchase_price, currency)}</p>
+                      <p className="text-xs font-bold text-slate-300">
+                        {currency === 'TRY' ? fmt(item.sale_price || item.purchase_price, 'TRY') : (
+                          exchangeRate?.rate ? fmt((item.sale_price || item.purchase_price) / exchangeRate.rate, currency) : fmt(item.sale_price || item.purchase_price, 'TRY')
+                        )}
+                      </p>
                       <p className="text-[10px]" style={{ color: item.stock_count > 0 ? '#10b981' : '#ef4444' }}>
                         Stok: {item.stock_count}
                       </p>
@@ -237,6 +259,25 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
   const [draftLoading,  setDraftLoading]  = useState(false);
   const [draftPreviewUrl, setDraftPreviewUrl] = useState(null);  // string URL veya null
 
+  const [exchangeRate, setExchangeRate] = useState(null);
+  
+  const fetchExchangeRate = async (curr, date) => {
+    if (curr === 'TRY') { setExchangeRate(null); return; }
+    try {
+      const qs = new URLSearchParams({ currency: curr });
+      if (date) qs.append('date', date);
+      const res = await fetch(`/api/tcmb?${qs.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setExchangeRate(data);
+      } else { setExchangeRate(null); }
+    } catch { setExchangeRate(null); }
+  };
+
+  useEffect(() => {
+    fetchExchangeRate(form.currency, form.due_date);
+  }, [form.currency, form.due_date]);
+
   // Müşteri seçince: sipariş no üret + adres/iletişim auto-fill
   const selectCustomer = async (cust) => {
     const num = await generateOrderNumber(cust.name);
@@ -337,6 +378,7 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
             tax_office: form.customer_tax_office?.trim(),
             currency: form.currency,
             notes: form.notes,
+            exchange_rate: exchangeRate?.rate || 1,
             lines: orderLines.map(l => ({
               name: l.item_name,
               quantity: Number(l.quantity),
@@ -496,7 +538,7 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
           <div className="space-y-2">
             {lines.map((line, idx) => (
               <LineRow key={line._key} line={line} idx={idx} allItems={allItems}
-                currency={form.currency}
+                currency={form.currency} exchangeRate={exchangeRate}
                 onChange={patch => updateLine(idx, patch)}
                 onRemove={() => removeLine(idx)}
                 c={{}} />
@@ -549,6 +591,14 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
             ))}
             <SumRow label="Ara Toplam (KDV hariç)" value={fmt(subtotal, form.currency)} />
             <SumRow label="Toplam KDV" value={fmt(taxTotal, form.currency)} color="#60a5fa" />
+            
+            {exchangeRate && form.currency !== 'TRY' && (
+              <div className="px-4 py-2 bg-slate-800/50 flex justify-between items-center text-[11px] italic text-slate-400">
+                <span>Döviz Kuru ({exchangeRate.source === 'tcmb' ? 'TCMB' : 'Oto'})</span>
+                <span>1 {form.currency} = {exchangeRate.rate?.toFixed(4)} ₺</span>
+              </div>
+            )}
+
             <div style={{ borderTop: '2px solid rgba(148,163,184,0.15)', background: 'rgba(255,255,255,0.03)' }}>
               <SumRow label="GENEL TOPLAM" value={fmt(grandTotal, form.currency)} bold accent />
             </div>

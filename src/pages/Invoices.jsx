@@ -390,6 +390,7 @@ export default function Invoices({ type = 'inbox' }) {
 
   const isInbox = type === 'inbox';
   const Icon    = isInbox ? FileDown : FileUp;
+  const label   = isInbox ? 'Gelen (Alış)' : 'Giden (Satış)';
 
   const c = {
     card:   isDark ? 'rgba(30,41,59,0.7)' : '#ffffff',
@@ -570,8 +571,13 @@ export default function Invoices({ type = 'inbox' }) {
   };
 
   const selectItem = (lineId, item) => {
+    const isOutbox = type === 'outbox';
+    const basePrice = (isOutbox ? item.sale_price : item.purchase_price) || item.purchase_price || 0;
+    const rate = parseFloat(createForm.exchange_rate) || exchangeRate?.rate || 1;
+    const finalPrice = (createForm.currency !== 'TRY' && rate > 0) ? (basePrice / rate) : basePrice;
+
     setCreateForm(p => ({ ...p, lines: p.lines.map(line => line.id === lineId
-      ? { ...line, name: item.name, unit: item.unit || 'Adet', unitPrice: item.purchase_price || 0 }
+      ? { ...line, name: item.name, unit: item.unit || 'Adet', unitPrice: finalPrice.toFixed(4), item_code: item.sku || item.item_code }
       : line
     )}));
     setItemSearch(p => ({ ...p, [lineId]: '' }));
@@ -751,7 +757,7 @@ export default function Invoices({ type = 'inbox' }) {
             </div>
             <div>
               <h1 className="text-2xl font-bold" style={{ color: c.text }}>
-              {isInbox ? 'Gider Faturaları' : 'Gelir Faturaları'}
+                {isInbox ? 'Gelen (Alış) Faturaları' : 'Giden (Satış) Faturaları'}
               </h1>
               <p className="text-sm mt-0.5" style={{ color: c.muted }}>
                 {invoices.length} kayıt · Uyumsoft e-Fatura
@@ -1261,11 +1267,17 @@ export default function Invoices({ type = 'inbox' }) {
                                           <p className="text-sm font-semibold" style={{ color: c.text }}>{it.name}</p>
                                           <p className="text-[11px]" style={{ color: c.muted }}>{it.item_type === 'rawmaterial' ? 'Hammadde' : it.item_type === 'product' ? 'Mamul' : 'Hizmet'} &middot; {it.unit}</p>
                                         </div>
-                                        {it.purchase_price > 0 && (
-                                          <span className="text-[11px] font-bold tabular-nums" style={{ color: currentColor }}>
-                                            {Number(it.purchase_price).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
-                                          </span>
-                                        )}
+                                        {(() => {
+                                          const p = (type === 'outbox' ? it.sale_price : it.purchase_price) || it.purchase_price || 0;
+                                          if (p <= 0) return null;
+                                          const rate = parseFloat(createForm.exchange_rate) || exchangeRate?.rate || 1;
+                                          const conv = (createForm.currency !== 'TRY' && rate > 0) ? (p / rate) : p;
+                                          return (
+                                            <span className="text-[11px] font-bold tabular-nums" style={{ color: currentColor }}>
+                                              {conv.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {createForm.currency}
+                                            </span>
+                                          );
+                                        })()}
                                       </div>
                                     ))}
                                   </div>
@@ -1277,9 +1289,23 @@ export default function Invoices({ type = 'inbox' }) {
                                     className="px-4 py-3 flex items-center gap-2 cursor-pointer font-semibold text-sm border-t"
                                     style={{ borderColor: c.border, color: '#6366f1' }}
                                     onMouseDown={() => { setQuickItemForm({ lineId: l.id, name: curSearch, item_type: 'product', unit: 'Adet', purchase_price: '', sku: '' }); setItemOpenId(null); }}
+                                    onMouseEnter={ev => ev.currentTarget.style.background = isDark ? 'rgba(99,102,241,0.1)' : 'rgba(99,102,241,0.05)'}
+                                    onMouseLeave={ev => ev.currentTarget.style.background = 'transparent'}
                                   >
                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                                     "{curSearch}" stoka hızlı ekle
+                                  </div>
+                                )}
+                                {curSearch.trim() && (
+                                  <div
+                                    className="px-4 py-3 flex items-center gap-2 cursor-pointer font-semibold text-sm border-t"
+                                    style={{ borderColor: c.border, color: '#10b981' }}
+                                    onMouseDown={() => { selectItem(l.id, { id: null, name: curSearch.trim(), unit: 'Adet', purchase_price: 0 }); }}
+                                    onMouseEnter={ev => ev.currentTarget.style.background = isDark ? 'rgba(16,185,129,0.1)' : 'rgba(16,185,129,0.05)'}
+                                    onMouseLeave={ev => ev.currentTarget.style.background = 'transparent'}
+                                  >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                    "{curSearch}" olarak kayıtsız seç
                                   </div>
                                 )}
                               </div>

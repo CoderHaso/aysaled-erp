@@ -331,6 +331,8 @@ async function handleFormalize(body, res) {
     vatGroups[rate].tax += (l.tax_amount || 0);
   });
 
+  const trTime = new Intl.DateTimeFormat('tr-TR', { timeZone: 'Europe/Istanbul', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date());
+
   const ublXml = `
     <Invoice xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
              xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
@@ -340,7 +342,8 @@ async function handleFormalize(body, res) {
       <cbc:ID>${encodeXml(invoiceId)}</cbc:ID>
       <cbc:CopyIndicator>false</cbc:CopyIndicator>
       <cbc:IssueDate>${issueDate}</cbc:IssueDate>
-      <cbc:IssueTime>00:00:00</cbc:IssueTime>
+      <cbc:IssueTime>${trTime}</cbc:IssueTime>
+      ${inv.message ? `<cbc:Note>${encodeXml(inv.message)}</cbc:Note>` : ''}
       <cbc:InvoiceTypeCode>SATIS</cbc:InvoiceTypeCode>
       <cbc:DocumentCurrencyCode>${currency}</cbc:DocumentCurrencyCode>
       <cbc:LineCountNumeric>${lines.length}</cbc:LineCountNumeric>
