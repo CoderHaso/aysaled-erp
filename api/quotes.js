@@ -45,8 +45,13 @@ export default async function handler(req, res) {
     }
     const quoteNo = `TKL-${year}-${String(seq).padStart(3, '0')}`;
 
+    const sanitizedBody = { ...body };
+    Object.keys(sanitizedBody).forEach(k => {
+      if (sanitizedBody[k] === '') sanitizedBody[k] = null;
+    });
+
     const { data, error } = await supabase.from('quotes').insert({
-      ...body,
+      ...sanitizedBody,
       quote_no: body.quote_no || quoteNo,
       status: body.status || 'draft',
     }).select().single();
@@ -58,9 +63,14 @@ export default async function handler(req, res) {
   if (req.method === 'PUT') {
     const { id } = req.query;
     if (!id) return res.status(400).json({ error: 'id gerekli' });
+    const sanitizedBody = { ...req.body };
+    Object.keys(sanitizedBody).forEach(k => {
+      if (sanitizedBody[k] === '') sanitizedBody[k] = null;
+    });
+
     const { data, error } = await supabase
       .from('quotes')
-      .update({ ...req.body, updated_at: new Date().toISOString() })
+      .update({ ...sanitizedBody, updated_at: new Date().toISOString() })
       .eq('id', id)
       .select().single();
     if (error) return res.status(500).json({ success: false, error: error.message });
