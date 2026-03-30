@@ -5,16 +5,16 @@ async function testConstruct() {
   const client = await soap.createClientAsync(url);
   
   const ublXml = `
-    <q1:Invoice xmlns:q1="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
-                xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
-                xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+    <Invoice xmlns="http://tempuri.org/"
+             xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+             xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
       <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
       <cac:AccountingSupplierParty>
         <cac:Party>
           <cac:PartyIdentification><cbc:ID schemeID="VKN">1231009459</cbc:ID></cac:PartyIdentification>
         </cac:Party>
       </cac:AccountingSupplierParty>
-    </q1:Invoice>
+    </Invoice>
   `;
 
   // Prevent actually triggering by just doing what node-soap does behind the scenes, or cause validation error safely

@@ -255,8 +255,13 @@ async function handleCreate(body, res) {
     line_total: (l.quantity || 0) * (l.unitPrice || 0),
   }));
 
+  // Workaround for missing columns in Supabase: stuff the extra UI fields into the first line item's JSON
+  if (lineItems.length > 0) {
+    lineItems[0].customer_info = { city, district, address, tax_office };
+  }
+
   const row = {
-    type, invoice_id, vkntckn, cari_name, city, district, address, tax_office,
+    type, invoice_id, vkntckn, cari_name,
     issue_date: issue_date || new Date().toISOString().slice(0, 10),
     amount: grandTotal, tax_exclusive_amount: subtotal, tax_total: taxTotal,
     currency, status: 'Draft', line_items: lineItems,
@@ -307,12 +312,13 @@ async function handleFormalize(body, res) {
   const suppAddress = encodeXml((process.env.COMPANY_ADDRESS || process.env.VITE_COMPANY_ADDRESS || 'OSMANGAZİ MAH. İBRAHİM ETHEM CAD. NO: 75 A').replace(/^["']|["']$/g, ''));
   const suppDist = encodeXml((process.env.COMPANY_DISTRICT || process.env.VITE_COMPANY_DISTRICT || 'BAYRAKLI').replace(/^["']|["']$/g, ''));
 
+  const custInfo = inv.line_items?.[0]?.customer_info || {};
   const custName = encodeXml(inv.cari_name || '');
   const custVkn = encodeXml(inv.vkntckn || '');
-  const custAddress = encodeXml(inv.address || ''); // Ensure this exists or fallback
-  const custDist = encodeXml(inv.district || '');
-  const custCity = encodeXml(inv.city || '');
-  const custTaxOff = encodeXml(inv.tax_office || '');
+  const custAddress = encodeXml(custInfo.address || ''); // Ensure this exists or fallback
+  const custDist = encodeXml(custInfo.district || '');
+  const custCity = encodeXml(custInfo.city || '');
+  const custTaxOff = encodeXml(custInfo.tax_office || '');
 
 
 
@@ -326,9 +332,8 @@ async function handleFormalize(body, res) {
   });
 
   const ublXml = `
-    <q1:Invoice xmlns:q1="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
-                xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
-                xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+    <Invoice xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+             xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
       <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
       <cbc:CustomizationID>TR1.2.1</cbc:CustomizationID>
       <cbc:ProfileID>TEMELFATURA</cbc:ProfileID>
@@ -420,7 +425,7 @@ async function handleFormalize(body, res) {
         </cac:Price>
       </cac:InvoiceLine>
       `).join('')}
-    </q1:Invoice>
+    </Invoice>
   `;
 
   try {

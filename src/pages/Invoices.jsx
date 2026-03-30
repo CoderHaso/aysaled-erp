@@ -349,7 +349,7 @@ export default function Invoices({ type = 'inbox' }) {
   // Manuel fatura oluşturma
   const EMPTY_LINE = () => ({ id: Date.now(), name: '', quantity: 1, unit: 'Adet', unitPrice: 0, taxRate: 20 });
   const [createModal, setCreateModal] = useState(false);
-  const [createForm, setCreateForm]   = useState({ cari_name: '', vkntckn: '', city: '', district: '', address: '', tax_office: '', issue_date: new Date().toISOString().slice(0,10), currency: 'TRY', notes: '', exchange_rate: '', lines: [EMPTY_LINE()] });
+  const [createForm, setCreateForm]   = useState({ customer_id: null, cari_name: '', vkntckn: '', city: '', district: '', address: '', tax_office: '', issue_date: new Date().toISOString().slice(0,10), currency: 'TRY', notes: '', exchange_rate: '', lines: [EMPTY_LINE()] });
   const [exchangeRate, setExchangeRate] = useState(null);  // { rate, buyRate, source, date }
   const [fetchingRate, setFetchingRate] = useState(false);
   const [creating, setCreating]       = useState(false);
@@ -489,7 +489,7 @@ export default function Invoices({ type = 'inbox' }) {
     setEntityOpen(false);
     setEntitySearch('');
     setQuickEntityForm(null);
-    setCreateForm({ cari_name: '', vkntckn: '', city: '', district: '', address: '', tax_office: '', issue_date: new Date().toISOString().slice(0,10), currency: 'TRY', notes: '', lines: [EMPTY_LINE()] });
+    setCreateForm({ customer_id: null, cari_name: '', vkntckn: '', city: '', district: '', address: '', tax_office: '', issue_date: new Date().toISOString().slice(0,10), currency: 'TRY', notes: '', lines: [EMPTY_LINE()] });
   };
   const addLine = () => setCreateForm(p => ({ ...p, lines: [...p.lines, EMPTY_LINE()] }));
   const removeLine = (id) => setCreateForm(p => ({ ...p, lines: p.lines.filter(l => l.id !== id) }));
@@ -515,7 +515,7 @@ export default function Invoices({ type = 'inbox' }) {
 
   // Seçim yapıldığında formu doldur
   const selectEntity = (e) => {
-    setCreateForm(p => ({ ...p, cari_name: e.name, vkntckn: e.vkntckn || '', city: e.city || '', district: e.district || '', address: e.address || '', tax_office: e.tax_office || '' }));
+    setCreateForm(p => ({ ...p, customer_id: e.id, cari_name: e.name, vkntckn: e.vkntckn || '', city: e.city || '', district: '', address: e.address || '', tax_office: e.tax_office || '' }));
     setEntitySearch(e.name);
     setEntityOpen(false);
     setQuickEntityForm(null);
@@ -614,6 +614,23 @@ export default function Invoices({ type = 'inbox' }) {
     }
     if (!createForm.lines.some(l => l.name)) return alert('En az 1 kalem giriniz');
     if (createForm.currency !== 'TRY' && !createForm.exchange_rate) return alert('Döviz kuru gerekli');
+
+    // Eksik Müşteri Bilgisi Güncelleme Teklifi
+    if (createType === 'outbox' && createForm.customer_id) {
+      const orig = entities.find(e => e.id === createForm.customer_id);
+      if (orig && (!orig.city || !orig.address || !orig.tax_office)) {
+        if (confirm("Girdiğiniz adres ve vergi dairesi bilgileri bu müşterinin veritabanı kaydında eksik.\nSonraki faturalarda otomatik gelmesi için müşteri kaydını bu bilgilerle güncelleyelim mi?")) {
+          // 'district' sütunu bulunmama ihtimaline karşı address alanına katıyoruz
+          const fullAddress = createForm.district ? `(${createForm.district}) ${createForm.address}` : createForm.address;
+          await supabase.from('customers').update({ 
+            city: createForm.city, 
+            address: fullAddress, 
+            tax_office: createForm.tax_office 
+          }).eq('id', createForm.customer_id);
+        }
+      }
+    }
+
     setCreating(true);
     try {
       const body = {
