@@ -358,7 +358,9 @@ export default function Invoices({ type = 'inbox' }) {
   // Cari autocomplete dropdown state
   const [entityOpen, setEntityOpen]   = useState(false);
   const [entitySearch, setEntitySearch] = useState('');
-  const [quickSaving, setQuickSaving] = useState(false);
+  const [quickEntityForm, setQuickEntityForm] = useState(null); // null | { name, vkntckn, phone, email }
+  const [quickEntitySaving, setQuickEntitySaving] = useState(false);
+  const [quickSaving, setQuickSaving] = useState(false); // keep for compat
   // İtem (kalem) autocomplete per-line state
   const [itemOpenId,    setItemOpenId]    = useState(null); // line.id of the open dropdown
   const [itemSearch,    setItemSearch]    = useState({});   // { [lineId]: searchStr }
@@ -468,51 +470,73 @@ export default function Invoices({ type = 'inbox' }) {
   const openCreate = async (t = 'outbox') => { 
     setCreateType(t); 
     setCreateModal(true); 
-    if (entities.length === 0) {
-      const [cRes, sRes, iRes] = await Promise.all([
-        supabase.from('customers').select('id, name, vkntckn'),
-        supabase.from('suppliers').select('id, name, vkntckn'),
-        supabase.from('items').select('id, name, item_code, unit')
-      ]);
-      setEntities([...(cRes.data||[]), ...(sRes.data||[])]);
-      setDbItems(iRes.data||[]);
-    }
+    // Her açılışta kümeı yenile (gelir vs gider ayrışmış olması için)
+    const [custRes, suppRes, itemRes] = await Promise.all([
+      supabase.from('customers').select('id, name, vkntckn, phone, email'),
+      supabase.from('suppliers').select('id, name, vkntckn, phone, email'),
+      supabase.from('items').select('id, name, sku, unit, item_type, purchase_price')
+    ]);
+    // Gelir (outbox) = müşteriler, Gider (inbox) = tedarikçiler — deduplicate by id
+    const raw = t === 'inbox' ? (suppRes.data || []) : (custRes.data || []);
+    const unique = Array.from(new Map(raw.map(e => [e.id, e])).values());
+    setEntities(unique);
+    setDbItems(itemRes.data || []);
   };
   const closeCreate = () => {
     setCreateModal(false);
     setEntityOpen(false);
     setEntitySearch('');
+    setQuickEntityForm(null);
     setCreateForm({ cari_name: '', vkntckn: '', issue_date: new Date().toISOString().slice(0,10), currency: 'TRY', notes: '', lines: [EMPTY_LINE()] });
   };
   const addLine = () => setCreateForm(p => ({ ...p, lines: [...p.lines, EMPTY_LINE()] }));
   const removeLine = (id) => setCreateForm(p => ({ ...p, lines: p.lines.filter(l => l.id !== id) }));
   const updateLine = (id, key, val) => setCreateForm(p => ({ ...p, lines: p.lines.map(l => l.id === id ? { ...l, [key]: val } : l) }));
 
-  // Kayıtlı varlıklar arasından ara
-  const filteredEntities = entitySearch.length > 0
-    ? entities.filter(e => e.name.toLowerCase().includes(entitySearch.toLowerCase()) || (e.vkntckn||'').includes(entitySearch))
-    : entities.slice(0, 8);
-  const entityExactMatch = entities.some(e => e.name.toLowerCase() === entitySearch.toLowerCase());
+  // Türkçe dahil case-insensitive normalize (YİĞİT = yiğit = YİĞİT)
+  const trNorm = (s = '') => s
+    .toLocaleLowerCase('tr-TR')
+    .replace(/ı/g, 'i').replace(/ş/g, 's').replace(/ç/g, 'c')
+    .replace(/ö/g, 'o').replace(/ü/g, 'u').replace(/ğ/g, 'g');
+
+  // Kayıtlı varlıklar arasından ara (Türkçe safe)
+  const filteredEntities = (() => {
+    if (!entitySearch.trim()) return entities.slice(0, 10);
+    const q = trNorm(entitySearch);
+    return entities.filter(e => trNorm(e.name).includes(q) || (e.vkntckn||'').includes(entitySearch));
+  })();
+  const entityExactMatch = (() => {
+    if (!entitySearch.trim()) return false;
+    const q = trNorm(entitySearch);
+    return entities.some(e => trNorm(e.name) === q);
+  })();
 
   // Seçim yapıldığında formu doldur
   const selectEntity = (e) => {
     setCreateForm(p => ({ ...p, cari_name: e.name, vkntckn: e.vkntckn || '' }));
     setEntitySearch(e.name);
     setEntityOpen(false);
+    setQuickEntityForm(null);
   };
 
-  // Hızlı kayıt oluştur (müşteri veya tedarikçi)
+  // Hızlı cari/tedarikçi oluştur
   const quickCreateEntity = async () => {
-    if (!entitySearch.trim()) return;
-    setQuickSaving(true);
+    if (!quickEntityForm?.name?.trim()) return;
+    setQuickEntitySaving(true);
     try {
       const table = createType === 'inbox' ? 'suppliers' : 'customers';
-      const { data, error } = await supabase.from(table).insert({ name: entitySearch.trim() }).select('id, name, vkntckn').single();
+      const payload = {
+        name: quickEntityForm.name.trim(),
+        vkntckn: quickEntityForm.vkntckn || null,
+        phone: quickEntityForm.phone || null,
+        email: quickEntityForm.email || null,
+      };
+      const { data, error } = await supabase.from(table).insert(payload).select('id, name, vkntckn').single();
       if (error) throw error;
       setEntities(prev => [...prev, data]);
       selectEntity(data);
     } catch (e) { alert('Kayıt oluşturulamadı: ' + e.message); }
-    finally { setQuickSaving(false); }
+    finally { setQuickEntitySaving(false); }
   };
 
   // Hızlı item kaydet
@@ -551,15 +575,16 @@ export default function Invoices({ type = 'inbox' }) {
     setItemOpenId(null);
   };
 
+  // Hızlı item - Türkçe safe filtreleme
   const getFilteredItems = (lineId) => {
-    const q = (itemSearch[lineId] || '').toLowerCase();
+    const q = trNorm(itemSearch[lineId] || '');
     if (!q) return dbItems.slice(0, 8);
-    return dbItems.filter(it => it.name.toLowerCase().includes(q) || (it.sku || '').toLowerCase().includes(q));
+    return dbItems.filter(it => trNorm(it.name).includes(q) || trNorm(it.sku || '').includes(q));
   };
 
   const itemExactMatch = (lineId) => {
-    const q = (itemSearch[lineId] || '').toLowerCase();
-    return !q || dbItems.some(it => it.name.toLowerCase() === q);
+    const q = trNorm(itemSearch[lineId] || '');
+    return !q || dbItems.some(it => trNorm(it.name) === q);
   };
 
   const handleCreate = async () => {
@@ -815,10 +840,6 @@ export default function Invoices({ type = 'inbox' }) {
               </div>
 
               <div className="p-6 space-y-4">
-                {/* Item datalist (stok için) */}
-                <datalist id="db-item-list">
-                  {dbItems.map(i => <option key={i.id} value={i.name}>{i.item_code || ''}</option>)}
-                </datalist>
 
                 <div className="grid grid-cols-2 gap-3">
                   {/* ── Cari / Tedarikçi Autocomplete Dropdown ── */}
@@ -878,13 +899,59 @@ export default function Invoices({ type = 'inbox' }) {
                           <div
                             className="px-4 py-3 flex items-center gap-2 cursor-pointer font-semibold text-sm border-t"
                             style={{ borderColor: c.border, color: '#10b981' }}
-                            onMouseDown={quickCreateEntity}
+                            onMouseDown={() => { setQuickEntityForm({ name: entitySearch, vkntckn: '', phone: '', email: '' }); setEntityOpen(false); }}
                           >
-                            {quickSaving
-                              ? <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> Kaydediliyor...</>
-                              : <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg> "{entitySearch}" adıyla yeni {createType === 'inbox' ? 'tedarikçi' : 'müşteri'} oluştur</> }
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                            "{entitySearch}" adıyla yeni {createType === 'inbox' ? 'tedarikçi' : 'müşteri'} oluştur
                           </div>
                         )}
+                      </div>
+                    )}
+                    {/* Hızlı cari/tedarikçi mini formu */}
+                    {quickEntityForm && (
+                      <div className="mt-2 p-3 rounded-xl space-y-2" style={{ background: isDark ? 'rgba(16,185,129,0.07)' : '#f0fdf4', border: '1px solid rgba(16,185,129,0.25)' }}>
+                        <p className="text-[11px] font-bold text-emerald-500 uppercase tracking-wider">{createType === 'inbox' ? 'Tedarikçi' : 'Müşteri'} Hızlı Kayıt</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="col-span-2">
+                            <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>Ad / Ünvan *</label>
+                            <input value={quickEntityForm.name} onChange={e => setQuickEntityForm(p => ({...p, name: e.target.value}))}
+                              className="w-full px-2.5 py-1.5 text-sm rounded-lg border outline-none"
+                              style={{ background: c.card, borderColor: c.border, color: c.text }} />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>VKN / TCKN (opsiyonel)</label>
+                            <input value={quickEntityForm.vkntckn} onChange={e => setQuickEntityForm(p => ({...p, vkntckn: e.target.value}))}
+                              className="w-full px-2.5 py-1.5 text-sm rounded-lg border outline-none font-mono"
+                              style={{ background: c.card, borderColor: c.border, color: c.text }}
+                              placeholder="1234567890" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>Telefon (opsiyonel)</label>
+                            <input value={quickEntityForm.phone} onChange={e => setQuickEntityForm(p => ({...p, phone: e.target.value}))}
+                              className="w-full px-2.5 py-1.5 text-sm rounded-lg border outline-none"
+                              style={{ background: c.card, borderColor: c.border, color: c.text }}
+                              placeholder="05XX XXX XX XX" />
+                          </div>
+                          <div className="col-span-2">
+                            <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>E-posta (opsiyonel)</label>
+                            <input value={quickEntityForm.email} onChange={e => setQuickEntityForm(p => ({...p, email: e.target.value}))}
+                              className="w-full px-2.5 py-1.5 text-sm rounded-lg border outline-none"
+                              style={{ background: c.card, borderColor: c.border, color: c.text }}
+                              placeholder="ornek@firma.com" />
+                          </div>
+                        </div>
+                        <div className="flex gap-2 pt-1">
+                          <button onClick={() => setQuickEntityForm(null)}
+                            className="flex-1 py-1.5 rounded-lg text-xs font-semibold border transition-colors"
+                            style={{ borderColor: c.border, color: c.muted }}>İptal</button>
+                          <button onClick={quickCreateEntity} disabled={quickEntitySaving || !quickEntityForm.name?.trim()}
+                            className="flex-1 py-1.5 rounded-lg text-xs font-bold text-white flex items-center justify-center gap-1.5 transition-colors"
+                            style={{ background: '#10b981', opacity: quickEntitySaving ? 0.7 : 1 }}>
+                            {quickEntitySaving
+                              ? <><svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> Kaydediliyor...</>
+                              : <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg> Kaydet &amp; Seç</>}
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
