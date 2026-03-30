@@ -357,14 +357,14 @@ async function handleFormalize(body, res) {
     LineCountNumeric: String(lines.length),
     AccountingSupplierParty: {
       Party: {
-        PartyName: { Name: process.env.COMPANY_NAME || 'AYS LED' },
-        PartyIdentification: { ID: { $value: process.env.COMPANY_VKN || '', attributes: { schemeID: 'VKN' } } },
+        PartyName: { Name: (process.env.COMPANY_NAME || process.env.VITE_COMPANY_NAME || 'AYS LED').replace(/^["']|["']$/g, '') },
+        PartyIdentification: { ID: { $value: (process.env.COMPANY_VKN || process.env.VITE_COMPANY_VKN || '').replace(/^["']|["']$/g, ''), attributes: { schemeID: 'VKN' } } },
         PostalAddress: {
-          CityName: process.env.COMPANY_CITY || '',
+          CityName: (process.env.COMPANY_CITY || process.env.VITE_COMPANY_CITY || '').replace(/^["']|["']$/g, ''),
           Country: { Name: 'Türkiye' }
         },
         PartyTaxScheme: {
-          TaxScheme: { Name: process.env.COMPANY_TAX_OFFICE || '' }
+          TaxScheme: { Name: (process.env.COMPANY_TAX_OFFICE || process.env.VITE_COMPANY_TAX_OFFICE || '').replace(/^["']|["']$/g, '') }
         }
       }
     },
