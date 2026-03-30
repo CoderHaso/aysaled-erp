@@ -355,6 +355,7 @@ export default function Invoices({ type = 'inbox' }) {
   const [creating, setCreating]       = useState(false);
   const [createType, setCreateType]   = useState('outbox'); // Hangi sekme açtı
   const [formalizing, setFormalizing] = useState(null); // invoice_id
+  const [queryingVkn, setQueryingVkn] = useState(false);
   const [entities, setEntities]       = useState([]);
   const [dbItems, setDbItems]         = useState([]);
   // Cari autocomplete dropdown state
@@ -605,6 +606,38 @@ export default function Invoices({ type = 'inbox' }) {
       }
     } catch { setExchangeRate(null); }
     finally { setFetchingRate(false); }
+  };
+
+  const queryCustomerInfo = async () => {
+    const vkn = createForm.vkntckn?.trim();
+    if (!vkn) return alert('Lütfen sorgulamak için bir VKN/TCKN girin.');
+    if (vkn.length < 10) return alert('Geçerli bir VKN (10) veya TCKN (11) giriniz.');
+    
+    setQueryingVkn(true);
+    try {
+      const r = await fetch('/api/invoices-api?action=fetchCustomerInfo', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vkn })
+      });
+      const data = await r.json();
+      if (!data.success) throw new Error(data.error);
+
+      const { unvan, sehir, ilce, adres, vergiDairesi } = data.data;
+      setCreateForm(p => ({
+        ...p,
+        cari_name: unvan || p.cari_name,
+        city: sehir || p.city,
+        district: ilce || p.district,
+        address: adres || p.address,
+        tax_office: vergiDairesi || p.tax_office
+      }));
+      // Optional: Inform user
+      // alert('Firma bilgileri başarıyla getirildi!');
+    } catch (err) {
+      alert('Sorgulama başarısız: ' + err.message);
+    } finally {
+      setQueryingVkn(false);
+    }
   };
 
   const handleCreate = async () => {
@@ -1060,12 +1093,24 @@ export default function Invoices({ type = 'inbox' }) {
                       </div>
                     )}
                   </div>
-                  <div>
+                  <div className={createType === 'outbox' ? 'col-span-1 sm:col-span-2 lg:col-span-1' : ''}>
                     <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>VKN / TCKN</label>
-                    <input value={createForm.vkntckn} onChange={e => setCreateForm(p => ({...p, vkntckn: e.target.value}))}
-                      className="w-full px-3 py-2 text-sm rounded-xl border outline-none font-mono"
-                      style={{ background: c.card, borderColor: c.border, color: c.text }}
-                      placeholder="1234567890" />
+                    <div className="flex items-center gap-2">
+                      <input value={createForm.vkntckn} onChange={e => setCreateForm(p => ({...p, vkntckn: e.target.value}))}
+                        className="flex-1 px-3 py-2 text-sm rounded-xl border outline-none font-mono"
+                        style={{ background: c.card, borderColor: c.border, color: c.text }}
+                        placeholder="1234567890" />
+                      {createType === 'outbox' && (
+                        <button onClick={queryCustomerInfo}
+                          disabled={queryingVkn}
+                          className="px-3 py-2 text-xs font-bold rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-colors"
+                          style={{ background: 'rgba(56,189,248,0.12)', color: '#38bdf8' }}
+                          title="Firma/Kişi bilgilerini Uyumsoft üzerinden ücretsiz sorgula">
+                          {queryingVkn ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />}
+                          <span className="hidden sm:inline">Sorgula</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                   {createType === 'outbox' && (
                     <>

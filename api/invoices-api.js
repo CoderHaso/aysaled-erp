@@ -569,6 +569,45 @@ async function handleDelete(body, res) {
   }
 }
 
+/**
+ * fetchCustomerInfo — VKN/TCKN ile Uyumsoft üzerinden ücretsiz adres, vergi dairesi sorgulama
+ * Body: { vkn }
+ */
+async function handleFetchCustomerInfo(body, res) {
+  const { vkn } = body;
+  if (!vkn) return res.status(400).json({ success: false, error: 'VKN/TCKN zorunludur' });
+
+  try {
+    const client = await createUyumsoftClient();
+    const result = await callSoap(client, 'TryToGetAddressFromVknTckn', { vknTckn: vkn, queryType: 'Normal' });
+    const r = result?.TryToGetAddressFromVknTcknResult;
+    const ok = String(r?.attributes?.IsSucceded).toLowerCase() === 'true';
+
+    if (!ok) return res.status(400).json({ success: false, error: r?.attributes?.Message || 'Uyumsoft: Kayıt bulunamadı veya sorgu başarısız.' });
+
+    const val = r?.Value || {};
+    // İş adresi veya İkametgah adresi
+    const addressData = val.IsAdresi?.IlAdi ? val.IsAdresi : val.IkametgahAdresi;
+
+    let fullAddress = '';
+    if (addressData?.MahalleSemt) fullAddress += addressData.MahalleSemt + ' Mah. ';
+    if (addressData?.CaddeSokak) fullAddress += addressData.CaddeSokak;
+
+    const parsed = {
+      unvan: val.Unvan || (val.Adi ? `${val.Adi} ${val.Soyadi}`.trim() : ''),
+      vergiDairesi: val.VergiDairesiAdi || '',
+      sehir: addressData?.IlAdi || '',
+      ilce: addressData?.IlceAdi || '',
+      adres: fullAddress.trim(),
+    };
+
+    return res.json({ success: true, data: parsed });
+  } catch (err) {
+    console.error('[invoices-api][fetchCustomerInfo]', err.message);
+    return res.status(500).json({ success: false, error: 'Uyumsoft sorgusu hatası: ' + err.message });
+  }
+}
+
 // ── Main handler ─────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin',  '*');
@@ -590,7 +629,8 @@ export default async function handler(req, res) {
       case 'sendDraft':   return await handleSendDraft(req.body || {}, res);
       case 'cancelDraft': return await handleCancelDraft(req.body || {}, res);
       case 'delete':      return await handleDelete(req.body || {}, res);
-      default:            return res.status(400).json({ error: `Bilinmeyen action: ${action}. list|detail|view|url|create|formalize|sendDraft|cancelDraft|delete` });
+      case 'fetchCustomerInfo': return await handleFetchCustomerInfo(req.body || {}, res);
+      default:            return res.status(400).json({ error: `Bilinmeyen action: ${action}. list|detail|view|url|create|formalize|sendDraft|cancelDraft|delete|fetchCustomerInfo` });
     }
   } catch (err) {
     console.error(`[invoices-api][${action}]`, err.message);
