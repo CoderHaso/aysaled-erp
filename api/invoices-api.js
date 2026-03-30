@@ -357,8 +357,8 @@ async function handleFormalize(body, res) {
     LineCountNumeric: String(lines.length),
     AccountingSupplierParty: {
       Party: {
-        PartyName: { Name: (process.env.COMPANY_NAME || process.env.VITE_COMPANY_NAME || 'AYS LED').replace(/^["']|["']$/g, '') },
         PartyIdentification: { ID: { $value: (process.env.COMPANY_VKN || process.env.VITE_COMPANY_VKN || '').replace(/^["']|["']$/g, ''), attributes: { schemeID: 'VKN' } } },
+        PartyName: { Name: (process.env.COMPANY_NAME || process.env.VITE_COMPANY_NAME || 'AYS LED').replace(/^["']|["']$/g, '') },
         PostalAddress: {
           CityName: (process.env.COMPANY_CITY || process.env.VITE_COMPANY_CITY || '').replace(/^["']|["']$/g, ''),
           Country: { Name: 'Türkiye' }
