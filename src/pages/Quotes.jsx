@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, FileText, Loader2, Trash2, Eye, Edit3,
@@ -43,6 +44,7 @@ function Toast({ msg, type, onClose }) {
 export default function Quotes() {
   const { effectiveMode, currentColor } = useTheme();
   const isDark = effectiveMode === 'dark';
+  const navigate = useNavigate();
 
   const [quotes, setQuotes]     = useState([]);
   const [loading, setLoading]   = useState(true);
@@ -83,12 +85,12 @@ export default function Quotes() {
           }))
         };
         await fetch('/api/invoices-api?action=create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(createForm) });
-        showToast('Teklif onaylandı ve taslak fatura oluşturuldu!');
+        setAcceptModal(null);
+        navigate('/sales', { state: { createFromQuote: q, quoteMsg: 'Fatura taslağı oluşturuldu ve Sipariş formuna yansıtıldı.' } });
       } else {
-        showToast('Teklif başarıyla onaylandı.');
+        setAcceptModal(null);
+        navigate('/sales', { state: { createFromQuote: q, quoteMsg: 'Sipariş formuna yansıtıldı.' } });
       }
-      setAcceptModal(null);
-      load();
     } catch (e) { alert('Hata: ' + e.message); }
   };
 

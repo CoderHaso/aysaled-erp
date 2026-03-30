@@ -257,7 +257,7 @@ async function handleCreate(body, res) {
     issue_date: issue_date || new Date().toISOString().slice(0, 10),
     amount: grandTotal, tax_exclusive_amount: subtotal, tax_total: taxTotal,
     currency, status: 'Draft', line_items: lineItems,
-    message: notes, source: 'manual',
+    message: notes,
     updated_at: new Date().toISOString()
   };
 

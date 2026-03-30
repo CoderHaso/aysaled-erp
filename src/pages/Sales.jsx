@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useLocation } from 'react-router-dom';
 import {
   Plus, Search, X, Loader2, ChevronDown, Check, AlertTriangle,
   ShoppingCart, Clock, History, Zap, Trash2, Package, Edit3,
@@ -695,6 +696,7 @@ function InfoChip({ icon: Icon, label, value, color }) {
 export default function Sales() {
   const { effectiveMode, currentColor } = useTheme();
   const isDark = effectiveMode === 'dark';
+  const location = useLocation();
 
   const [orders,    setOrders]    = useState([]);
   const [customers, setCustomers] = useState([]);
@@ -732,6 +734,50 @@ export default function Sales() {
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  useEffect(() => {
+    const state = location.state;
+    if (state?.createFromQuote && customers.length > 0 && allItems.length > 0) {
+      const q = state.createFromQuote;
+      const cName = q.company_name || '';
+      const matchedCust = customers.find(c => c.name.toLowerCase() === cName.toLowerCase());
+      
+      const newItems = (q.line_items || []).map(l => {
+        const itemMatch = allItems.find(i => i.name === l.name || i.item_code === l.item_code) || {};
+        return {
+          _key: Math.random(),
+          item_name: l.name,
+          quantity: Number(l.quantity || 1),
+          unit: l.unit || 'Adet',
+          unit_price: Number(l.unit_price || 0),
+          tax_rate: Number(q.vat_rate || 20),
+          item_id: itemMatch.id || null,
+          item_type: itemMatch.item_type || 'product',
+          stock_count: itemMatch.stock_count || null,
+          notes: ''
+        };
+      });
+
+      setEditOrder({
+        customer_name: cName,
+        customer_id: matchedCust?.id || '',
+        customer_vkntckn: matchedCust?.vkntckn || '',
+        customer_tax_office: matchedCust?.tax_office || '',
+        customer_address: matchedCust?.address || '',
+        customer_city: matchedCust?.city || '',
+        customer_phone: matchedCust?.phone || '',
+        customer_email: matchedCust?.email || '',
+        currency: q.currency || 'TRY',
+        notes: q.notes || '',
+        items: newItems
+      });
+      setShowForm(true);
+
+      if (state.quoteMsg) showToast(state.quoteMsg);
+      // Clean up state
+      window.history.replaceState({}, '');
+    }
+  }, [location.state, customers, allItems]);
 
   const updateStatus = async (orderId, status) => {
     const patch = status === 'completed' ? { status, completed_at: new Date().toISOString() } : { status };

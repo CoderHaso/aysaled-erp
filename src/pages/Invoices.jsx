@@ -353,6 +353,12 @@ export default function Invoices({ type = 'inbox' }) {
   const [creating, setCreating]       = useState(false);
   const [createType, setCreateType]   = useState('outbox'); // Hangi sekme açtı
   const [formalizing, setFormalizing] = useState(null); // invoice_id
+  const [entities, setEntities]       = useState([]);
+  const [dbItems, setDbItems]         = useState([]);
+  // Cari autocomplete dropdown state
+  const [entityOpen, setEntityOpen]   = useState(false);
+  const [entitySearch, setEntitySearch] = useState('');
+  const [quickSaving, setQuickSaving] = useState(false);
   const location = useLocation();
 
   // Cari/Tedarikçi drawer’dan yönlendirme gelirse faturayı otomatik aç
@@ -454,11 +460,55 @@ export default function Invoices({ type = 'inbox' }) {
   };
 
   // Manuel fatura oluşturma
-  const openCreate = (t = 'outbox') => { setCreateType(t); setCreateModal(true); };
-  const closeCreate = () => { setCreateModal(false); setCreateForm({ cari_name: '', vkntckn: '', issue_date: new Date().toISOString().slice(0,10), currency: 'TRY', notes: '', lines: [EMPTY_LINE()] }); };
+  const openCreate = async (t = 'outbox') => { 
+    setCreateType(t); 
+    setCreateModal(true); 
+    if (entities.length === 0) {
+      const [cRes, sRes, iRes] = await Promise.all([
+        supabase.from('customers').select('id, name, vkntckn'),
+        supabase.from('suppliers').select('id, name, vkntckn'),
+        supabase.from('items').select('id, name, item_code, unit')
+      ]);
+      setEntities([...(cRes.data||[]), ...(sRes.data||[])]);
+      setDbItems(iRes.data||[]);
+    }
+  };
+  const closeCreate = () => {
+    setCreateModal(false);
+    setEntityOpen(false);
+    setEntitySearch('');
+    setCreateForm({ cari_name: '', vkntckn: '', issue_date: new Date().toISOString().slice(0,10), currency: 'TRY', notes: '', lines: [EMPTY_LINE()] });
+  };
   const addLine = () => setCreateForm(p => ({ ...p, lines: [...p.lines, EMPTY_LINE()] }));
   const removeLine = (id) => setCreateForm(p => ({ ...p, lines: p.lines.filter(l => l.id !== id) }));
   const updateLine = (id, key, val) => setCreateForm(p => ({ ...p, lines: p.lines.map(l => l.id === id ? { ...l, [key]: val } : l) }));
+
+  // Kayıtlı varlıklar arasından ara
+  const filteredEntities = entitySearch.length > 0
+    ? entities.filter(e => e.name.toLowerCase().includes(entitySearch.toLowerCase()) || (e.vkntckn||'').includes(entitySearch))
+    : entities.slice(0, 8);
+  const entityExactMatch = entities.some(e => e.name.toLowerCase() === entitySearch.toLowerCase());
+
+  // Seçim yapıldığında formu doldur
+  const selectEntity = (e) => {
+    setCreateForm(p => ({ ...p, cari_name: e.name, vkntckn: e.vkntckn || '' }));
+    setEntitySearch(e.name);
+    setEntityOpen(false);
+  };
+
+  // Hızlı kayıt oluştur (müşteri veya tedarikçi)
+  const quickCreateEntity = async () => {
+    if (!entitySearch.trim()) return;
+    setQuickSaving(true);
+    try {
+      const table = createType === 'inbox' ? 'suppliers' : 'customers';
+      const { data, error } = await supabase.from(table).insert({ name: entitySearch.trim() }).select('id, name, vkntckn').single();
+      if (error) throw error;
+      setEntities(prev => [...prev, data]);
+      selectEntity(data);
+    } catch (e) { alert('Kayıt oluşturulamadı: ' + e.message); }
+    finally { setQuickSaving(false); }
+  };
 
   const handleCreate = async () => {
     if (!createForm.cari_name) return alert('Cari adı zorunlu');
@@ -713,16 +763,78 @@ export default function Invoices({ type = 'inbox' }) {
               </div>
 
               <div className="p-6 space-y-4">
-                {/* Üst bilgiler */}
+                {/* Item datalist (stok için) */}
+                <datalist id="db-item-list">
+                  {dbItems.map(i => <option key={i.id} value={i.name}>{i.item_code || ''}</option>)}
+                </datalist>
+
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="col-span-2">
+                  {/* ── Cari / Tedarikçi Autocomplete Dropdown ── */}
+                  <div className="col-span-2 relative">
                     <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>
                       {createType === 'inbox' ? 'Gönderen Cari (Tedarikçi) *' : 'Alıcı Cari (Müşteri) *'}
                     </label>
-                    <input value={createForm.cari_name} onChange={e => setCreateForm(p => ({...p, cari_name: e.target.value}))}
-                      className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
-                      style={{ background: c.card, borderColor: c.border, color: c.text }}
-                      placeholder="Müşteri / firma adı" />
+                    <div
+                      className="w-full px-3 py-2 text-sm rounded-xl border flex items-center cursor-text"
+                      style={{ background: c.card, borderColor: entityOpen ? currentColor : c.border, color: c.text }}
+                      onClick={() => setEntityOpen(true)}
+                    >
+                      {entityOpen ? (
+                        <input
+                          autoFocus
+                          value={entitySearch}
+                          onChange={e => { setEntitySearch(e.target.value); setCreateForm(p => ({...p, cari_name: e.target.value})); }}
+                          onBlur={() => setTimeout(() => setEntityOpen(false), 180)}
+                          className="flex-1 bg-transparent outline-none text-sm"
+                          style={{ color: c.text }}
+                          placeholder="İsim veya VKN ile ara..."
+                        />
+                      ) : (
+                        <span className={`flex-1 text-sm ${createForm.cari_name ? '' : 'opacity-40'}`}>
+                          {createForm.cari_name || (createType === 'inbox' ? 'Tedarikçi seç veya gir...' : 'Müşteri seç veya gir...')}
+                        </span>
+                      )}
+                      <svg className="w-4 h-4 opacity-40 ml-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                    </div>
+                    {entityOpen && (
+                      <div className="absolute z-50 w-full mt-1 rounded-xl overflow-hidden shadow-2xl"
+                        style={{ background: isDark ? '#0f1f38' : '#fff', border: `1px solid ${c.border}` }}>
+                        {filteredEntities.length > 0 ? (
+                          <div className="max-h-48 overflow-y-auto">
+                            {filteredEntities.map(e => (
+                              <div key={e.id}
+                                className="px-4 py-2.5 cursor-pointer flex items-center justify-between gap-2 transition-colors"
+                                style={{ borderBottom: `1px solid ${c.border}` }}
+                                onMouseDown={() => selectEntity(e)}
+                                onMouseEnter={ev => ev.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : '#f8fafc'}
+                                onMouseLeave={ev => ev.currentTarget.style.background = 'transparent'}
+                              >
+                                <div>
+                                  <p className="text-sm font-semibold" style={{ color: c.text }}>{e.name}</p>
+                                  {e.vkntckn && <p className="text-[11px] font-mono" style={{ color: c.muted }}>{e.vkntckn}</p>}
+                                </div>
+                                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold" style={{ background: isDark ? 'rgba(255,255,255,0.07)' : '#f1f5f9', color: c.muted }}>
+                                  {createType === 'inbox' ? 'Tedarikçi' : 'Müşteri'}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="px-4 py-3 text-sm" style={{ color: c.muted }}>Kayıt bulunamadı</div>
+                        )}
+                        {entitySearch.trim() && !entityExactMatch && (
+                          <div
+                            className="px-4 py-3 flex items-center gap-2 cursor-pointer font-semibold text-sm border-t"
+                            style={{ borderColor: c.border, color: '#10b981' }}
+                            onMouseDown={quickCreateEntity}
+                          >
+                            {quickSaving
+                              ? <><svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> Kaydediliyor...</>
+                              : <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg> "{entitySearch}" adıyla yeni {createType === 'inbox' ? 'tedarikçi' : 'müşteri'} oluştur</> }
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>VKN / TCKN</label>
@@ -758,10 +870,26 @@ export default function Invoices({ type = 'inbox' }) {
                     </button>
                   </div>
                   <div className="space-y-2">
+                    {/* PC Header */}
+                    <div className="hidden sm:grid grid-cols-12 gap-2 text-[10px] font-bold uppercase tracking-wider mb-2 px-2" style={{ color: c.muted }}>
+                      <div className="col-span-3">Hizmet/Ürün</div>
+                      <div className="col-span-2">Miktar</div>
+                      <div className="col-span-2">Birim</div>
+                      <div className="col-span-2">B. Fiyat</div>
+                      <div className="col-span-2">KDV %</div>
+                    </div>
                     {createForm.lines.map((l, i) => (
-                      <div key={l.id} className="flex gap-2 items-center">
-                        <input value={l.name} onChange={e => updateLine(l.id, 'name', e.target.value)}
-                          className="flex-1 px-2 py-1.5 text-xs rounded-lg border outline-none"
+                      <div key={l.id} className="flex gap-2 items-center flex-wrap sm:flex-nowrap bg-slate-500/5 p-2 rounded-xl sm:bg-transparent sm:p-0">
+                        <input list="db-item-list" value={l.name || ''} onChange={e => {
+                            const val = e.target.value;
+                            const match = dbItems.find(it => it.name === val);
+                            if (match) {
+                              setCreateForm(p => ({ ...p, lines: p.lines.map(line => line.id === l.id ? { ...line, name: val, unit: match.unit || 'Adet' } : line) }));
+                            } else {
+                              updateLine(l.id, 'name', val);
+                            }
+                          }}
+                          className="w-full sm:flex-1 px-3 py-2 text-xs rounded-xl border outline-none min-w-[120px]"
                           style={{ background: c.card, borderColor: c.border, color: c.text }}
                           placeholder="Ürün / Hizmet adı" />
                         <input type="number" value={l.quantity} onChange={e => updateLine(l.id, 'quantity', e.target.value)}
