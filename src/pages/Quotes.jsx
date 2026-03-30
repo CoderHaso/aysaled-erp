@@ -2,8 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, FileText, Loader2, Trash2, Eye, Edit3,
-  CheckCircle2, Clock, XCircle, AlertCircle, Send, ArrowRight,
-  TrendingUp, RefreshCw
+  CheckCircle2, Clock, XCircle, Send, RefreshCw, FileMinus
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
@@ -14,7 +13,6 @@ const STATUS = {
   sent:     { label: 'Gönderildi',    color: '#3b82f6', icon: Send },
   accepted: { label: 'Kabul Edildi',  color: '#10b981', icon: CheckCircle2 },
   rejected: { label: 'Reddedildi',    color: '#ef4444', icon: XCircle },
-  expired:  { label: 'Süresi Doldu',  color: '#f59e0b', icon: AlertCircle },
 };
 
 const fmt  = (n) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 });
@@ -53,9 +51,46 @@ export default function Quotes() {
   const [view, setView]         = useState('list'); // 'list' | 'form'
   const [editId, setEditId]     = useState(null);
   const [previewQ, setPreviewQ] = useState(null);
+  const [acceptModal, setAcceptModal] = useState(null);
   const [toast, setToast]       = useState(null);
 
   const showToast = (msg, type = 'success') => setToast({ msg, type });
+
+  const updateStatus = async (id, status) => {
+    await fetch(`/api/quotes?id=${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+    showToast('Durum güncellendi');
+    load();
+  };
+
+  const handleAccept = async (q, createInvoice) => {
+    try {
+      await fetch(`/api/quotes?id=${q.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'accepted' }) });
+      if (createInvoice && q.line_items) {
+        const createForm = {
+          type: 'outbox',
+          cari_name: q.company_name || 'Bilinmeyen Müşteri',
+          vkntckn: '',
+          issue_date: new Date().toISOString().slice(0, 10),
+          currency: q.currency || 'TRY',
+          notes: q.notes || '',
+          lines: q.line_items.map(l => ({
+            name: l.name,
+            quantity: Number(l.quantity || 1),
+            unit: l.unit || 'Adet',
+            unitPrice: Number(l.unit_price || 0),
+            taxRate: Number(q.vat_rate || 20),
+            total: Number(l.total || 0)
+          }))
+        };
+        await fetch('/api/invoices-api?action=create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(createForm) });
+        showToast('Teklif onaylandı ve taslak fatura oluşturuldu!');
+      } else {
+        showToast('Teklif başarıyla onaylandı.');
+      }
+      setAcceptModal(null);
+      load();
+    } catch (e) { alert('Hata: ' + e.message); }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -193,10 +228,9 @@ export default function Quotes() {
               <div className="col-span-2">Teklif No</div>
               <div className="col-span-3">Müşteri</div>
               <div className="col-span-2">Tarih</div>
-              <div className="col-span-2">Geçerlilik</div>
               <div className="col-span-1">Durum</div>
               <div className="col-span-1 text-right">Tutar</div>
-              <div className="col-span-1" />
+              <div className="col-span-3" />
             </div>
             {filtered.map((q, i) => (
               <motion.div key={q.id}
@@ -212,24 +246,45 @@ export default function Quotes() {
                   <p className="text-[11px]" style={{ color: c.muted }}>{q.contact_person || ''}</p>
                 </div>
                 <div className="col-span-2 text-sm" style={{ color: c.muted }}>{fmtD(q.issue_date)}</div>
-                <div className="col-span-2 text-sm" style={{ color: c.muted }}>{fmtD(q.valid_until)}</div>
                 <div className="col-span-1"><StatusBadge status={q.status} /></div>
                 <div className="col-span-1 text-right">
                   <p className="text-sm font-bold" style={{ color: c.text }}>{fmt(q.grand_total)}</p>
                   <p className="text-[10px]" style={{ color: c.muted }}>{q.currency}</p>
                 </div>
-                <div className="col-span-1 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => setPreviewQ(q)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors">
-                    <Eye size={14} />
+                <div className="col-span-3 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {/* Hızlı İşlemler */}
+                  {q.status === 'draft' && (
+                    <button onClick={() => updateStatus(q.id, 'sent')} title="Gönderildi Olarak İşaretle"
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-blue-500 hover:bg-blue-50 transition-colors">
+                      <Send size={15} />
+                    </button>
+                  )}
+                  {(q.status === 'draft' || q.status === 'sent') && (
+                    <>
+                      <button onClick={() => setAcceptModal(q)} title="Onayla / Satışa Aktar"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 transition-colors">
+                        <CheckCircle2 size={15} />
+                      </button>
+                      <button onClick={() => updateStatus(q.id, 'rejected')} title="Reddet"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors">
+                        <XCircle size={15} />
+                      </button>
+                    </>
+                  )}
+
+                  <div className="w-[1px] h-4 bg-slate-200 mx-1" />
+
+                  <button onClick={() => setPreviewQ(q)} title="Önizle / Yazdır"
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors">
+                    <Eye size={15} />
                   </button>
-                  <button onClick={() => { setEditId(q.id); setView('form'); }}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors">
-                    <Edit3 size={14} />
+                  <button onClick={() => { setEditId(q.id); setView('form'); }} title="Düzenle"
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
+                    <Edit3 size={15} />
                   </button>
-                  <button onClick={() => deleteQuote(q.id, q.quote_no)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors">
-                    <Trash2 size={14} />
+                  <button onClick={() => deleteQuote(q.id, q.quote_no)} title="Sil"
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                    <Trash2 size={15} />
                   </button>
                 </div>
               </motion.div>
@@ -240,6 +295,35 @@ export default function Quotes() {
 
       {/* Önizleme */}
       {previewQ && <QuotePreview quote={previewQ} onClose={() => setPreviewQ(null)} />}
+
+      {/* Onay Modal */}
+      {acceptModal && (
+        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(2px)' }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 relative">
+            <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-4">
+              <CheckCircle2 size={24} />
+            </div>
+            <h3 className="text-lg font-bold text-gray-800 text-center mb-2">Teklifi Onayla</h3>
+            <p className="text-sm text-gray-500 text-center mb-6">
+              <strong className="text-gray-700">{acceptModal.company_name}</strong> adlı müşteriye ait teklif <span className="text-emerald-600 font-semibold mb-1">Kabul Edildi</span> aşamasına taşınacak. Satış işlemlerini hızlandırmak için giden faturayı <strong className="text-gray-700">Taslak</strong> olarak oluşturmak ister misiniz?
+            </p>
+            <div className="flex flex-col gap-2.5">
+              <button onClick={() => handleAccept(acceptModal, true)}
+                className="w-full py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold flex items-center justify-center gap-2 hover:bg-emerald-700 transition-colors shadow-sm">
+                <FileMinus size={15} /> Onayla ve Fatura Taslağı Oluştur
+              </button>
+              <button onClick={() => handleAccept(acceptModal, false)}
+                className="w-full py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-colors">
+                Gerek Yok, Sadece Onayla
+              </button>
+              <button onClick={() => setAcceptModal(null)}
+                className="w-full py-2.5 text-gray-400 text-sm font-medium hover:text-gray-600 mt-2 transition-colors">
+                İptal Et
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <AnimatePresence>
         {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
