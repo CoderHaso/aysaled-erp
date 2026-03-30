@@ -381,11 +381,19 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
 
   // Sütun/satır ayarları — localStorage'dan yüklenir, sürükleyerek ayarlanır
   const SAVED_LAYOUT_KEY = 'quoteTableLayout';
-  const savedLayout = (() => { try { return JSON.parse(localStorage.getItem(SAVED_LAYOUT_KEY) || '{}'); } catch { return {}; } })();
-  const [rowHeight, setRowHeight] = useState(savedLayout.rowHeight || 58);
-  const [colWidths, setColWidths] = useState(savedLayout.colWidths || {
-    no: 32, img: 68, code: 78, power: 46, name: 160, desc: 120, qty: 52, unit: 52, price: 80, total: 80
-  });
+  const DEFAULT_COL_WIDTHS = { no: 32, img: 68, code: 78, power: 46, name: 160, desc: 120, qty: 52, unit: 52, price: 80, total: 80 };
+  const savedLayout = (() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(SAVED_LAYOUT_KEY) || '{}');
+      // Tüm anahtarların sayı olduğunu doğrula, yoksa default'a dön
+      const cw = raw.colWidths || {};
+      const valid = Object.keys(DEFAULT_COL_WIDTHS).every(k => typeof cw[k] === 'number' && cw[k] > 0);
+      if (!valid) return {};
+      return raw;
+    } catch { return {}; }
+  })();
+  const [rowHeight, setRowHeight] = useState(typeof savedLayout.rowHeight === 'number' ? savedLayout.rowHeight : 58);
+  const [colWidths, setColWidths] = useState(savedLayout.colWidths || DEFAULT_COL_WIDTHS);
   const resizingCol = useRef(null);
   const resizingRow = useRef(null);
 
@@ -394,16 +402,19 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
     localStorage.setItem(SAVED_LAYOUT_KEY, JSON.stringify({ rowHeight, colWidths }));
   }, [rowHeight, colWidths]);
 
-  // Mouse resize handlers
+
+  // Mouse resize handlers — ref değerlerini capture ederek null race condition önle
   useEffect(() => {
     const onMove = (e) => {
-      if (resizingCol.current) {
-        const dx = e.clientX - resizingCol.current.startX;
-        setColWidths(p => ({ ...p, [resizingCol.current.key]: Math.max(20, resizingCol.current.startW + dx) }));
+      const col = resizingCol.current;  // snapshot al
+      if (col) {
+        const dx = e.clientX - col.startX;
+        setColWidths(p => ({ ...p, [col.key]: Math.max(20, col.startW + dx) }));
       }
-      if (resizingRow.current) {
-        const dy = e.clientY - resizingRow.current.startY;
-        setRowHeight(Math.max(28, resizingRow.current.startH + dy));
+      const row = resizingRow.current;  // snapshot al
+      if (row) {
+        const dy = e.clientY - row.startY;
+        setRowHeight(Math.max(28, row.startH + dy));
       }
     };
     const onUp = () => { resizingCol.current = null; resizingRow.current = null; };
@@ -746,12 +757,13 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
                 <col style={{ width: colWidths.img }} />
                 <col style={{ width: colWidths.code }} />
                 <col style={{ width: colWidths.power }} />
-                <col style={{ width: colWidths.name }} />{/* name — editörde de fixed, preview ile aynı */}
+                <col style={{ width: colWidths.name }} />
                 <col style={{ width: colWidths.desc }} />
                 <col style={{ width: colWidths.qty }} />
                 <col style={{ width: colWidths.unit }} />
                 <col style={{ width: colWidths.price }} />
                 <col style={{ width: colWidths.total }} />
+                <col style={{ width: 28 }} />{/* sil butonu */}
               </colgroup>
               <thead>
                 <tr style={{ background: '#1a6b2c' }}>
@@ -795,6 +807,8 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
                       />
                     </th>
                   ))}
+                  {/* Sil sütunu başlığı — boş */}
+                  <th style={{ width: 28, borderRight: 'none' }} />
                 </tr>
               </thead>
               <tbody>
