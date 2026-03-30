@@ -245,16 +245,34 @@ export function QuotePreview({ quote, onClose, colWidths = {}, rowHeight = 58 })
           {/* ── Kalem Tablosu ── */}
           <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 10, tableLayout: 'fixed' }}>
             <colgroup>
-              <col style={{ width: 22 }} />
-              <col style={{ width: colWidths.img   || 68 }} />
-              <col style={{ width: colWidths.code  || 78 }} />
-              <col style={{ width: colWidths.power || 46 }} />
-              <col style={{ width: colWidths.name  || 160 }} />
-              <col style={{ width: colWidths.desc  || 120 }} />
-              <col style={{ width: colWidths.qty   || 52 }} />
-              <col style={{ width: colWidths.unit  || 52 }} />
-              <col style={{ width: colWidths.price || 80 }} />
-              <col style={{ width: colWidths.total || 80 }} />
+              {(() => {
+                const w_img   = colWidths.img   || 68;
+                const w_code  = colWidths.code  || 78;
+                const w_power = colWidths.power || 46;
+                const w_name  = colWidths.name  || 160;
+                const w_desc  = colWidths.desc  || 120;
+                const w_qty   = colWidths.qty   || 52;
+                const w_unit  = colWidths.unit  || 52;
+                const w_price = colWidths.price || 80;
+                const w_total = colWidths.total || 80;
+                const totalW  = 22 + w_img + w_code + w_power + w_name + w_desc + w_qty + w_unit + w_price + w_total;
+                const pc = (w) => `${((w / totalW) * 100).toFixed(2)}%`;
+                
+                return (
+                  <>
+                    <col style={{ width: pc(22) }} />
+                    <col style={{ width: pc(w_img) }} />
+                    <col style={{ width: pc(w_code) }} />
+                    <col style={{ width: pc(w_power) }} />
+                    <col style={{ width: pc(w_name) }} />
+                    <col style={{ width: pc(w_desc) }} />
+                    <col style={{ width: pc(w_qty) }} />
+                    <col style={{ width: pc(w_unit) }} />
+                    <col style={{ width: pc(w_price) }} />
+                    <col style={{ width: pc(w_total) }} />
+                  </>
+                );
+              })()}
             </colgroup>
             <thead>
               <tr style={{ background: '#1a6b2c', color: '#fff' }}>
