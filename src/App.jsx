@@ -156,8 +156,8 @@ function AppShell() {
             <Route path="/suppliers"  element={<Suppliers />} />
             <Route path="/settings"   element={<Settings />} />
             <Route path="/contacts"   element={<Customers />} />
-            <Route path="/incoming-invoices" element={<Invoices type="inbox" />} />
-            <Route path="/outgoing-invoices" element={<Invoices type="outbox" />} />
+            <Route path="/incoming-invoices" element={<Invoices type="outbox" />} />
+            <Route path="/outgoing-invoices" element={<Invoices type="inbox" />} />
             <Route path="/sales"      element={<Sales />} />
             <Route path="/quotes"     element={<Quotes />} />
             <Route path="/media"      element={<Media />} />

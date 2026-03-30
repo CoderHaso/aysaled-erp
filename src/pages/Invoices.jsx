@@ -209,7 +209,7 @@ function InvoiceDetailDrawer({ invoice, isInbox, onClose, onLineItemsLoaded }) {
             style={{ background: 'rgba(12,21,38,0.97)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(148,163,184,0.08)' }}>
             <div>
               <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-0.5">
-                {isInbox ? 'Gelir Faturası' : 'Gider Faturası'}
+              {isInbox ? 'Gider Faturası' : 'Gelir Faturası'}
               </p>
               <h2 className="text-base font-bold text-slate-100 font-mono">{invoice.invoice_id}</h2>
             </div>
@@ -513,7 +513,7 @@ export default function Invoices({ type = 'inbox' }) {
             </div>
             <div>
               <h1 className="text-2xl font-bold" style={{ color: c.text }}>
-                {isInbox ? 'Gelir Faturaları' : 'Gider Faturaları'}
+              {isInbox ? 'Gider Faturaları' : 'Gelir Faturaları'}
               </h1>
               <p className="text-sm mt-0.5" style={{ color: c.muted }}>
                 {invoices.length} kayıt · Uyumsoft e-Fatura
