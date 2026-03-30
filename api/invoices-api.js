@@ -383,7 +383,7 @@ async function handleFormalize(body, res) {
     },
     TaxTotal: {
       TaxAmount: { $value: String(taxTotal), attributes: { currencyID: currency } },
-      'TaxSubtotal[]': taxSubtotals
+      TaxSubtotal: taxSubtotals
     },
     LegalMonetaryTotal: {
       LineExtensionAmount: { $value: String(subtotal), attributes: { currencyID: currency } },
@@ -391,7 +391,7 @@ async function handleFormalize(body, res) {
       TaxInclusiveAmount: { $value: String(grandTotal), attributes: { currencyID: currency } },
       PayableAmount: { $value: String(grandTotal), attributes: { currencyID: currency } }
     },
-    'InvoiceLine[]': invoiceLines
+    InvoiceLine: invoiceLines
   };
 
   // Döviz ise PricingExchangeRate ekle
@@ -411,7 +411,7 @@ async function handleFormalize(body, res) {
     const client = await createUyumsoftClient();
     const result = await callSoap(client, 'SaveAsDraft', {
       invoices: {
-        'InvoiceInfo[]': [{
+        InvoiceInfo: [{
           Invoice: ublInvoice,
           attributes: { LocalDocumentId: invoiceId }
         }]
@@ -458,7 +458,7 @@ async function handleSendDraft(body, res) {
   try {
     const client = await createUyumsoftClient();
     const result = await callSoap(client, 'SendDraft', {
-      invoiceIds: { 'string[]': [inv.document_id] }
+      invoiceIds: { string: [inv.document_id] }
     });
     const r = result?.SendDraftResult;
     const ok = String(r?.attributes?.IsSucceded ?? 'true').toLowerCase() !== 'false';
@@ -489,7 +489,7 @@ async function handleCancelDraft(body, res) {
   try {
     const client = await createUyumsoftClient();
     const result = await callSoap(client, 'CancelDraft', {
-      invoiceIds: { 'string[]': [inv.document_id] }
+      invoiceIds: { string: [inv.document_id] }
     });
     const r = result?.CancelDraftResult;
     const ok = String(r?.attributes?.IsSucceded ?? 'true').toLowerCase() !== 'false';
