@@ -28,20 +28,25 @@ export default async function handler(req, res) {
     if (!forceAll) {
       const { data: latest } = await supabase
         .from('invoices')
-        .select('issue_date')
+        .select('create_date_utc, issue_date')
         .eq('type', type)
-        .order('issue_date', { ascending: false })
+        .order('create_date_utc', { ascending: false })
+        .not('create_date_utc', 'is', 'null')
         .limit(1)
-        .single();
+        .maybeSingle();
 
-      if (latest?.issue_date) {
-        const sd = new Date(latest.issue_date);
-        sd.setDate(sd.getDate() - 2); // 2 gün geçmişe git, kaçan olmasın
+      const lastDate = latest?.create_date_utc || latest?.issue_date;
+      if (lastDate) {
+        const sd = new Date(lastDate);
+        sd.setDate(sd.getDate() - 3); // 3 gün geçmişten tara (Tarih kesişimleri ve saat farkları için)
         startDateStr = sd.toISOString().split('.')[0];
       }
     }
 
-    const endDateStr = new Date().toISOString().split('.')[0];
+    // Uyumsoft zaman dilimi (GMT+3) ile UTC arasındaki farkları kapatmak için endDate yarına ayarlanıyor
+    const edt = new Date();
+    edt.setDate(edt.getDate() + 1);
+    const endDateStr = edt.toISOString().split('.')[0];
     const client = await createUyumsoftClient();
     const methodName = type === 'outbox' ? 'GetOutboxInvoiceList' : 'GetInboxInvoiceList';
     const resultKey  = type === 'outbox' ? 'GetOutboxInvoiceListResult' : 'GetInboxInvoiceListResult';
