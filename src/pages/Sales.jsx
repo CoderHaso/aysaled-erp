@@ -216,6 +216,7 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
     customer_vkntckn:    order?.customer_vkntckn || '',
     customer_tax_office: order?.customer_tax_office || '',
     customer_address:    order?.customer_address || '',
+    customer_district:   order?.customer_district || '',
     customer_city:       order?.customer_city || '',
     customer_phone:      order?.customer_phone || '',
     customer_email:      order?.customer_email || '',
@@ -246,6 +247,7 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
       customer_vkntckn:    cust.vkntckn    || '',
       customer_tax_office: cust.tax_office || '',
       customer_address:    cust.address    || '',
+      customer_district:   cust.district   || '',
       customer_city:       cust.city       || '',
       customer_phone:      cust.phone      || '',
       customer_email:      cust.email      || '',
@@ -279,6 +281,13 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
 
   const handleSave = async () => {
     if (!form.customer_name.trim() || !form.order_number.trim()) return;
+
+    if (invoiceToggle && !isEdit) {
+      if (!form.customer_vkntckn || !form.customer_tax_office || !form.customer_city || !form.customer_address) {
+        return alert("Resmi fatura oluşturabilmek için müşterinin VKN/TCKN, Vergi Dairesi, Şehir ve Açık Adres alanları Uyumsoft tarafından zorunlu tutulmaktadır!");
+      }
+    }
+
     setSaving(true);
     try {
       const orderData = {
@@ -288,6 +297,15 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
         grand_total: Math.round(grandTotal * 100) / 100,
         due_date: form.due_date ? new Date(form.due_date).toISOString() : null,
       };
+
+      // SANITIZE: Remove explicitly unsupported fields in 'orders' schema
+      delete orderData.customer_address;
+      delete orderData.customer_district;
+      delete orderData.customer_city;
+      delete orderData.customer_vkntckn;
+      delete orderData.customer_tax_office;
+      delete orderData.customer_phone;
+      delete orderData.customer_email;
 
       let orderId;
       if (isEdit) {
@@ -300,11 +318,50 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
         orderId = data.id;
       }
 
-      if (lines.filter(l => l.item_name).length > 0) {
-        const items = lines
-          .filter(l => l.item_name)
-          .map(({ _key, ...l }) => ({ ...l, order_id: orderId }));
+      const orderLines = lines.filter(l => l.item_name);
+      if (orderLines.length > 0) {
+        const items = orderLines.map(({ _key, ...l }) => ({ ...l, order_id: orderId }));
         await supabase.from('order_items').insert(items);
+      }
+
+      // ── UYUMSOFT INVOICE DRAFT CREATION ──
+      if (invoiceToggle && !isEdit) {
+        try {
+          const invBody = {
+            type: 'outbox',
+            cari_name: form.customer_name,
+            vkntckn: form.customer_vkntckn?.trim(),
+            city: form.customer_city?.trim(),
+            district: form.customer_district?.trim(),
+            address: form.customer_address?.trim(),
+            tax_office: form.customer_tax_office?.trim(),
+            currency: form.currency,
+            notes: form.notes,
+            lines: orderLines.map(l => ({
+              name: l.item_name,
+              quantity: Number(l.quantity),
+              unit: l.unit,
+              unitPrice: Number(l.unit_price),
+              taxRate: Number(l.tax_rate)
+            }))
+          };
+          
+          const r_create = await fetch('/api/invoices-api?action=create', { method: 'POST', body: JSON.stringify(invBody), headers: {'Content-Type': 'application/json'} });
+          const d_create = await r_create.json();
+          if (d_create.success && d_create.invoice_id) {
+             const r_form = await fetch('/api/invoices-api?action=formalize', { method: 'POST', body: JSON.stringify({ invoiceId: d_create.invoice_id }), headers: {'Content-Type': 'application/json'} });
+             const d_form = await r_form.json();
+             if (d_form.success) {
+               alert(`Sipariş kaydedildi ve Uyumsoft tarafında fatura taslağı başarıyla oluşturuldu!`);
+             } else {
+               alert(`Sipariş kaydedildi ancak fatura taslağı Uyumsoft'a iletilemedi: ${d_form.error}`);
+             }
+          } else {
+             alert(`Sipariş kaydedildi ancak Fatura sistemi kaydı başarısız oldu: ${d_create.error}`);
+          }
+        } catch (invErr) {
+          alert(`Sipariş kaydedildi ama Uyumsoft taslağı oluşturulurken teknik hata oluştu: ${invErr.message}`);
+        }
       }
 
       onSaved?.();
@@ -313,52 +370,20 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
     finally { setSaving(false); }
   };
 
-  // Taslak fatura önizle
-  const handleDraftPreview = async () => {
-    setDraftLoading(true);
-    setDraftPreviewUrl(null);
-    try {
-      const r = await fetch('/api/draft-invoice-preview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customerName:       form.customer_name,
-          customerVkntckn:    form.customer_vkntckn    || '',
-          customerAddress:    form.customer_address    || form.billing_address || '',
-          customerCity:       form.customer_city       || '',
-          customerTaxOffice:  form.customer_tax_office || '',
-          currency:           form.currency,
-          invoiceDate:        new Date().toISOString().slice(0, 10),
-          notes:              form.notes,
-          lines: lines.filter(l => l.item_name).map(l => ({
-            name:      l.item_name,
-            quantity:  l.quantity,
-            unit:      l.unit,
-            unitPrice: l.unit_price,
-            taxRate:   l.tax_rate,
-          })),
-        }),
-      });
-      const data = await r.json();
-      if (data.success && data.html) {
-        setDraftPreviewUrl(data.html);   // HTML string — modal bunu blob URL'e çevirir
-      } else {
-        alert(data.error || 'Önizleme alınamadı');
-      }
-    } catch (e) { alert(e.message); }
-    finally { setDraftLoading(false); }
-  };
-
   return (
     <>
-    <motion.div className="fixed inset-0 z-50 overflow-y-auto"
-      style={{ background: '#06101e' }}
+    <motion.div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-
+      {/* Background overlay click-to-close */}
+      <div className="absolute inset-0 z-0" onClick={onClose} />
+      
+      <motion.div className="relative w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-3xl shadow-2xl z-10"
+        style={{ background: '#0f172a', border: '1px solid rgba(148,163,184,0.15)' }}
+        initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}>
 
       {/* Header */}
-      <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-4"
-        style={{ background: 'rgba(6,16,30,0.97)', backdropFilter:'blur(14px)', borderBottom:'1px solid rgba(148,163,184,0.08)' }}>
+      <div className="sticky top-0 z-20 flex items-center justify-between px-6 py-4"
+        style={{ background: 'rgba(15,23,42,0.97)', backdropFilter:'blur(14px)', borderBottom:'1px solid rgba(148,163,184,0.08)' }}>
         <div>
           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
             {isEdit ? 'Sipariş Düzenle' : 'Yeni Sipariş'}
@@ -368,13 +393,13 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
           </h2>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={onClose} className="p-2 rounded-xl text-slate-500 hover:text-white">
+          <button onClick={onClose} className="p-2 rounded-xl text-slate-500 hover:text-white transition-colors">
             <X size={18} />
           </button>
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+      <div className="p-6 space-y-6">
 
         {/* Müşteri + Sipariş No */}
         <SectionCard title="Sipariş Bilgileri" icon={FileText}>
@@ -554,22 +579,19 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
                 className="overflow-hidden">
                 <div className="pt-4 flex flex-col gap-3">
                   <p className="text-xs text-slate-400">
-                    ✅ Sipariş kaydedilmeden önce Uyumsoft'ta taslak fatura oluşturulup HTML önizlemesi gösterilir.
-                    Onayladıktan sonra gerçek faturayı kesmek için Uyumsoft portalını kullanın.
+                    Siparişi kaydettiğinizde Uyumsoft'ta Giden Taslak Fatura olarak da gönderilecektir. Uyumsoft portalı üzerinden daha sonra resmileştirebilmeniz için lütfen zorunlu alanları eksiksiz girin:
                   </p>
-                  <button onClick={handleDraftPreview}
-                    disabled={draftLoading || !form.customer_name || lines.filter(l=>l.item_name).length === 0}
-                    className="flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold transition-all"
-                    style={{
-                      background: 'rgba(139,92,246,0.12)',
-                      color: '#a78bfa',
-                      border: '1px solid rgba(139,92,246,0.25)',
-                      opacity: draftLoading || !form.customer_name ? 0.5 : 1,
-                    }}>
-                    {draftLoading
-                      ? <><Loader2 size={15} className="animate-spin" />Taslak oluşturuluyor...</>
-                      : <><ScanEye size={15} />Fatura Önizle (Uyumsoft Taslak)</>}
-                  </button>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2 p-4 rounded-xl" style={{ border: '1px solid rgba(139,92,246,0.25)', background: 'rgba(139,92,246,0.05)' }}>
+                      <Field label="VKN / TCKN *" value={form.customer_vkntckn} onChange={v => setForm(f => ({ ...f, customer_vkntckn: v }))} placeholder="10 veya 11 hane" />
+                      <Field label="Vergi Dairesi *" value={form.customer_tax_office} onChange={v => setForm(f => ({ ...f, customer_tax_office: v }))} placeholder="Örn: BORNOVA" />
+                      <Field label="Şehir *" value={form.customer_city} onChange={v => setForm(f => ({ ...f, customer_city: v }))} placeholder="Örn: İZMİR" />
+                      <Field label="İlçe (Opsiyonel)" value={form.customer_district} onChange={v => setForm(f => ({ ...f, customer_district: v }))} placeholder="Örn: BAYRAKLI" />
+                      <div className="sm:col-span-2">
+                        <Field label="Açık Adres *" value={form.customer_address} onChange={v => setForm(f => ({ ...f, customer_address: v }))} placeholder="Tam Adres..." />
+                      </div>
+                  </div>
+                  
                 </div>
               </motion.div>
             )}
@@ -591,17 +613,8 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
           </button>
         </div>
       </div>
+     </motion.div>
     </motion.div>
-
-    {/* Taslak fatura önizleme modal */}
-    {draftPreviewUrl && (
-      <InvoicePreviewModal
-        invoiceId="TASLAK"
-        previewHtml={draftPreviewUrl}
-        onClose={() => setDraftPreviewUrl(null)}
-      />
-    )}
-
   </>
   );
 }
