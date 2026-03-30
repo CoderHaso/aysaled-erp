@@ -1025,6 +1025,13 @@ export default function Invoices({ type = 'inbox' }) {
                       style={{ background: c.card, borderColor: c.border, color: c.text }} />
                   </div>
                   <div>
+                    <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Fatura No (Opsiyonel)</label>
+                    <input value={createForm.invoice_id || ''} onChange={e => setCreateForm(p => ({...p, invoice_id: e.target.value}))}
+                      className="w-full px-3 py-2 text-sm rounded-xl border outline-none font-mono"
+                      style={{ background: c.card, borderColor: c.border, color: c.text }}
+                      placeholder="Otomatik (AYS2026...)" />
+                  </div>
+                  <div>
                     <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Para Birimi</label>
                     <select value={createForm.currency} onChange={e => {
                       const cur = e.target.value;

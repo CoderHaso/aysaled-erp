@@ -233,17 +233,19 @@ async function handleCreate(body, res) {
   const taxTotal = lines.reduce((s, l) => s + (l.quantity || 0) * (l.unitPrice || 0) * (l.taxRate || 0) / 100, 0);
   const grandTotal = subtotal + taxTotal;
 
-  // Otomatik fatura no: MNL-YYYY-NNN
+  // Otomatik fatura no: AYS + YIL + 9 hane seq
   const year = new Date().getFullYear();
+  const prefix = `AYS${year}`;
   const { data: last } = await supabase.from('invoices')
-    .select('invoice_id').ilike('invoice_id', `MNL-${year}-%`)
+    .select('invoice_id').ilike('invoice_id', `${prefix}%`)
     .order('created_at', { ascending: false }).limit(1).maybeSingle();
+    
   let seq = 1;
   if (last?.invoice_id) {
-    const parts = last.invoice_id.split('-');
-    seq = (parseInt(parts[parts.length - 1]) || 0) + 1;
+    const numPart = last.invoice_id.replace(prefix, '');
+    seq = (parseInt(numPart, 10) || 0) + 1;
   }
-  const invoice_id = `MNL-${year}-${String(seq).padStart(3, '0')}`;
+  const invoice_id = body.invoice_id || `${prefix}${String(seq).padStart(9, '0')}`;
 
   const lineItems = lines.map((l, i) => ({
     id: String(i + 1), name: l.name, item_code: l.item_code || null,
@@ -296,135 +298,137 @@ async function handleFormalize(body, res) {
   // UBL birim kodu eşleme
   const unitMap = { 'Adet': 'C62', 'Kg': 'KGM', 'Ton': 'TNE', 'm²': 'MTK', 'm³': 'MTQ', 'Litre': 'LTR', 'Paket': 'PA', 'Kutu': 'BX', 'Takım': 'SET' };
 
+  const encodeXml = str => String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  const suppName = encodeXml((process.env.COMPANY_NAME || process.env.VITE_COMPANY_NAME || 'AYS LED').replace(/^["']|["']$/g, ''));
+  const suppVkn = encodeXml((process.env.COMPANY_VKN || process.env.VITE_COMPANY_VKN || '').replace(/^["']|["']$/g, ''));
+  const suppCity = encodeXml((process.env.COMPANY_CITY || process.env.VITE_COMPANY_CITY || 'İZMİR').replace(/^["']|["']$/g, ''));
+  const suppTaxOff = encodeXml((process.env.COMPANY_TAX_OFFICE || process.env.VITE_COMPANY_TAX_OFFICE || 'BORNOVA').replace(/^["']|["']$/g, ''));
+  const suppAddress = encodeXml((process.env.COMPANY_ADDRESS || process.env.VITE_COMPANY_ADDRESS || 'OSMANGAZİ MAH. İBRAHİM ETHEM CAD. NO: 75 A').replace(/^["']|["']$/g, ''));
+  const suppDist = encodeXml((process.env.COMPANY_DISTRICT || process.env.VITE_COMPANY_DISTRICT || 'BAYRAKLI').replace(/^["']|["']$/g, ''));
+
+  const custName = encodeXml(inv.cari_name || '');
+  const custVkn = encodeXml(inv.vkntckn || '');
+  const custAddress = encodeXml(inv.address || ''); // Ensure this exists or fallback
+  const custDist = encodeXml(inv.district || '');
+  const custCity = encodeXml(inv.city || '');
+  const custTaxOff = encodeXml(inv.tax_office || '');
+
+
+
   // KDV dökümü
   const vatGroups = {};
   lines.forEach(l => {
-    const pct = l.tax_percent || 0;
-    if (!vatGroups[pct]) vatGroups[pct] = { taxable: 0, tax: 0 };
-    vatGroups[pct].taxable += (l.line_total || 0);
-    vatGroups[pct].tax += (l.tax_amount || 0);
+    const rate = l.tax_percent || 0;
+    if (!vatGroups[rate]) vatGroups[rate] = { taxable: 0, tax: 0 };
+    vatGroups[rate].taxable += (l.line_total || 0);
+    vatGroups[rate].tax += (l.tax_amount || 0);
   });
 
-  // UBL InvoiceLine[] oluştur
-  const invoiceLines = lines.map((l, i) => ({
-    ID: { $value: String(i + 1) },
-    InvoicedQuantity: { $value: String(l.quantity || 1), attributes: { unitCode: unitMap[l.unit] || 'C62' } },
-    LineExtensionAmount: { $value: String(l.line_total || 0), attributes: { currencyID: currency } },
-    TaxTotal: {
-      TaxAmount: { $value: String(l.tax_amount || 0), attributes: { currencyID: currency } },
-      TaxSubtotal: {
-        TaxableAmount: { $value: String(l.line_total || 0), attributes: { currencyID: currency } },
-        TaxAmount: { $value: String(l.tax_amount || 0), attributes: { currencyID: currency } },
-        Percent: String(l.tax_percent || 0),
-        TaxCategory: {
-          TaxScheme: { Name: 'KDV', TaxTypeCode: '0015' }
-        }
-      }
-    },
-    Item: { Name: l.name || '-' },
-    Price: {
-      PriceAmount: { $value: String(l.unit_price || 0), attributes: { currencyID: currency } }
-    },
-    AllowanceCharge: {
-      ChargeIndicator: 'false',
-      MultiplierFactorNumeric: '0',
-      Amount: { $value: '0', attributes: { currencyID: currency } },
-      BaseAmount: { $value: String(l.line_total || 0), attributes: { currencyID: currency } }
-    }
-  }));
-
-  // TaxSubtotal[] — grouped by rate
-  const taxSubtotals = Object.entries(vatGroups).map(([pct, v]) => ({
-    TaxableAmount: { $value: String(v.taxable), attributes: { currencyID: currency } },
-    TaxAmount: { $value: String(v.tax), attributes: { currencyID: currency } },
-    Percent: String(pct),
-    TaxCategory: {
-      TaxScheme: { Name: 'KDV', TaxTypeCode: '0015' }
-    }
-  }));
-
-  // UBL Invoice nesnesi
-  const ublInvoice = {
-    UBLVersionID: '2.1',
-    CustomizationID: 'TR1.2.1',
-    ProfileID: 'TEMELFATURA',
-    ID: invoiceId,
-    CopyIndicator: false,
-    IssueDate: issueDate,
-    IssueTime: '00:00:00',
-    InvoiceTypeCode: 'SATIS',
-    DocumentCurrencyCode: currency,
-    LineCountNumeric: String(lines.length),
-    AccountingSupplierParty: {
-      $xml: `
-        <cac:Party xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
-          <cac:PartyIdentification>
-            <cbc:ID schemeID="VKN">${(process.env.COMPANY_VKN || process.env.VITE_COMPANY_VKN || '').replace(/^["']|["']$/g, '')}</cbc:ID>
-          </cac:PartyIdentification>
-          <cac:PartyName>
-            <cbc:Name>${(process.env.COMPANY_NAME || process.env.VITE_COMPANY_NAME || 'AYS LED').replace(/^["']|["']$/g, '').replace(/&/g, '&amp;')}</cbc:Name>
-          </cac:PartyName>
+  const ublXml = `
+    <q1:Invoice xmlns:q1="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+                xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+                xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+      <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
+      <cbc:CustomizationID>TR1.2.1</cbc:CustomizationID>
+      <cbc:ProfileID>TEMELFATURA</cbc:ProfileID>
+      <cbc:ID>${encodeXml(invoiceId)}</cbc:ID>
+      <cbc:CopyIndicator>false</cbc:CopyIndicator>
+      <cbc:IssueDate>${issueDate}</cbc:IssueDate>
+      <cbc:IssueTime>00:00:00</cbc:IssueTime>
+      <cbc:InvoiceTypeCode>SATIS</cbc:InvoiceTypeCode>
+      <cbc:DocumentCurrencyCode>${currency}</cbc:DocumentCurrencyCode>
+      <cbc:LineCountNumeric>${lines.length}</cbc:LineCountNumeric>
+      <cac:AccountingSupplierParty>
+        <cac:Party>
+          <cac:PartyIdentification><cbc:ID schemeID="VKN">${suppVkn}</cbc:ID></cac:PartyIdentification>
+          <cac:PartyName><cbc:Name>${suppName}</cbc:Name></cac:PartyName>
           <cac:PostalAddress>
-            <cbc:CityName>${(process.env.COMPANY_CITY || process.env.VITE_COMPANY_CITY || '').replace(/^["']|["']$/g, '')}</cbc:CityName>
+            <cbc:StreetName>${suppAddress}</cbc:StreetName>
+            <cbc:CitySubdivisionName>${suppDist}</cbc:CitySubdivisionName>
+            <cbc:CityName>${suppCity}</cbc:CityName>
             <cac:Country><cbc:Name>Türkiye</cbc:Name></cac:Country>
           </cac:PostalAddress>
           <cac:PartyTaxScheme>
-            <cac:TaxScheme><cbc:Name>${(process.env.COMPANY_TAX_OFFICE || process.env.VITE_COMPANY_TAX_OFFICE || '').replace(/^["']|["']$/g, '')}</cbc:Name></cac:TaxScheme>
+            <cac:TaxScheme><cbc:Name>${suppTaxOff}</cbc:Name></cac:TaxScheme>
           </cac:PartyTaxScheme>
         </cac:Party>
-      `
-    },
-    AccountingCustomerParty: {
-      $xml: `
-        <cac:Party xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
-          <cac:PartyIdentification>
-            <cbc:ID schemeID="${(inv.vkntckn || '').length === 11 ? 'TCKN' : 'VKN'}">${inv.vkntckn || ''}</cbc:ID>
-          </cac:PartyIdentification>
-          <cac:PartyName>
-            <cbc:Name>${(inv.cari_name || '').replace(/&/g, '&amp;')}</cbc:Name>
-          </cac:PartyName>
+      </cac:AccountingSupplierParty>
+      <cac:AccountingCustomerParty>
+        <cac:Party>
+          <cac:PartyIdentification><cbc:ID schemeID="${custVkn.length === 11 ? 'TCKN' : 'VKN'}">${custVkn}</cbc:ID></cac:PartyIdentification>
+          <cac:PartyName><cbc:Name>${custName}</cbc:Name></cac:PartyName>
           <cac:PostalAddress>
-            <cbc:CityName></cbc:CityName>
+            <cbc:StreetName>${custAddress}</cbc:StreetName>
+            <cbc:CitySubdivisionName>${custDist}</cbc:CitySubdivisionName>
+            <cbc:CityName>${custCity}</cbc:CityName>
             <cac:Country><cbc:Name>Türkiye</cbc:Name></cac:Country>
           </cac:PostalAddress>
           <cac:PartyTaxScheme>
-            <cac:TaxScheme><cbc:Name></cbc:Name></cac:TaxScheme>
+            <cac:TaxScheme><cbc:Name>${custTaxOff}</cbc:Name></cac:TaxScheme>
           </cac:PartyTaxScheme>
         </cac:Party>
-      `
-    },
-    TaxTotal: {
-      TaxAmount: { $value: String(taxTotal), attributes: { currencyID: currency } },
-      TaxSubtotal: taxSubtotals
-    },
-    LegalMonetaryTotal: {
-      LineExtensionAmount: { $value: String(subtotal), attributes: { currencyID: currency } },
-      TaxExclusiveAmount: { $value: String(subtotal), attributes: { currencyID: currency } },
-      TaxInclusiveAmount: { $value: String(grandTotal), attributes: { currencyID: currency } },
-      PayableAmount: { $value: String(grandTotal), attributes: { currencyID: currency } }
-    },
-    InvoiceLine: invoiceLines
-  };
-
-  // Döviz ise PricingExchangeRate ekle
-  if (currency !== 'TRY') {
-    const exchangeRate = inv.exchange_rate || 1;
-    ublInvoice.PricingCurrencyCode = { $value: currency };
-    ublInvoice.TaxCurrencyCode = { $value: 'TRY' };
-    ublInvoice.PricingExchangeRate = {
-      SourceCurrencyCode: currency,
-      TargetCurrencyCode: 'TRY',
-      CalculationRate: String(exchangeRate),
-      Date: issueDate
-    };
-  }
+      </cac:AccountingCustomerParty>
+      ${currency !== 'TRY' ? `
+      <cac:PricingExchangeRate>
+        <cbc:SourceCurrencyCode>${currency}</cbc:SourceCurrencyCode>
+        <cbc:TargetCurrencyCode>TRY</cbc:TargetCurrencyCode>
+        <cbc:CalculationRate>${inv.exchange_rate || 1}</cbc:CalculationRate>
+        <cbc:Date>${issueDate}</cbc:Date>
+      </cac:PricingExchangeRate>
+      ` : ''}
+      <cac:TaxTotal>
+        <cbc:TaxAmount currencyID="${currency}">${taxTotal.toFixed(2)}</cbc:TaxAmount>
+        ${Object.entries(vatGroups).map(([pct, v]) => `
+        <cac:TaxSubtotal>
+          <cbc:TaxableAmount currencyID="${currency}">${v.taxable.toFixed(2)}</cbc:TaxableAmount>
+          <cbc:TaxAmount currencyID="${currency}">${v.tax.toFixed(2)}</cbc:TaxAmount>
+          <cbc:Percent>${pct}</cbc:Percent>
+          <cac:TaxCategory>
+            <cac:TaxScheme><cbc:Name>KDV</cbc:Name><cbc:TaxTypeCode>0015</cbc:TaxTypeCode></cac:TaxScheme>
+          </cac:TaxCategory>
+        </cac:TaxSubtotal>
+        `).join('')}
+      </cac:TaxTotal>
+      <cac:LegalMonetaryTotal>
+        <cbc:LineExtensionAmount currencyID="${currency}">${subtotal.toFixed(2)}</cbc:LineExtensionAmount>
+        <cbc:TaxExclusiveAmount currencyID="${currency}">${subtotal.toFixed(2)}</cbc:TaxExclusiveAmount>
+        <cbc:TaxInclusiveAmount currencyID="${currency}">${grandTotal.toFixed(2)}</cbc:TaxInclusiveAmount>
+        <cbc:PayableAmount currencyID="${currency}">${grandTotal.toFixed(2)}</cbc:PayableAmount>
+      </cac:LegalMonetaryTotal>
+      ${lines.map((l, i) => `
+      <cac:InvoiceLine>
+        <cbc:ID>${i + 1}</cbc:ID>
+        <cbc:InvoicedQuantity unitCode="${unitMap[l.unit || 'Adet'] || 'C62'}">${l.quantity || 1}</cbc:InvoicedQuantity>
+        <cbc:LineExtensionAmount currencyID="${currency}">${(l.line_total || 0).toFixed(2)}</cbc:LineExtensionAmount>
+        <cac:TaxTotal>
+          <cbc:TaxAmount currencyID="${currency}">${(l.tax_amount || 0).toFixed(2)}</cbc:TaxAmount>
+          <cac:TaxSubtotal>
+            <cbc:TaxableAmount currencyID="${currency}">${(l.line_total || 0).toFixed(2)}</cbc:TaxableAmount>
+            <cbc:TaxAmount currencyID="${currency}">${(l.tax_amount || 0).toFixed(2)}</cbc:TaxAmount>
+            <cbc:Percent>${l.tax_percent || 0}</cbc:Percent>
+            <cac:TaxCategory>
+              <cac:TaxScheme><cbc:Name>KDV</cbc:Name><cbc:TaxTypeCode>0015</cbc:TaxTypeCode></cac:TaxScheme>
+            </cac:TaxCategory>
+          </cac:TaxSubtotal>
+        </cac:TaxTotal>
+        <cac:Item>
+          <cbc:Name>${encodeXml(l.name || '-')}</cbc:Name>
+        </cac:Item>
+        <cac:Price>
+          <cbc:PriceAmount currencyID="${currency}">${(l.unit_price || 0).toFixed(2)}</cbc:PriceAmount>
+        </cac:Price>
+      </cac:InvoiceLine>
+      `).join('')}
+    </q1:Invoice>
+  `;
 
   try {
     const client = await createUyumsoftClient();
     const result = await callSoap(client, 'SaveAsDraft', {
       invoices: {
         InvoiceInfo: [{
-          Invoice: ublInvoice,
+          $xml: ublXml,
           attributes: { LocalDocumentId: invoiceId }
         }]
       }
@@ -434,12 +438,11 @@ async function handleFormalize(body, res) {
 
     if (!ok) {
       const msg = r?.attributes?.Message || JSON.stringify(r);
-      const sentVkn = ublInvoice.AccountingSupplierParty?.Party?.PartyIdentification?.ID?.$value;
       const sentUser = process.env.UYUMSOFT_USERNAME || process.env.VITE_UYUMSOFT_USERNAME || 'Uyumsoft';
       return res.status(400).json({ 
         success: false, 
         error: msg, 
-        debug: `Gönderilen VKN: "${sentVkn}", Kullanıcı: "${sentUser}"` 
+        debug: `Gönderilen VKN: "${suppVkn}", Kullanıcı: "${sentUser}"` 
       });
     }
 
