@@ -359,6 +359,11 @@ export default function Invoices({ type = 'inbox' }) {
   const [entityOpen, setEntityOpen]   = useState(false);
   const [entitySearch, setEntitySearch] = useState('');
   const [quickSaving, setQuickSaving] = useState(false);
+  // İtem (kalem) autocomplete per-line state
+  const [itemOpenId,    setItemOpenId]    = useState(null); // line.id of the open dropdown
+  const [itemSearch,    setItemSearch]    = useState({});   // { [lineId]: searchStr }
+  const [quickItemForm, setQuickItemForm] = useState(null); // null | { lineId, name }
+  const [quickItemSaving, setQuickItemSaving] = useState(false);
   const location = useLocation();
 
   // Cari/Tedarikçi drawer’dan yönlendirme gelirse faturayı otomatik aç
@@ -508,6 +513,53 @@ export default function Invoices({ type = 'inbox' }) {
       selectEntity(data);
     } catch (e) { alert('Kayıt oluşturulamadı: ' + e.message); }
     finally { setQuickSaving(false); }
+  };
+
+  // Hızlı item kaydet
+  const quickCreateItem = async () => {
+    if (!quickItemForm?.name?.trim()) return;
+    setQuickItemSaving(true);
+    try {
+      const payload = {
+        name: quickItemForm.name.trim(),
+        item_type: quickItemForm.item_type || 'product',
+        unit: quickItemForm.unit || 'Adet',
+        purchase_price: parseFloat(quickItemForm.purchase_price) || 0,
+        sku: quickItemForm.sku || null,
+      };
+      const { data, error } = await supabase.from('items').insert(payload).select('id, name, unit, item_type, purchase_price').single();
+      if (error) throw error;
+      setDbItems(prev => [...prev, data]);
+      // Satıra ata
+      setCreateForm(p => ({ ...p, lines: p.lines.map(line => line.id === quickItemForm.lineId
+        ? { ...line, name: data.name, unit: data.unit || 'Adet', unitPrice: data.purchase_price || 0 }
+        : line
+      )}));
+      setQuickItemForm(null);
+      setItemOpenId(null);
+      setItemSearch(p => ({ ...p, [quickItemForm.lineId]: '' }));
+    } catch (e) { alert('Stok kalemi oluşturulamadı: ' + e.message); }
+    finally { setQuickItemSaving(false); }
+  };
+
+  const selectItem = (lineId, item) => {
+    setCreateForm(p => ({ ...p, lines: p.lines.map(line => line.id === lineId
+      ? { ...line, name: item.name, unit: item.unit || 'Adet', unitPrice: item.purchase_price || 0 }
+      : line
+    )}));
+    setItemSearch(p => ({ ...p, [lineId]: '' }));
+    setItemOpenId(null);
+  };
+
+  const getFilteredItems = (lineId) => {
+    const q = (itemSearch[lineId] || '').toLowerCase();
+    if (!q) return dbItems.slice(0, 8);
+    return dbItems.filter(it => it.name.toLowerCase().includes(q) || (it.sku || '').toLowerCase().includes(q));
+  };
+
+  const itemExactMatch = (lineId) => {
+    const q = (itemSearch[lineId] || '').toLowerCase();
+    return !q || dbItems.some(it => it.name.toLowerCase() === q);
   };
 
   const handleCreate = async () => {
@@ -869,49 +921,174 @@ export default function Invoices({ type = 'inbox' }) {
                       <Plus size={12} /> Kalem Ekle
                     </button>
                   </div>
-                  <div className="space-y-2">
-                    {/* PC Header */}
-                    <div className="hidden sm:grid grid-cols-12 gap-2 text-[10px] font-bold uppercase tracking-wider mb-2 px-2" style={{ color: c.muted }}>
-                      <div className="col-span-3">Hizmet/Ürün</div>
-                      <div className="col-span-2">Miktar</div>
-                      <div className="col-span-2">Birim</div>
-                      <div className="col-span-2">B. Fiyat</div>
-                      <div className="col-span-2">KDV %</div>
-                    </div>
-                    {createForm.lines.map((l, i) => (
-                      <div key={l.id} className="flex gap-2 items-center flex-wrap sm:flex-nowrap bg-slate-500/5 p-2 rounded-xl sm:bg-transparent sm:p-0">
-                        <input list="db-item-list" value={l.name || ''} onChange={e => {
-                            const val = e.target.value;
-                            const match = dbItems.find(it => it.name === val);
-                            if (match) {
-                              setCreateForm(p => ({ ...p, lines: p.lines.map(line => line.id === l.id ? { ...line, name: val, unit: match.unit || 'Adet' } : line) }));
-                            } else {
-                              updateLine(l.id, 'name', val);
-                            }
-                          }}
-                          className="w-full sm:flex-1 px-3 py-2 text-xs rounded-xl border outline-none min-w-[120px]"
-                          style={{ background: c.card, borderColor: c.border, color: c.text }}
-                          placeholder="Ürün / Hizmet adı" />
-                        <input type="number" value={l.quantity} onChange={e => updateLine(l.id, 'quantity', e.target.value)}
-                          className="w-14 px-2 py-1.5 text-xs rounded-lg border outline-none text-center"
-                          style={{ background: c.card, borderColor: c.border, color: c.text }}
-                          placeholder="Adet" min={1} />
-                        <input type="number" value={l.unitPrice} onChange={e => updateLine(l.id, 'unitPrice', e.target.value)}
-                          className="w-24 px-2 py-1.5 text-xs rounded-lg border outline-none text-right"
-                          style={{ background: c.card, borderColor: c.border, color: c.text }}
-                          placeholder="Birim fiyat" step="0.01" />
-                        <select value={l.taxRate} onChange={e => updateLine(l.id, 'taxRate', e.target.value)}
-                          className="w-16 px-1 py-1.5 text-xs rounded-lg border outline-none"
-                          style={{ background: c.card, borderColor: c.border, color: c.text }}>
-                          {[0,1,8,10,20].map(r => <option key={r} value={r}>%{r}</option>)}
-                        </select>
-                        {createForm.lines.length > 1 && (
-                          <button onClick={() => removeLine(l.id)} className="text-red-400 hover:text-red-500">
-                            <Trash2 size={13} />
-                          </button>
-                        )}
-                      </div>
-                    ))}
+                  <div className="space-y-3">
+                    {createForm.lines.map((l, i) => {
+                      const fItems = getFilteredItems(l.id);
+                      const isItemOpen = itemOpenId === l.id;
+                      const noExact = !itemExactMatch(l.id);
+                      const curSearch = itemSearch[l.id] || '';
+                      return (
+                        <div key={l.id} className="rounded-2xl p-3 space-y-2" style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', border: `1px solid ${c.border}` }}>
+                          {/* Satır üst kısmı: ürün seçici */}
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: c.muted }}>Kalem {i + 1}</span>
+                            {createForm.lines.length > 1 && (
+                              <button onClick={() => removeLine(l.id)} className="text-red-400 hover:text-red-500 transition-colors"><Trash2 size={13} /></button>
+                            )}
+                          </div>
+
+                          {/* Ürün adı dropdown */}
+                          <div className="relative">
+                            <div
+                              className="w-full px-3 py-2 text-sm rounded-xl border flex items-center cursor-text"
+                              style={{ background: c.card, borderColor: isItemOpen ? currentColor : c.border, color: c.text }}
+                              onClick={() => { setItemOpenId(l.id); setItemSearch(p => ({ ...p, [l.id]: p[l.id] ?? '' })); }}
+                            >
+                              {isItemOpen ? (
+                                <input
+                                  autoFocus
+                                  value={curSearch}
+                                  onChange={e => setItemSearch(p => ({ ...p, [l.id]: e.target.value }))}
+                                  onBlur={() => setTimeout(() => { setItemOpenId(null); }, 180)}
+                                  className="flex-1 bg-transparent outline-none text-sm"
+                                  style={{ color: c.text }}
+                                  placeholder="İsim veya SKU ile ara..."
+                                />
+                              ) : (
+                                <span className={`flex-1 text-sm ${l.name ? '' : 'opacity-40'}`}>
+                                  {l.name || 'Ürün / Hizmet seç veya yaz...'}
+                                </span>
+                              )}
+                              <svg className="w-4 h-4 opacity-40 ml-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                            </div>
+
+                            {isItemOpen && (
+                              <div className="absolute z-50 w-full mt-1 rounded-xl overflow-hidden shadow-2xl"
+                                style={{ background: isDark ? '#0f1f38' : '#fff', border: `1px solid ${c.border}` }}>
+                                {fItems.length > 0 ? (
+                                  <div className="max-h-44 overflow-y-auto">
+                                    {fItems.map(it => (
+                                      <div key={it.id}
+                                        className="px-4 py-2.5 cursor-pointer flex items-center justify-between gap-2 transition-colors"
+                                        style={{ borderBottom: `1px solid ${c.border}` }}
+                                        onMouseDown={() => selectItem(l.id, it)}
+                                        onMouseEnter={ev => ev.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : '#f8fafc'}
+                                        onMouseLeave={ev => ev.currentTarget.style.background = 'transparent'}
+                                      >
+                                        <div>
+                                          <p className="text-sm font-semibold" style={{ color: c.text }}>{it.name}</p>
+                                          <p className="text-[11px]" style={{ color: c.muted }}>{it.item_type === 'rawmaterial' ? 'Hammadde' : it.item_type === 'product' ? 'Mamul' : 'Hizmet'} &middot; {it.unit}</p>
+                                        </div>
+                                        {it.purchase_price > 0 && (
+                                          <span className="text-[11px] font-bold tabular-nums" style={{ color: currentColor }}>
+                                            {Number(it.purchase_price).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+                                          </span>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="px-4 py-3 text-sm" style={{ color: c.muted }}>Stokta bulunamadı</div>
+                                )}
+                                {curSearch.trim() && noExact && (
+                                  <div
+                                    className="px-4 py-3 flex items-center gap-2 cursor-pointer font-semibold text-sm border-t"
+                                    style={{ borderColor: c.border, color: '#6366f1' }}
+                                    onMouseDown={() => { setQuickItemForm({ lineId: l.id, name: curSearch, item_type: 'product', unit: 'Adet', purchase_price: '', sku: '' }); setItemOpenId(null); }}
+                                  >
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                    "{curSearch}" stoka hızlı ekle
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Hızlı stok kaydet formu (sadece bu satır için) */}
+                          {quickItemForm?.lineId === l.id && (
+                            <div className="mt-2 p-3 rounded-xl space-y-2" style={{ background: isDark ? 'rgba(99,102,241,0.08)' : '#f0f0fe', border: '1px solid rgba(99,102,241,0.25)' }}>
+                              <p className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider">Stoka Hızlı Ekle</p>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="col-span-2">
+                                  <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>Ad *</label>
+                                  <input value={quickItemForm.name} onChange={e => setQuickItemForm(p => ({...p, name: e.target.value}))}
+                                    className="w-full px-2.5 py-1.5 text-sm rounded-lg border outline-none"
+                                    style={{ background: c.card, borderColor: c.border, color: c.text }} />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>Tür</label>
+                                  <select value={quickItemForm.item_type} onChange={e => setQuickItemForm(p => ({...p, item_type: e.target.value}))}
+                                    className="w-full px-2.5 py-1.5 text-sm rounded-lg border outline-none"
+                                    style={{ background: c.card, borderColor: c.border, color: c.text }}>
+                                    <option value="product">Mamul Ürün</option>
+                                    <option value="rawmaterial">Hammadde</option>
+                                    <option value="service">Hizmet</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>Birim</label>
+                                  <select value={quickItemForm.unit} onChange={e => setQuickItemForm(p => ({...p, unit: e.target.value}))}
+                                    className="w-full px-2.5 py-1.5 text-sm rounded-lg border outline-none"
+                                    style={{ background: c.card, borderColor: c.border, color: c.text }}>
+                                    {['Adet','Kg','Ton','m²','m³','Litre','Paket','Kutu','Takım'].map(u => <option key={u}>{u}</option>)}
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>Birim Fiyat (opsiyonel)</label>
+                                  <input type="number" value={quickItemForm.purchase_price} onChange={e => setQuickItemForm(p => ({...p, purchase_price: e.target.value}))}
+                                    className="w-full px-2.5 py-1.5 text-sm rounded-lg border outline-none"
+                                    style={{ background: c.card, borderColor: c.border, color: c.text }}
+                                    placeholder="0.00" step="0.01" />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>SKU / Kod (opsiyonel)</label>
+                                  <input value={quickItemForm.sku || ''} onChange={e => setQuickItemForm(p => ({...p, sku: e.target.value}))}
+                                    className="w-full px-2.5 py-1.5 text-sm rounded-lg border outline-none font-mono"
+                                    style={{ background: c.card, borderColor: c.border, color: c.text }}
+                                    placeholder="AYS-001" />
+                                </div>
+                              </div>
+                              <div className="flex gap-2 pt-1">
+                                <button onClick={() => setQuickItemForm(null)}
+                                  className="flex-1 py-1.5 rounded-lg text-xs font-semibold border transition-colors"
+                                  style={{ borderColor: c.border, color: c.muted }}>İptal</button>
+                                <button onClick={quickCreateItem} disabled={quickItemSaving || !quickItemForm.name?.trim()}
+                                  className="flex-1 py-1.5 rounded-lg text-xs font-bold text-white flex items-center justify-center gap-1.5 transition-colors"
+                                  style={{ background: '#6366f1', opacity: quickItemSaving ? 0.7 : 1 }}>
+                                  {quickItemSaving ? <><svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> Kaydediliyor...</> : <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg> Stoka Ekle &amp; Seç</>}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Miktar, Birim fiyat, KDV satırı */}
+                          <div className="grid grid-cols-3 gap-2">
+                            <div>
+                              <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>Miktar</label>
+                              <input type="number" value={l.quantity} onChange={e => updateLine(l.id, 'quantity', e.target.value)}
+                                className="w-full px-2.5 py-1.5 text-sm rounded-lg border outline-none text-center"
+                                style={{ background: c.card, borderColor: c.border, color: c.text }}
+                                min={1} />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>Birim Fiyat</label>
+                              <input type="number" value={l.unitPrice} onChange={e => updateLine(l.id, 'unitPrice', e.target.value)}
+                                className="w-full px-2.5 py-1.5 text-sm rounded-lg border outline-none text-right"
+                                style={{ background: c.card, borderColor: c.border, color: c.text }}
+                                step="0.01" />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>KDV %</label>
+                              <select value={l.taxRate} onChange={e => updateLine(l.id, 'taxRate', e.target.value)}
+                                className="w-full px-2.5 py-1.5 text-sm rounded-lg border outline-none"
+                                style={{ background: c.card, borderColor: c.border, color: c.text }}>
+                                {[0,1,8,10,20].map(r => <option key={r} value={r}>%{r}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                   {/* Toplam */}
                   <div className="text-right mt-2 text-sm font-bold" style={{ color: c.text }}>
