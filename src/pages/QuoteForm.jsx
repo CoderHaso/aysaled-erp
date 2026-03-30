@@ -188,9 +188,9 @@ export function QuotePreview({ quote, onClose, colWidths = {}, rowHeight = 58 })
 
         {/* A4 içerik — 210mm genislik baz, dikey */}
         <div id="quote-print" style={{
-          fontFamily: 'Arial, sans-serif',
+          fontFamily: "'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
           fontSize: 11,
-          Color: '#1a1a1a',
+          color: '#1a1a1a',
           padding: '12mm 14mm',
           minWidth: 680,
           maxWidth: 794,  /* 210mm @ 96dpi ≈8.27in × 96 ≈ 794px */
@@ -276,7 +276,7 @@ export function QuotePreview({ quote, onClose, colWidths = {}, rowHeight = 58 })
             </colgroup>
             <thead>
               <tr style={{ background: '#1a6b2c', color: '#fff' }}>
-                {['No','Görsel','Kodu','Güç(W)','Ürün Adı','Açıklama','Mkt','BR','Birim','Toplam'].map(h => (
+                {['No','Görsel','Ürün Kodu','Güç (W)','Ürün Adı','Açıklama','Miktar','BR','Birim Fiyat','Toplam'].map(h => (
                   <th key={h} style={{ border: '1px solid #146025', padding: '4px 4px', fontSize: 10, fontWeight: 700, textAlign: 'left' }}>{h}</th>
                 ))}
               </tr>
