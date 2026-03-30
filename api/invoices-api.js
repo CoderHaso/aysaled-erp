@@ -422,7 +422,13 @@ async function handleFormalize(body, res) {
 
     if (!ok) {
       const msg = r?.attributes?.Message || JSON.stringify(r);
-      return res.status(400).json({ success: false, error: msg });
+      const sentVkn = ublInvoice.AccountingSupplierParty?.Party?.PartyIdentification?.ID?.$value;
+      const sentUser = process.env.UYUMSOFT_USERNAME || process.env.VITE_UYUMSOFT_USERNAME || 'Uyumsoft';
+      return res.status(400).json({ 
+        success: false, 
+        error: msg, 
+        debug: `Gönderilen VKN: "${sentVkn}", Kullanıcı: "${sentUser}"` 
+      });
     }
 
     // Uyumsoft'un verdiği draft ID'yi kaydet

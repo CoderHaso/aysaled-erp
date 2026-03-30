@@ -638,7 +638,7 @@ export default function Invoices({ type = 'inbox' }) {
     try {
       const r = await fetch('/api/invoices-api?action=formalize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invoiceId }) });
       const data = await r.json();
-      if (!data.success) throw new Error(data.error);
+      if (!data.success) throw new Error(data.error + (data.debug ? `\n\n[Sistem Mesajı: ${data.debug}]` : ''));
       invoiceCache.delete(type);
       pageCache.invalidate(`invoices_${type}`);
       await fetchInvoices(true);
