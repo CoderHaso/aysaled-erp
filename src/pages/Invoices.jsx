@@ -166,7 +166,7 @@ function InvoiceDetailDrawer({ invoice, isInbox, onClose, onLineItemsLoaded }) {
     }
 
     setFetchState('loading');
-    fetch('/api/get-invoice-detail', {
+    fetch('/api/invoices-api?action=detail', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

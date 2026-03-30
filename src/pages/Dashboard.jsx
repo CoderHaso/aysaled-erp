@@ -66,7 +66,7 @@ export default function Dashboard() {
   const fetchInvoices = async () => {
     setLoading(true);
     try {
-      const response = await axios.post('/api/get-invoices');
+      const response = await axios.post('/api/invoices-api?action=list');
       setInvoices(response.data);
     } catch (err) {
       console.error(err);

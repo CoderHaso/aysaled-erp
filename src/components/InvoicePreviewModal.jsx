@@ -65,7 +65,7 @@ export default function InvoicePreviewModal({ invoiceId, documentId, type = 'out
   const fetchHtml = async () => {
     setLoading(true); setError(null);
     try {
-      const r = await fetch('/api/get-invoice-view', {
+      const r = await fetch('/api/invoices-api?action=view', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ invoiceId, documentId, type, format: 'html' }),
@@ -82,7 +82,7 @@ export default function InvoicePreviewModal({ invoiceId, documentId, type = 'out
     if (pdfBase64) { downloadPdf(pdfBase64); return; }
     setPdfLoading(true);
     try {
-      const r = await fetch('/api/get-invoice-view', {
+      const r = await fetch('/api/invoices-api?action=view', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ invoiceId, documentId, type, format: 'pdf' }),
