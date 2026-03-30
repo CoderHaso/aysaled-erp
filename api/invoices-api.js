@@ -222,7 +222,8 @@ async function handleUrl(body, res) {
 async function handleCreate(body, res) {
   const {
     cari_name, vkntckn = '', issue_date, lines = [],
-    currency = 'TRY', notes = '', type = 'outbox'
+    currency = 'TRY', notes = '', type = 'outbox',
+    exchange_rate = null
   } = body;
 
   if (!cari_name) return res.status(400).json({ error: 'cari_name zorunlu' });
@@ -260,6 +261,8 @@ async function handleCreate(body, res) {
     message: notes,
     updated_at: new Date().toISOString()
   };
+  // Döviz kuru varsa ekle
+  if (exchange_rate && currency !== 'TRY') row.exchange_rate = exchange_rate;
 
   const { error } = await supabase.from('invoices').insert(row);
   if (error) return res.status(500).json({ success: false, error: error.message });
@@ -280,29 +283,140 @@ async function handleFormalize(body, res) {
   if (fetchErr || !inv) return res.status(404).json({ success: false, error: 'Fatura bulunamadı' });
 
   if (inv.status !== 'Draft') {
-    return res.status(400).json({ success: false, error: `Yalnızca taslak faturalar resmileştirilebilir (mevcut durum: ${inv.status})` });
+    return res.status(400).json({ success: false, error: `Yalnızca taslak faturalar gönderilebilir (mevcut durum: ${inv.status})` });
   }
 
-  // Uyumsoft SaveAsDraft çağrısı için basit UBL-benzeri yapı (Uyumsoft kendi XML'e dönüştürür)
-  const invoiceData = {
-    InvoiceId: inv.invoice_id,
-    TargetTitle: inv.cari_name,
-    TargetTcknVkn: inv.vkntckn || '',
-    DocumentCurrencyCode: inv.currency || 'TRY',
-    ExecutionDate: inv.issue_date,
-    PayableAmount: inv.amount,
-    TaxExclusiveAmount: inv.tax_exclusive_amount,
-    TaxTotal: inv.tax_total,
-    Lines: (inv.line_items || []).map(l => ({
-      Name: l.name, Quantity: l.quantity, UnitCode: l.unit || 'C62',
-      UnitPrice: l.unit_price, LineExtensionAmount: l.line_total,
-      TaxPercent: l.tax_percent || 0, TaxAmount: l.tax_amount || 0,
-    }))
+  const lines = inv.line_items || [];
+  const subtotal = inv.tax_exclusive_amount || lines.reduce((s, l) => s + (l.line_total || 0), 0);
+  const taxTotal = inv.tax_total || lines.reduce((s, l) => s + (l.tax_amount || 0), 0);
+  const grandTotal = inv.amount || (subtotal + taxTotal);
+  const currency = inv.currency || 'TRY';
+  const issueDate = inv.issue_date || new Date().toISOString().slice(0, 10);
+
+  // UBL birim kodu eşleme
+  const unitMap = { 'Adet': 'C62', 'Kg': 'KGM', 'Ton': 'TNE', 'm²': 'MTK', 'm³': 'MTQ', 'Litre': 'LTR', 'Paket': 'PA', 'Kutu': 'BX', 'Takım': 'SET' };
+
+  // KDV dökümü
+  const vatGroups = {};
+  lines.forEach(l => {
+    const pct = l.tax_percent || 0;
+    if (!vatGroups[pct]) vatGroups[pct] = { taxable: 0, tax: 0 };
+    vatGroups[pct].taxable += (l.line_total || 0);
+    vatGroups[pct].tax += (l.tax_amount || 0);
+  });
+
+  // UBL InvoiceLine[] oluştur
+  const invoiceLines = lines.map((l, i) => ({
+    ID: { $value: String(i + 1) },
+    InvoicedQuantity: { $value: String(l.quantity || 1), attributes: { unitCode: unitMap[l.unit] || 'C62' } },
+    LineExtensionAmount: { $value: String(l.line_total || 0), attributes: { currencyID: currency } },
+    TaxTotal: {
+      TaxAmount: { $value: String(l.tax_amount || 0), attributes: { currencyID: currency } },
+      TaxSubtotal: {
+        TaxableAmount: { $value: String(l.line_total || 0), attributes: { currencyID: currency } },
+        TaxAmount: { $value: String(l.tax_amount || 0), attributes: { currencyID: currency } },
+        Percent: String(l.tax_percent || 0),
+        TaxCategory: {
+          TaxScheme: { Name: 'KDV', TaxTypeCode: '0015' }
+        }
+      }
+    },
+    Item: { Name: l.name || '-' },
+    Price: {
+      PriceAmount: { $value: String(l.unit_price || 0), attributes: { currencyID: currency } }
+    },
+    AllowanceCharge: {
+      ChargeIndicator: 'false',
+      MultiplierFactorNumeric: '0',
+      Amount: { $value: '0', attributes: { currencyID: currency } },
+      BaseAmount: { $value: String(l.line_total || 0), attributes: { currencyID: currency } }
+    }
+  }));
+
+  // TaxSubtotal[] — grouped by rate
+  const taxSubtotals = Object.entries(vatGroups).map(([pct, v]) => ({
+    TaxableAmount: { $value: String(v.taxable), attributes: { currencyID: currency } },
+    TaxAmount: { $value: String(v.tax), attributes: { currencyID: currency } },
+    Percent: String(pct),
+    TaxCategory: {
+      TaxScheme: { Name: 'KDV', TaxTypeCode: '0015' }
+    }
+  }));
+
+  // UBL Invoice nesnesi
+  const ublInvoice = {
+    UBLVersionID: { $value: '2.1' },
+    CustomizationID: { $value: 'TR1.2.1' },
+    ProfileID: { $value: 'TEMELFATURA' },
+    ID: { $value: invoiceId },
+    CopyIndicator: false,
+    IssueDate: issueDate,
+    IssueTime: '00:00:00',
+    InvoiceTypeCode: { $value: 'SATIS' },
+    DocumentCurrencyCode: { $value: currency },
+    LineCountNumeric: String(lines.length),
+    AccountingSupplierParty: {
+      Party: {
+        PartyName: { Name: process.env.COMPANY_NAME || 'AYS LED' },
+        PartyIdentification: { ID: { $value: process.env.COMPANY_VKN || '', attributes: { schemeID: 'VKN' } } },
+        PostalAddress: {
+          CityName: process.env.COMPANY_CITY || '',
+          Country: { Name: 'Türkiye' }
+        },
+        PartyTaxScheme: {
+          TaxScheme: { Name: process.env.COMPANY_TAX_OFFICE || '' }
+        }
+      }
+    },
+    AccountingCustomerParty: {
+      Party: {
+        PartyIdentification: { ID: { $value: inv.vkntckn || '', attributes: { schemeID: (inv.vkntckn || '').length === 11 ? 'TCKN' : 'VKN' } } },
+        PartyName: { Name: inv.cari_name },
+        PostalAddress: {
+          CityName: '',
+          Country: { Name: 'Türkiye' }
+        },
+        PartyTaxScheme: {
+          TaxScheme: { Name: '' }
+        }
+      }
+    },
+    TaxTotal: {
+      TaxAmount: { $value: String(taxTotal), attributes: { currencyID: currency } },
+      'TaxSubtotal[]': taxSubtotals
+    },
+    LegalMonetaryTotal: {
+      LineExtensionAmount: { $value: String(subtotal), attributes: { currencyID: currency } },
+      TaxExclusiveAmount: { $value: String(subtotal), attributes: { currencyID: currency } },
+      TaxInclusiveAmount: { $value: String(grandTotal), attributes: { currencyID: currency } },
+      PayableAmount: { $value: String(grandTotal), attributes: { currencyID: currency } }
+    },
+    'InvoiceLine[]': invoiceLines
   };
+
+  // Döviz ise PricingExchangeRate ekle
+  if (currency !== 'TRY') {
+    const exchangeRate = inv.exchange_rate || 1;
+    ublInvoice.PricingCurrencyCode = { $value: currency };
+    ublInvoice.TaxCurrencyCode = { $value: 'TRY' };
+    ublInvoice.PricingExchangeRate = {
+      SourceCurrencyCode: currency,
+      TargetCurrencyCode: 'TRY',
+      CalculationRate: String(exchangeRate),
+      Date: issueDate
+    };
+  }
 
   try {
     const client = await createUyumsoftClient();
-    const result = await callSoap(client, 'SaveAsDraft', { invoices: [invoiceData] });
+    const result = await callSoap(client, 'SaveAsDraft', {
+      invoices: {
+        'InvoiceInfo[]': [{
+          Invoice: ublInvoice,
+          attributes: { LocalDocumentId: invoiceId }
+        }]
+      }
+    });
     const r = result?.SaveAsDraftResult;
     const ok = String(r?.attributes?.IsSucceded ?? 'true').toLowerCase() !== 'false';
 
@@ -311,13 +425,82 @@ async function handleFormalize(body, res) {
       return res.status(400).json({ success: false, error: msg });
     }
 
-    // Durum güncelle
-    await supabase.from('invoices').update({ status: 'Queued', updated_at: new Date().toISOString() })
-      .eq('invoice_id', invoiceId);
+    // Uyumsoft'un verdiği draft ID'yi kaydet
+    const draftId = r?.Value?.[0]?.attributes?.Id || r?.Value?.attributes?.Id || null;
+    const draftNumber = r?.Value?.[0]?.attributes?.Number || r?.Value?.attributes?.Number || null;
 
-    return res.json({ success: true, message: 'Fatura Uyumsoft kuyruğuna alındı.' });
+    await supabase.from('invoices').update({
+      status: 'Queued',
+      document_id: draftId || inv.document_id,
+      uyumsoft_number: draftNumber,
+      updated_at: new Date().toISOString()
+    }).eq('invoice_id', invoiceId);
+
+    return res.json({ success: true, message: 'Fatura Uyumsoft\'a taslak olarak gönderildi.', draftId, draftNumber });
   } catch (err) {
     console.error('[invoices-api][formalize]', err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+/**
+ * sendDraft — Uyumsoft'taki taslağı resmileştir (SendDraft)
+ * Body: { invoiceId }
+ */
+async function handleSendDraft(body, res) {
+  const { invoiceId } = body;
+  if (!invoiceId) return res.status(400).json({ error: 'invoiceId gerekli' });
+
+  const { data: inv } = await supabase.from('invoices').select('document_id, status')
+    .eq('invoice_id', invoiceId).single();
+  if (!inv?.document_id) return res.status(400).json({ success: false, error: 'Uyumsoft draft ID bulunamadı. Önce taslak olarak gönderin.' });
+
+  try {
+    const client = await createUyumsoftClient();
+    const result = await callSoap(client, 'SendDraft', {
+      invoiceIds: { 'string[]': [inv.document_id] }
+    });
+    const r = result?.SendDraftResult;
+    const ok = String(r?.attributes?.IsSucceded ?? 'true').toLowerCase() !== 'false';
+    if (!ok) return res.status(400).json({ success: false, error: r?.attributes?.Message || 'Resmileştirme başarısız' });
+
+    await supabase.from('invoices').update({ status: 'Sent', updated_at: new Date().toISOString() })
+      .eq('invoice_id', invoiceId);
+
+    return res.json({ success: true, message: 'Fatura resmileştirildi ve gönderildi.' });
+  } catch (err) {
+    console.error('[invoices-api][sendDraft]', err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+/**
+ * cancelDraft — Uyumsoft'taki taslağı iptal et (CancelDraft)
+ * Body: { invoiceId }
+ */
+async function handleCancelDraft(body, res) {
+  const { invoiceId } = body;
+  if (!invoiceId) return res.status(400).json({ error: 'invoiceId gerekli' });
+
+  const { data: inv } = await supabase.from('invoices').select('document_id')
+    .eq('invoice_id', invoiceId).single();
+  if (!inv?.document_id) return res.status(400).json({ success: false, error: 'Uyumsoft draft ID bulunamadı.' });
+
+  try {
+    const client = await createUyumsoftClient();
+    const result = await callSoap(client, 'CancelDraft', {
+      invoiceIds: { 'string[]': [inv.document_id] }
+    });
+    const r = result?.CancelDraftResult;
+    const ok = String(r?.attributes?.IsSucceded ?? 'true').toLowerCase() !== 'false';
+    if (!ok) return res.status(400).json({ success: false, error: r?.attributes?.Message || 'İptal başarısız' });
+
+    await supabase.from('invoices').update({ status: 'Cancelled', updated_at: new Date().toISOString() })
+      .eq('invoice_id', invoiceId);
+
+    return res.json({ success: true, message: 'Taslak iptal edildi.' });
+  } catch (err) {
+    console.error('[invoices-api][cancelDraft]', err.message);
     return res.status(500).json({ success: false, error: err.message });
   }
 }
@@ -334,13 +517,15 @@ export default async function handler(req, res) {
 
   try {
     switch (action) {
-      case 'list':      return await handleList(req.body || {}, res);
-      case 'detail':    return await handleDetail(req.body || {}, res);
-      case 'view':      return await handleView(req.body || {}, res);
-      case 'url':       return await handleUrl(req.body || {}, res);
-      case 'create':    return await handleCreate(req.body || {}, res);
-      case 'formalize': return await handleFormalize(req.body || {}, res);
-      default:          return res.status(400).json({ error: `Bilinmeyen action: ${action}. list|detail|view|url|create|formalize` });
+      case 'list':        return await handleList(req.body || {}, res);
+      case 'detail':      return await handleDetail(req.body || {}, res);
+      case 'view':        return await handleView(req.body || {}, res);
+      case 'url':         return await handleUrl(req.body || {}, res);
+      case 'create':      return await handleCreate(req.body || {}, res);
+      case 'formalize':   return await handleFormalize(req.body || {}, res);
+      case 'sendDraft':   return await handleSendDraft(req.body || {}, res);
+      case 'cancelDraft': return await handleCancelDraft(req.body || {}, res);
+      default:            return res.status(400).json({ error: `Bilinmeyen action: ${action}. list|detail|view|url|create|formalize|sendDraft|cancelDraft` });
     }
   } catch (err) {
     console.error(`[invoices-api][${action}]`, err.message);

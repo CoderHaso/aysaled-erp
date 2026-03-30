@@ -349,7 +349,9 @@ export default function Invoices({ type = 'inbox' }) {
   // Manuel fatura oluşturma
   const EMPTY_LINE = () => ({ id: Date.now(), name: '', quantity: 1, unit: 'Adet', unitPrice: 0, taxRate: 20 });
   const [createModal, setCreateModal] = useState(false);
-  const [createForm, setCreateForm]   = useState({ cari_name: '', vkntckn: '', issue_date: new Date().toISOString().slice(0,10), currency: 'TRY', notes: '', lines: [EMPTY_LINE()] });
+  const [createForm, setCreateForm]   = useState({ cari_name: '', vkntckn: '', issue_date: new Date().toISOString().slice(0,10), currency: 'TRY', notes: '', exchange_rate: '', lines: [EMPTY_LINE()] });
+  const [exchangeRate, setExchangeRate] = useState(null);  // { rate, buyRate, source, date }
+  const [fetchingRate, setFetchingRate] = useState(false);
   const [creating, setCreating]       = useState(false);
   const [createType, setCreateType]   = useState('outbox'); // Hangi sekme açtı
   const [formalizing, setFormalizing] = useState(null); // invoice_id
@@ -587,12 +589,36 @@ export default function Invoices({ type = 'inbox' }) {
     return !q || dbItems.some(it => trNorm(it.name) === q);
   };
 
+  // Döviz kuru çek (TCMB)
+  const fetchExchangeRate = async (curr, date) => {
+    if (curr === 'TRY') { setExchangeRate(null); setCreateForm(p => ({...p, exchange_rate: ''})); return; }
+    setFetchingRate(true);
+    try {
+      const url = `/api/exchange-rate?currency=${curr}${date ? `&date=${date}` : ''}`;
+      const r = await fetch(url);
+      const data = await r.json();
+      if (data.success) {
+        setExchangeRate(data);
+        setCreateForm(p => ({...p, exchange_rate: String(data.rate)}));
+      } else {
+        setExchangeRate(null);
+      }
+    } catch { setExchangeRate(null); }
+    finally { setFetchingRate(false); }
+  };
+
   const handleCreate = async () => {
     if (!createForm.cari_name) return alert('Cari adı zorunlu');
     if (!createForm.lines.some(l => l.name)) return alert('En az 1 kalem giriniz');
+    if (createForm.currency !== 'TRY' && !createForm.exchange_rate) return alert('Döviz kuru gerekli');
     setCreating(true);
     try {
-      const body = { ...createForm, type: createType, lines: createForm.lines.filter(l => l.name).map(l => ({ ...l, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), taxRate: Number(l.taxRate) })) };
+      const body = {
+        ...createForm,
+        type: createType,
+        exchange_rate: createForm.currency !== 'TRY' ? Number(createForm.exchange_rate) : undefined,
+        lines: createForm.lines.filter(l => l.name).map(l => ({ ...l, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), taxRate: Number(l.taxRate) }))
+      };
       const r = await fetch('/api/invoices-api?action=create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const data = await r.json();
       if (!data.success) throw new Error(data.error);
@@ -605,12 +631,28 @@ export default function Invoices({ type = 'inbox' }) {
     finally { setCreating(false); }
   };
 
-  // Resmileştir
+  // Uyumsoft'a Taslak Gönder (SaveAsDraft)
   const handleFormalize = async (invoiceId) => {
-    if (!confirm(`"${invoiceId}" faturasını Uyumsoft'a göndermek istediğinizden emin misiniz?`)) return;
+    if (!confirm(`"${invoiceId}" faturasını Uyumsoft'a taslak olarak göndermek istediğinizden emin misiniz?`)) return;
     setFormalizing(invoiceId);
     try {
       const r = await fetch('/api/invoices-api?action=formalize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invoiceId }) });
+      const data = await r.json();
+      if (!data.success) throw new Error(data.error);
+      invoiceCache.delete(type);
+      pageCache.invalidate(`invoices_${type}`);
+      await fetchInvoices(true);
+      alert(data.message);
+    } catch (err) { alert('Hata: ' + err.message); }
+    finally { setFormalizing(null); }
+  };
+
+  // Uyumsoft'taki taslağı resmileştir (SendDraft)
+  const handleSendDraft = async (invoiceId) => {
+    if (!confirm(`"${invoiceId}" faturasını resmileştirmek istediğinizden emin misiniz? Bu işlem geri alınamaz!`)) return;
+    setFormalizing(invoiceId);
+    try {
+      const r = await fetch('/api/invoices-api?action=sendDraft', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invoiceId }) });
       const data = await r.json();
       if (!data.success) throw new Error(data.error);
       invoiceCache.delete(type);
@@ -766,14 +808,28 @@ export default function Invoices({ type = 'inbox' }) {
                               <ScanEye size={12} />Önizle
                             </button>
                           )}
-                          {/* Resmileştir — yalnızca Gelir (outbox) + taslak */}
+                          {/* Uyumsoft'a Taslak Gönder — yalnızca Draft + outbox */}
                           {inv.status === 'Draft' && inv.type === 'outbox' && (
                             <button
                               onClick={e => { e.stopPropagation(); handleFormalize(inv.invoice_id); }}
                               disabled={formalizing === inv.invoice_id}
                               className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap"
+                              style={{ background:'rgba(245,158,11,0.12)', color:'#f59e0b' }}
+                              title="Uyumsoft'a Taslak Olarak Gönder">
+                              {formalizing === inv.invoice_id
+                                ? <Loader2 size={11} className="animate-spin" />
+                                : <CheckCheck size={11} />}
+                              Taslak Gönder
+                            </button>
+                          )}
+                          {/* Resmileştir — Queued (Uyumsoft'ta taslak) + outbox */}
+                          {inv.status === 'Queued' && inv.type === 'outbox' && (
+                            <button
+                              onClick={e => { e.stopPropagation(); handleSendDraft(inv.invoice_id); }}
+                              disabled={formalizing === inv.invoice_id}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap"
                               style={{ background:'rgba(16,185,129,0.12)', color:'#10b981' }}
-                              title="Uyumsoft'a Gönder">
+                              title="Resmileştir (Uyumsoft'tan Gönder)">
                               {formalizing === inv.invoice_id
                                 ? <Loader2 size={11} className="animate-spin" />
                                 : <CheckCheck size={11} />}
@@ -970,12 +1026,42 @@ export default function Invoices({ type = 'inbox' }) {
                   </div>
                   <div>
                     <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Para Birimi</label>
-                    <select value={createForm.currency} onChange={e => setCreateForm(p => ({...p, currency: e.target.value}))}
+                    <select value={createForm.currency} onChange={e => {
+                      const cur = e.target.value;
+                      setCreateForm(p => ({...p, currency: cur}));
+                      fetchExchangeRate(cur, createForm.issue_date);
+                    }}
                       className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
                       style={{ background: c.card, borderColor: c.border, color: c.text }}>
                       {['TRY','USD','EUR','GBP'].map(x => <option key={x}>{x}</option>)}
                     </select>
                   </div>
+                  {createForm.currency !== 'TRY' && (
+                    <div className="col-span-2">
+                      <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Döviz Kuru (TCMB Satış)</label>
+                      <div className="flex items-center gap-2">
+                        <input type="number" value={createForm.exchange_rate}
+                          onChange={e => setCreateForm(p => ({...p, exchange_rate: e.target.value}))}
+                          className="flex-1 px-3 py-2 text-sm rounded-xl border outline-none font-mono"
+                          style={{ background: c.card, borderColor: c.border, color: c.text }}
+                          placeholder="Ör: 32.45" step="0.0001" />
+                        <button onClick={() => fetchExchangeRate(createForm.currency, createForm.issue_date)}
+                          disabled={fetchingRate}
+                          className="px-3 py-2 text-xs font-bold rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-colors"
+                          style={{ background: 'rgba(99,102,241,0.12)', color: '#818cf8' }}>
+                          {fetchingRate
+                            ? <><svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> Alınıyor...</>
+                            : <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> TCMB Kuru Al</>}
+                        </button>
+                      </div>
+                      {exchangeRate && (
+                        <p className="text-[10px] mt-1 font-mono" style={{ color: c.muted }}>
+                          Kaynak: {exchangeRate.source === 'tcmb' ? 'TCMB' : 'Alternatif'} • Tarih: {exchangeRate.date}
+                          {exchangeRate.buyRate > 0 && <> • Alış: {exchangeRate.buyRate.toFixed(4)}</>}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Kalemler */}
