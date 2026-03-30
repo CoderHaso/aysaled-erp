@@ -291,7 +291,7 @@ async function handleFormalize(body, res) {
   const taxTotal = inv.tax_total || lines.reduce((s, l) => s + (l.tax_amount || 0), 0);
   const grandTotal = inv.amount || (subtotal + taxTotal);
   const currency = inv.currency || 'TRY';
-  const issueDate = inv.issue_date || new Date().toISOString().slice(0, 10);
+  const issueDate = (inv.issue_date || new Date().toISOString()).slice(0, 10);
 
   // UBL birim kodu eşleme
   const unitMap = { 'Adet': 'C62', 'Kg': 'KGM', 'Ton': 'TNE', 'm²': 'MTK', 'm³': 'MTQ', 'Litre': 'LTR', 'Paket': 'PA', 'Kutu': 'BX', 'Takım': 'SET' };
@@ -315,19 +315,19 @@ async function handleFormalize(body, res) {
       TaxSubtotal: {
         TaxableAmount: { $value: String(l.line_total || 0), attributes: { currencyID: currency } },
         TaxAmount: { $value: String(l.tax_amount || 0), attributes: { currencyID: currency } },
-        Percent: { $value: String(l.tax_percent || 0) },
+        Percent: String(l.tax_percent || 0),
         TaxCategory: {
-          TaxScheme: { Name: { $value: 'KDV' }, TaxTypeCode: { $value: '0015' } }
+          TaxScheme: { Name: 'KDV', TaxTypeCode: '0015' }
         }
       }
     },
-    Item: { Name: { $value: l.name || '-' } },
+    Item: { Name: l.name || '-' },
     Price: {
       PriceAmount: { $value: String(l.unit_price || 0), attributes: { currencyID: currency } }
     },
     AllowanceCharge: {
-      ChargeIndicator: { $value: 'false' },
-      MultiplierFactorNumeric: { $value: '0' },
+      ChargeIndicator: 'false',
+      MultiplierFactorNumeric: '0',
       Amount: { $value: '0', attributes: { currencyID: currency } },
       BaseAmount: { $value: String(l.line_total || 0), attributes: { currencyID: currency } }
     }
@@ -337,47 +337,47 @@ async function handleFormalize(body, res) {
   const taxSubtotals = Object.entries(vatGroups).map(([pct, v]) => ({
     TaxableAmount: { $value: String(v.taxable), attributes: { currencyID: currency } },
     TaxAmount: { $value: String(v.tax), attributes: { currencyID: currency } },
-    Percent: { $value: String(pct) },
+    Percent: String(pct),
     TaxCategory: {
-      TaxScheme: { Name: { $value: 'KDV' }, TaxTypeCode: { $value: '0015' } }
+      TaxScheme: { Name: 'KDV', TaxTypeCode: '0015' }
     }
   }));
 
   // UBL Invoice nesnesi
   const ublInvoice = {
-    UBLVersionID: { $value: '2.1' },
-    CustomizationID: { $value: 'TR1.2.1' },
-    ProfileID: { $value: 'TEMELFATURA' },
-    ID: { $value: invoiceId },
-    CopyIndicator: { $value: 'false' },
-    IssueDate: { $value: issueDate },
-    IssueTime: { $value: '00:00:00' },
-    InvoiceTypeCode: { $value: 'SATIS' },
-    DocumentCurrencyCode: { $value: currency },
-    LineCountNumeric: { $value: String(lines.length) },
+    UBLVersionID: '2.1',
+    CustomizationID: 'TR1.2.1',
+    ProfileID: 'TEMELFATURA',
+    ID: invoiceId,
+    CopyIndicator: false,
+    IssueDate: issueDate,
+    IssueTime: '00:00:00',
+    InvoiceTypeCode: 'SATIS',
+    DocumentCurrencyCode: currency,
+    LineCountNumeric: String(lines.length),
     AccountingSupplierParty: {
       Party: {
-        PartyName: { Name: { $value: process.env.COMPANY_NAME || 'AYS LED' } },
+        PartyName: { Name: process.env.COMPANY_NAME || 'AYS LED' },
         PartyIdentification: { ID: { $value: process.env.COMPANY_VKN || '', attributes: { schemeID: 'VKN' } } },
         PostalAddress: {
-          CityName: { $value: process.env.COMPANY_CITY || '' },
-          Country: { Name: { $value: 'Türkiye' } }
+          CityName: process.env.COMPANY_CITY || '',
+          Country: { Name: 'Türkiye' }
         },
         PartyTaxScheme: {
-          TaxScheme: { Name: { $value: process.env.COMPANY_TAX_OFFICE || '' } }
+          TaxScheme: { Name: process.env.COMPANY_TAX_OFFICE || '' }
         }
       }
     },
     AccountingCustomerParty: {
       Party: {
         PartyIdentification: { ID: { $value: inv.vkntckn || '', attributes: { schemeID: (inv.vkntckn || '').length === 11 ? 'TCKN' : 'VKN' } } },
-        PartyName: { Name: { $value: inv.cari_name } },
+        PartyName: { Name: inv.cari_name },
         PostalAddress: {
-          CityName: { $value: '' },
-          Country: { Name: { $value: 'Türkiye' } }
+          CityName: '',
+          Country: { Name: 'Türkiye' }
         },
         PartyTaxScheme: {
-          TaxScheme: { Name: { $value: '' } }
+          TaxScheme: { Name: '' }
         }
       }
     },
@@ -400,10 +400,10 @@ async function handleFormalize(body, res) {
     ublInvoice.PricingCurrencyCode = { $value: currency };
     ublInvoice.TaxCurrencyCode = { $value: 'TRY' };
     ublInvoice.PricingExchangeRate = {
-      SourceCurrencyCode: { $value: currency },
-      TargetCurrencyCode: { $value: 'TRY' },
-      CalculationRate: { $value: String(exchangeRate) },
-      Date: { $value: issueDate }
+      SourceCurrencyCode: currency,
+      TargetCurrencyCode: 'TRY',
+      CalculationRate: String(exchangeRate),
+      Date: issueDate
     };
   }
 
