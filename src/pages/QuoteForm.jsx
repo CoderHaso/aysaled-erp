@@ -643,7 +643,7 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
       const { data } = await supabase.from('media').select('*').order('created_at', { ascending: false });
       setMediaItems(data || []);
     } catch (e) {
-      alert('Yükleme hatası: ' + e.message);
+      setDialog({ open: true, title: 'Yükleme Hatası', message: 'Yükleme hatası: ' + e.message, type: 'alert' });
     } finally { setUploadingImg(false); }
   };
 
@@ -658,7 +658,9 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
       const data   = await res.json();
       if (!data.success) throw new Error(data.error);
       onSaved?.(data.quote);
-    } catch (e) { alert(e.message); }
+    } catch (e) { 
+      setDialog({ open: true, title: 'Kayıt Hatası', message: e.message, type: 'alert' });
+    }
     finally { setSaving(false); }
   };
 
@@ -839,7 +841,7 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
               <Plus size={13} /> Satır Ekle
             </button>
           </div>
-          <div className="overflow-x-auto" style={{ userSelect: 'none' }}>
+          <div className="overflow-x-auto" style={{ userSelect: 'none', overflowY: 'visible' }}>
             <table className="border-collapse" style={{
               width: Math.max(Object.values(colWidths).reduce((a, b) => a + b, 28), 600),
               minWidth: '100%',
@@ -908,7 +910,10 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
                 {lines.map((line, i) => (
                   <QuoteLine key={line.id} line={line} idx={i} allItems={allItems}
                     onUpdate={updateLine} onDelete={deleteLine} onAddImage={openImageModal}
-                    rowHeight={rowHeight} imgWidth={colWidths.img} />
+                    onAddNewItem={(name) => setQuickItemForm({ lineId: line.id, name, type: 'product', code: '', price: '', unit: 'Adet' })}
+                    rowHeight={rowHeight} imgWidth={colWidths.img}
+                    sym={currSymbol(form.currency)}
+                  />
                 ))}
               </tbody>
             </table>

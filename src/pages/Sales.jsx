@@ -254,6 +254,8 @@ function Field({ label, type = 'text', value, onChange, suffix, placeholder }) {
 // ─── Sipariş Formu ────────────────────────────────────────────────────────────
 function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor }) {
   const isEdit = !!order?.id;
+  // ── Local dialog state (OrderForm kendi dialogunu yönetir) ──
+  const [dialog, setDialog] = useState({ open: false, title: '', message: '', type: 'confirm', onConfirm: null, loading: false });
 
   const blankLine = () => ({
     _key: Math.random(), item_id: null, item_name: '', item_type: 'product',
@@ -367,26 +369,28 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
         throw new Error('Dövizli fatura için kur bilgisi bulunamadı! Lütfen bekleyin veya sayfayı yenileyip kurun yüklendiğinden emin olun.');
       }
 
+      // WHITELIST: Sadece DB şemasında olan sütunları gönder (400 Bad Request önleme)
       const orderData = {
-        ...form,
-        subtotal:    Math.round(subtotal   * 100) / 100,
-        tax_total:   Math.round(taxTotal   * 100) / 100,
-        grand_total: Math.round(grandTotal * 100) / 100,
-        due_date: form.due_date ? new Date(form.due_date).toISOString() : null,
+        order_number:     form.order_number,
+        customer_id:      form.customer_id   || null,
+        customer_name:    form.customer_name,
+        customer_vkntckn: form.customer_vkntckn || null,
+        status:           form.status         || 'pending',
+        currency:         form.currency       || 'TRY',
+        due_date:         form.due_date ? new Date(form.due_date).toISOString() : null,
+        delivery_address: form.delivery_address || null,
+        billing_address:  form.billing_address  || null,
+        notes:            form.notes            || null,
+        subtotal:         Math.round(subtotal   * 100) / 100,
+        tax_total:        Math.round(taxTotal   * 100) / 100,
+        grand_total:      Math.round(grandTotal * 100) / 100,
+        // edit modunda updated_at trigger devreye girer, insert'te gerekmez
       };
-
-      // SANITIZE: Remove explicitly unsupported fields in 'orders' schema
-      delete orderData.customer_address;
-      delete orderData.customer_district;
-      delete orderData.customer_city;
-      delete orderData.customer_vkntckn;
-      delete orderData.customer_tax_office;
-      delete orderData.customer_phone;
-      delete orderData.customer_email;
 
       let orderId;
       if (isEdit) {
-        await supabase.from('orders').update(orderData).eq('id', order.id);
+        const { error: updErr } = await supabase.from('orders').update(orderData).eq('id', order.id);
+        if (updErr) throw updErr;
         orderId = order.id;
         await supabase.from('order_items').delete().eq('order_id', orderId);
       } else {
@@ -397,8 +401,20 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
 
       const orderLines = lines.filter(l => l.item_name);
       if (orderLines.length > 0) {
-        const items = orderLines.map(({ _key, ...l }) => ({ ...l, order_id: orderId }));
-        await supabase.from('order_items').insert(items);
+        const items = orderLines.map(l => ({
+          order_id:   orderId,
+          item_id:    l.item_id   || null,
+          item_name:  l.item_name,
+          item_type:  l.item_type || 'product',
+          quantity:   Number(l.quantity)   || 1,
+          unit:       l.unit       || 'Adet',
+          unit_price: Number(l.unit_price) || 0,
+          tax_rate:   Number(l.tax_rate)   || 0,
+          stock_count: l.stock_count != null ? Number(l.stock_count) : null,
+          notes:      l.notes      || null,
+        }));
+        const { error: itemsErr } = await supabase.from('order_items').insert(items);
+        if (itemsErr) console.warn('[order_items insert]', itemsErr.message);
       }
 
       // ── UYUMSOFT INVOICE DRAFT CREATION ──
@@ -770,6 +786,13 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
       </div>
      </motion.div>
     </motion.div>
+
+    {/* OrderForm kendi dialog'unu render eder */}
+    <CustomDialog 
+      {...dialog} 
+      onClose={() => setDialog(d => ({ ...d, open: false }))}
+      onConfirm={dialog.onConfirm ? dialog.onConfirm : () => setDialog(d => ({ ...d, open: false }))}
+    />
   </>
   );
 }
@@ -893,7 +916,7 @@ export default function Sales() {
     const [ordRes, custRes, itemRes] = await Promise.all([
       supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }),
       supabase.from('customers').select('id, name, vkntckn, tax_office, phone, email, address, city').order('name'),
-      supabase.from('items').select('id, name, item_type, unit, purchase_price, stock_count, sku').order('name'),
+      supabase.from('items').select('id, name, item_type, unit, sale_price, purchase_price, stock_count, sku').order('name'),
     ]);
     setOrders((ordRes.data || []).map(o => ({ ...o, items: o.order_items || [] })));
     setCustomers(custRes.data || []);
