@@ -50,8 +50,32 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, onAddN
 
   const openSugg = () => {
     if (inputRef.current) {
-      const r = inputRef.current.getBoundingClientRect();
-      setDropPos({ top: r.bottom + window.scrollY + 2, left: r.left + window.scrollX, width: Math.max(r.width, 280) });
+      const r         = inputRef.current.getBoundingClientRect();
+      const vh        = window.innerHeight;
+      const spaceBelow = vh - r.bottom - 8;      // px kalan alan (aşağıda)
+      const spaceAbove = r.top - 8;              // px kalan alan (yukarıda)
+      const DROPDOWN_H = 300;                    // max dropdown yüksekliği
+
+      if (spaceBelow >= Math.min(DROPDOWN_H, 120)) {
+        // Aşağı aç
+        setDropPos({
+          top:       r.bottom + 2,               // fixed → viewport-relative
+          left:      r.left,
+          width:     Math.max(r.width, 300),
+          maxHeight: Math.min(DROPDOWN_H, spaceBelow),
+          openUp:    false,
+        });
+      } else {
+        // Yukarı aç
+        const availH = Math.min(DROPDOWN_H, spaceAbove);
+        setDropPos({
+          top:       r.top - availH - 2,         // açıldığı noktanın tabanı = input.top
+          left:      r.left,
+          width:     Math.max(r.width, 300),
+          maxHeight: availH,
+          openUp:    true,
+        });
+      }
     }
     setShowSugg(true);
   };
@@ -141,15 +165,16 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, onAddN
         {showSugg && createPortal(
           <div style={{
             position: 'fixed',
-            top: dropPos.top,
-            left: dropPos.left,
-            width: Math.max(dropPos.width, 300),
-            zIndex: 99999,
+            top:      dropPos.top,
+            left:     dropPos.left,
+            width:    Math.max(dropPos.width || 0, 300),
+            zIndex:   99999,
             background: '#fff',
-            border: '1px solid #d1fae5',
-            borderRadius: 14,
+            border:   '1px solid #d1fae5',
+            // Yukarı açılınca köşeleri ters yuvarlat
+            borderRadius: dropPos.openUp ? '14px 14px 6px 6px' : '6px 6px 14px 14px',
             boxShadow: '0 24px 48px rgba(0,0,0,0.22), 0 0 0 1px rgba(26,107,44,0.08)',
-            maxHeight: 300,
+            maxHeight: dropPos.maxHeight || 300,
             overflowY: 'auto',
             fontFamily: 'inherit',
           }}>
