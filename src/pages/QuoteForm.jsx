@@ -32,6 +32,8 @@ function emptyLine() {
 function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, onAddNewItem, rowHeight = 58, imgWidth = 68, sym = '₺' }) {
   const [showSugg, setShowSugg] = useState(false);
   const [q, setQ]               = useState(line.name || '');
+  const [dropPos, setDropPos]   = useState({ top: 0, left: 0, width: 280 });
+  const inputRef                = useRef(null);
 
   // allItems değişince q'yu başlatma (edit modunda)
   useEffect(() => { setQ(line.name || ''); }, []);
@@ -39,16 +41,24 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, onAddN
   const suggestions = (allItems && q.trim().length >= 1)
     ? allItems.filter(i => {
         const i_name = (i.name || i.item_name || '').toLowerCase();
-        const i_code = (i.item_code || '').toLowerCase();
+        const i_code = (i.item_code || i.sku || '').toLowerCase();
         const search = q.toLowerCase();
         return i_name.includes(search) || i_code.includes(search);
       }).slice(0, 15)
     : [];
 
+  const openSugg = () => {
+    if (inputRef.current) {
+      const r = inputRef.current.getBoundingClientRect();
+      setDropPos({ top: r.bottom + window.scrollY + 2, left: r.left + window.scrollX, width: Math.max(r.width, 280) });
+    }
+    setShowSugg(true);
+  };
+
   const selectItem = (item) => {
     const total = Number(item.sale_price || item.purchase_price || 0) * Number(line.quantity || 1);
     onUpdate(line.id, {
-      item_code: item.item_code || '',
+      item_code: item.item_code || item.sku || '',
       name:     item.name || '',
       description: item.description || '',
       unit_price: item.sale_price || item.purchase_price || 0,
@@ -74,7 +84,7 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, onAddN
   const inp   = 'w-full bg-transparent outline-none text-xs text-gray-800';
 
   return (
-    <tr className="hover:bg-gray-50 group relative" style={{ height: rowHeight }}>
+    <tr className="hover:bg-gray-50 group" style={{ height: rowHeight }}>
       {/* No */}
       <td className={cell} style={{ textAlign: 'center', color: '#9ca3af', fontWeight: 500, overflow: 'hidden' }}>{idx + 1}</td>
 
@@ -99,49 +109,69 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, onAddN
         <input value={line.power_w} onChange={e => upd('power_w', e.target.value)} className={inp} placeholder="W" />
       </td>
 
-      {/* Ürün Adı — arama dropdown */}
-      <td className={cell} style={{ overflow: 'visible' }}>
+      {/* Ürün Adı — arama dropdown (fixed position, tablo overflow'unu aşar) */}
+      <td className={cell} style={{ overflow: 'hidden' }}>
         <input
+          ref={inputRef}
           value={q}
-          onChange={e => { upd('name', e.target.value); setShowSugg(true); }}
-          onFocus={() => setShowSugg(true)}
-          onBlur={() => setTimeout(() => setShowSugg(false), 150)}
+          onChange={e => { upd('name', e.target.value); openSugg(); }}
+          onFocus={openSugg}
+          onBlur={() => setTimeout(() => setShowSugg(false), 200)}
           className={inp}
           placeholder="Ürün yaz veya seç..."
         />
-        {showSugg && q.trim().length >= 1 && (
-          <div className="absolute left-0 top-full mt-0.5 z-[200] w-72 shadow-2xl rounded-xl overflow-hidden border border-gray-200 bg-white">
-            {suggestions.map(s => (
+        {showSugg && (
+          <div style={{
+            position: 'fixed',
+            top: dropPos.top,
+            left: dropPos.left,
+            width: dropPos.width,
+            zIndex: 9999,
+            background: '#fff',
+            border: '1px solid #e5e7eb',
+            borderRadius: 12,
+            boxShadow: '0 20px 40px rgba(0,0,0,0.18)',
+            maxHeight: 280,
+            overflowY: 'auto',
+          }}>
+            {q.trim().length >= 1 && suggestions.map(s => (
               <div key={s.id} onMouseDown={() => selectItem(s)}
                 className="flex items-center gap-2.5 px-3 py-2 hover:bg-green-50 cursor-pointer border-b border-gray-100 last:border-b-0">
                 {s.image_url
-                  ? <img src={s.image_url} alt="" className="w-9 h-9 object-cover rounded-lg flex-shrink-0" />
-                  : <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
-                      <Package size={14} className="text-gray-400" />
+                  ? <img src={s.image_url} alt="" className="w-8 h-8 object-cover rounded-lg flex-shrink-0" />
+                  : <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+                      <Package size={13} className="text-gray-400" />
                     </div>}
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-semibold text-gray-800 truncate">{s.name}</p>
-                  <p className="text-[10px] text-gray-400">{s.item_code}{s.power_w ? ` · ${s.power_w}W` : ''}</p>
+                  <p className="text-[10px] text-gray-400">{s.item_code || s.sku}{s.power_w ? ` · ${s.power_w}W` : ''}</p>
                 </div>
                 <span className="text-[10px] text-green-700 font-semibold whitespace-nowrap">
                   {fmt(s.sale_price || s.purchase_price)} {sym}
                 </span>
               </div>
             ))}
-            
-            {/* Yeni ürün ekle */}
-            <div onMouseDown={() => { setShowSugg(false); onAddNewItem && onAddNewItem(q.trim()); }}
-               className="flex items-center gap-2.5 px-3 py-2 border-t border-gray-100 cursor-pointer bg-emerald-50 hover:bg-emerald-100">
-               <Plus size={14} className="text-emerald-600" />
-               <span className="text-xs font-semibold text-emerald-700">"{q}" yeni ürün/hizmet kaydet</span>
-            </div>
+
+            {/* Eşleşme yok mesajı */}
+            {q.trim().length >= 1 && suggestions.length === 0 && (
+              <div className="px-3 py-2 text-xs text-gray-400 italic">Stokta bulunamadı</div>
+            )}
+
+            {/* Yeni ürün kaydet */}
+            {q.trim() && (
+              <div onMouseDown={() => { setShowSugg(false); onAddNewItem && onAddNewItem(q.trim()); }}
+                 className="flex items-center gap-2.5 px-3 py-2 border-t border-gray-100 cursor-pointer bg-emerald-50 hover:bg-emerald-100">
+                 <Plus size={13} className="text-emerald-600" />
+                 <span className="text-xs font-semibold text-emerald-700">"{q}" yeni ürün olarak kaydet</span>
+              </div>
+            )}
 
             {/* Kayıtsız devam et */}
-            {suggestions.length === 0 && q.trim() && (
+            {q.trim() && (
               <div onMouseDown={() => { setShowSugg(false); onUpdate(line.id, { name: q.trim(), item_code: '', image_url: '' }); }}
                  className="flex items-center gap-2.5 px-3 py-2 border-t border-gray-100 cursor-pointer bg-blue-50 hover:bg-blue-100">
-                 <Check size={14} className="text-blue-600" />
-                 <span className="text-xs font-semibold text-blue-700">"{q}" olarak kayıtsız kullan</span>
+                 <Check size={13} className="text-blue-600" />
+                 <span className="text-xs font-semibold text-blue-700">"{q}" kayıtsız kullan</span>
               </div>
             )}
           </div>
