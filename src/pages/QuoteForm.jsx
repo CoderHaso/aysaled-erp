@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, createPortal } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Image as ImageIcon, Printer, Save, X, Package,
@@ -55,21 +55,37 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, onAddN
     setShowSugg(true);
   };
 
-  const selectItem = (item) => {
+  const doSelectItem = (item, keepImage = false) => {
     const total = Number(item.sale_price || item.purchase_price || 0) * Number(line.quantity || 1);
     onUpdate(line.id, {
-      item_code: item.item_code || item.sku || '',
-      name:     item.name || '',
+      item_code:   item.item_code || item.sku || '',
+      name:        item.name || '',
       description: item.description || '',
-      unit_price: item.sale_price || item.purchase_price || 0,
-      unit:     item.unit || 'Adet',
-      image_url: item.image_url || '',
-      power_w:  item.power_w || '',
+      unit_price:  item.sale_price || item.purchase_price || 0,
+      unit:        item.unit || 'Adet',
+      image_url:   keepImage ? (line.image_url || item.image_url || '') : (item.image_url || ''),
+      power_w:     item.power_w || '',
       total,
     });
     setQ(item.name || '');
     setShowSugg(false);
   };
+
+  // Resim çakışması kontrolü — mevcut resim varsa seçilen üründe farklı resim varsa sor
+  const handleSelectItem = (item) => {
+    const hasCurrentImg = !!(line.image_url);
+    const hasNewImg     = !!(item.image_url);
+    const isDifferent   = hasCurrentImg && hasNewImg && line.image_url !== item.image_url;
+    if (isDifferent) {
+      setPendingItem(item); // onay bekliyor
+    } else {
+      doSelectItem(item);
+    }
+  };
+
+  // Bekleyen ürün seçimi (resim onayı için)
+  const [pendingItem, setPendingItem] = useState(null);
+
 
   const upd = (field, val) => {
     const updated = { ...line, [field]: val };
@@ -84,7 +100,8 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, onAddN
   const inp   = 'w-full bg-transparent outline-none text-xs text-gray-800';
 
   return (
-    <tr className="hover:bg-gray-50 group" style={{ height: rowHeight }}>
+    <>
+      <tr className="hover:bg-gray-50 group" style={{ height: rowHeight }}>
       {/* No */}
       <td className={cell} style={{ textAlign: 'center', color: '#9ca3af', fontWeight: 500, overflow: 'hidden' }}>{idx + 1}</td>
 
@@ -120,61 +137,77 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, onAddN
           className={inp}
           placeholder="Ürün yaz veya seç..."
         />
-        {showSugg && (
+        {showSugg && createPortal(
           <div style={{
             position: 'fixed',
             top: dropPos.top,
             left: dropPos.left,
-            width: dropPos.width,
-            zIndex: 9999,
+            width: Math.max(dropPos.width, 300),
+            zIndex: 99999,
             background: '#fff',
-            border: '1px solid #e5e7eb',
-            borderRadius: 12,
-            boxShadow: '0 20px 40px rgba(0,0,0,0.18)',
-            maxHeight: 280,
+            border: '1px solid #d1fae5',
+            borderRadius: 14,
+            boxShadow: '0 24px 48px rgba(0,0,0,0.22), 0 0 0 1px rgba(26,107,44,0.08)',
+            maxHeight: 300,
             overflowY: 'auto',
+            fontFamily: 'inherit',
           }}>
+            {/* Başlık */}
+            <div style={{ padding: '8px 12px 6px', borderBottom: '1px solid #f0fdf4', background: '#f0fdf4' }}>
+              <p style={{ fontSize: 10, fontWeight: 700, color: '#166534', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Stok Listesi</p>
+            </div>
+
             {q.trim().length >= 1 && suggestions.map(s => (
-              <div key={s.id} onMouseDown={() => selectItem(s)}
-                className="flex items-center gap-2.5 px-3 py-2 hover:bg-green-50 cursor-pointer border-b border-gray-100 last:border-b-0">
+              <div key={s.id} onMouseDown={(e) => { e.preventDefault(); handleSelectItem(s); }}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px',
+                  cursor: 'pointer', borderBottom: '1px solid #f3f4f6' }}
+                onMouseEnter={e => e.currentTarget.style.background = '#f0fdf4'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                 {s.image_url
-                  ? <img src={s.image_url} alt="" className="w-8 h-8 object-cover rounded-lg flex-shrink-0" />
-                  : <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
-                      <Package size={13} className="text-gray-400" />
+                  ? <img src={s.image_url} alt="" style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />
+                  : <div style={{ width: 32, height: 32, borderRadius: 6, background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <Package size={13} color="#9ca3af" />
                     </div>}
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-gray-800 truncate">{s.name}</p>
-                  <p className="text-[10px] text-gray-400">{s.item_code || s.sku}{s.power_w ? ` · ${s.power_w}W` : ''}</p>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: '#111827', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</p>
+                  <p style={{ fontSize: 10, color: '#9ca3af' }}>{s.item_code || s.sku || ''}{s.power_w ? ` · ${s.power_w}W` : ''}</p>
                 </div>
-                <span className="text-[10px] text-green-700 font-semibold whitespace-nowrap">
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#166534', whiteSpace: 'nowrap' }}>
                   {fmt(s.sale_price || s.purchase_price)} {sym}
                 </span>
               </div>
             ))}
 
-            {/* Eşleşme yok mesajı */}
+            {/* Eşleşme yok */}
             {q.trim().length >= 1 && suggestions.length === 0 && (
-              <div className="px-3 py-2 text-xs text-gray-400 italic">Stokta bulunamadı</div>
+              <div style={{ padding: '10px 12px', fontSize: 12, color: '#9ca3af', fontStyle: 'italic' }}>Stokta bulunamadı</div>
             )}
 
             {/* Yeni ürün kaydet */}
             {q.trim() && (
-              <div onMouseDown={() => { setShowSugg(false); onAddNewItem && onAddNewItem(q.trim()); }}
-                 className="flex items-center gap-2.5 px-3 py-2 border-t border-gray-100 cursor-pointer bg-emerald-50 hover:bg-emerald-100">
-                 <Plus size={13} className="text-emerald-600" />
-                 <span className="text-xs font-semibold text-emerald-700">"{q}" yeni ürün olarak kaydet</span>
+              <div onMouseDown={(e) => { e.preventDefault(); setShowSugg(false); onAddNewItem && onAddNewItem(q.trim()); }}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
+                  background: '#f0fdf4', cursor: 'pointer', borderTop: '1px solid #d1fae5' }}
+                onMouseEnter={e => e.currentTarget.style.background = '#dcfce7'}
+                onMouseLeave={e => e.currentTarget.style.background = '#f0fdf4'}>
+                <Plus size={13} color="#16a34a" />
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#16a34a' }}>"{q}" yeni ürün olarak kaydet</span>
               </div>
             )}
 
-            {/* Kayıtsız devam et */}
+            {/* Kayıtsız kullan */}
             {q.trim() && (
-              <div onMouseDown={() => { setShowSugg(false); onUpdate(line.id, { name: q.trim(), item_code: '', image_url: '' }); }}
-                 className="flex items-center gap-2.5 px-3 py-2 border-t border-gray-100 cursor-pointer bg-blue-50 hover:bg-blue-100">
-                 <Check size={13} className="text-blue-600" />
-                 <span className="text-xs font-semibold text-blue-700">"{q}" kayıtsız kullan</span>
+              <div onMouseDown={(e) => { e.preventDefault(); setShowSugg(false); onUpdate(line.id, { name: q.trim(), item_code: '', image_url: line.image_url || '' }); }}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
+                  background: '#eff6ff', cursor: 'pointer', borderTop: '1px solid #dbeafe' }}
+                onMouseEnter={e => e.currentTarget.style.background = '#dbeafe'}
+                onMouseLeave={e => e.currentTarget.style.background = '#eff6ff'}>
+                <Check size={13} color="#2563eb" />
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#2563eb' }}>"{q}" kayıtsız kullan</span>
               </div>
             )}
-          </div>
+          </div>,
+          document.body
         )}
       </td>
 
@@ -213,8 +246,44 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, onAddN
           className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity">
           <X size={13} />
         </button>
+
       </td>
     </tr>
+
+    {/* Resim değiştirme onay diyaloğu — porta ile render */}
+    {pendingItem && createPortal(
+      <div style={{
+        position: 'fixed', inset: 0, zIndex: 100000,
+        background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <div style={{
+          background: '#fff', borderRadius: 20, padding: 28, maxWidth: 380, width: '90%',
+          boxShadow: '0 32px 64px rgba(0,0,0,0.3)',
+        }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: '#111827', marginBottom: 8 }}>Resim Değiştirilsin mi?</h3>
+          <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 20, lineHeight: 1.5 }}>
+            Bu satırda zaten bir ürün görseli var. <strong>{pendingItem.name}</strong> ürününün görseli farklı — eski resmi değiştirmek ister misiniz?
+          </p>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              onClick={() => { doSelectItem(pendingItem, true); setPendingItem(null); }}
+              style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: '1px solid #e5e7eb',
+                fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#374151', background: '#f9fafb' }}>
+              Mevcut Resmi Koru
+            </button>
+            <button
+              onClick={() => { doSelectItem(pendingItem, false); setPendingItem(null); }}
+              style={{ flex: 1, padding: '10px 0', borderRadius: 10, border: 'none',
+                fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#fff', background: '#1a6b2c' }}>
+              Yeni Resmi Getir
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+    </>
   );
 }
 

@@ -252,10 +252,16 @@ function Field({ label, type = 'text', value, onChange, suffix, placeholder }) {
 }
 
 // ─── Sipariş Formu ────────────────────────────────────────────────────────────
-function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor }) {
+function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor, quoteId, quoteRevertFn, markQuoteAccepted }) {
   const isEdit = !!order?.id;
   // ── Local dialog state (OrderForm kendi dialogunu yönetir) ──
   const [dialog, setDialog] = useState({ open: false, title: '', message: '', type: 'confirm', onConfirm: null, loading: false });
+
+  // İptal edilince teklifi geri al
+  const handleCancel = () => {
+    if (quoteRevertFn) quoteRevertFn(); // teklifi orijinal duruma döndür
+    onClose();
+  };
 
   const blankLine = () => ({
     _key: Math.random(), item_id: null, item_name: '', item_type: 'product',
@@ -384,7 +390,8 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
         subtotal:         Math.round(subtotal   * 100) / 100,
         tax_total:        Math.round(taxTotal   * 100) / 100,
         grand_total:      Math.round(grandTotal * 100) / 100,
-        // edit modunda updated_at trigger devreye girer, insert'te gerekmez
+        // quote_id — tekliften gelen siparişlerde bağlantı kurulur
+        ...(quoteId ? { quote_id: quoteId } : {}),
       };
 
       let orderId;
@@ -415,6 +422,17 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
         }));
         const { error: itemsErr } = await supabase.from('order_items').insert(items);
         if (itemsErr) console.warn('[order_items insert]', itemsErr.message);
+      }
+
+      // ── Teklif varsa accepted olarak işaretle ──
+      if (quoteId && !isEdit) {
+        try {
+          await fetch(`/api/quotes?id=${quoteId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'accepted' })
+          });
+        } catch (_) { /* teklif güncelleme kritik değil */ }
       }
 
       // ── UYUMSOFT INVOICE DRAFT CREATION ──
@@ -506,7 +524,7 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
           </h2>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={onClose} className="p-2 rounded-xl text-slate-500 hover:text-white transition-colors">
+          <button onClick={handleCancel} className="p-2 rounded-xl text-slate-500 hover:text-white transition-colors">
             <X size={18} />
           </button>
         </div>
@@ -771,7 +789,7 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
 
         {/* Kaydet */}
         <div className="flex gap-3 pb-8">
-          <button onClick={onClose}
+          <button onClick={handleCancel}
             className="flex-1 py-3 rounded-2xl text-sm font-semibold"
             style={{ background: 'rgba(255,255,255,0.05)', color: '#64748b', border: '1px solid rgba(148,163,184,0.15)' }}>
             İptal
@@ -894,10 +912,13 @@ export default function Sales() {
   const [allItems,  setAllItems]  = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [search,    setSearch]    = useState('');
-  const [tab,       setTab]       = useState('current');  // current | urgent | history
+  const [tab,       setTab]       = useState('current');
   const [showForm,  setShowForm]  = useState(false);
   const [editOrder, setEditOrder] = useState(null);
   const [toast,     setToast]     = useState(null);
+  // Tekliften sipariş oluşturma için durum yönetimi
+  const [pendingQuoteId,       setPendingQuoteId]       = useState(null);
+  const [pendingQuoteOriginal, setPendingQuoteOriginal] = useState(null); // geri alınabilir durum
 
   const c = {
     card:   isDark ? 'rgba(30,41,59,0.7)' : '#ffffff',
@@ -970,6 +991,9 @@ export default function Sales() {
           items: newItems,
           quote_id: q.id
         });
+        // Teklif durumu yönetimi: kullanıcı iptal ederse geri alınabilecek
+        setPendingQuoteId(q.id);
+        setPendingQuoteOriginal(state.quoteOriginalStatus || q.status || 'sent');
         setShowForm(true);
 
         if (state.quoteMsg) showToast(state.quoteMsg);
@@ -1178,8 +1202,36 @@ export default function Sales() {
             customers={customers}
             allItems={allItems}
             currentColor={currentColor}
-            onClose={() => { setShowForm(false); setEditOrder(null); }}
-            onSaved={() => { loadAll(); showToast(editOrder ? 'Sipariş güncellendi ✓' : 'Sipariş oluşturuldu ✓'); }}
+            // Tekliften sipariş oluşturma: quote_id + geri alınabilir durum
+            quoteId={pendingQuoteId}
+            quoteRevertFn={pendingQuoteId ? async () => {
+              // İptal = teklif durum geri alınır
+              if (pendingQuoteId && pendingQuoteOriginal) {
+                try {
+                  await fetch(`/api/quotes?id=${pendingQuoteId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: pendingQuoteOriginal })
+                  });
+                } catch (_) {}
+              }
+              setPendingQuoteId(null);
+              setPendingQuoteOriginal(null);
+              setShowForm(false);
+              setEditOrder(null);
+            } : null}
+            onClose={() => { 
+              setPendingQuoteId(null);
+              setPendingQuoteOriginal(null);
+              setShowForm(false); 
+              setEditOrder(null); 
+            }}
+            onSaved={() => { 
+              setPendingQuoteId(null);
+              setPendingQuoteOriginal(null);
+              loadAll(); 
+              showToast(editOrder?.id ? 'Sipariş güncellendi ✓' : 'Sipariş oluşturuldu ✓'); 
+            }}
           />
         )}
       </AnimatePresence>

@@ -69,10 +69,16 @@ export default function Quotes() {
 
   const handleAccept = async (q) => {
     try {
-      await fetch(`/api/quotes?id=${q.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'accepted' }) });
       setAcceptModal(null);
-      // Faturayı otomatik oluşturmak yerine satış ekranına yönlendiriyoruz, kullanıcı orada karar verir.
-      navigate('/sales', { state: { createFromQuote: q, quoteMsg: 'Teklif onaylandı ve Sipariş formuna yansıtıldı.' } });
+      // Satış ekranına yönlendir — teklif durumunu henüz değiştirme.
+      // Kullanıcı sipariş oluşturursa -> accepted, iptal ederse -> orijinal durum kalır.
+      navigate('/sales', { 
+        state: { 
+          createFromQuote: q, 
+          quoteOriginalStatus: q.status, // geri dönüş için
+          quoteMsg: 'Sipariş formunu doldurup oluşturduğunuzda teklif kabul edilmiş olarak işaretlenecek.'
+        } 
+      });
     } catch (e) { 
       setDialog({ open: true, title: 'Hata', message: 'İşlem sırasında hata oluştu: ' + e.message, type: 'alert' });
     }
