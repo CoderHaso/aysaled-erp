@@ -263,6 +263,12 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor,
     onClose();
   };
 
+  // Başarılı kayıt sonrası temiz kapat (revert YOK)
+  const closeClean = () => {
+    onSaved?.();
+    onClose();
+  };
+
   const blankLine = () => ({
     _key: Math.random(), item_id: null, item_name: '', item_type: 'product',
     quantity: 1, unit: 'Adet', unit_price: 0, tax_rate: 18, stock_count: null, notes: '',
@@ -465,36 +471,36 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor,
              const d_form = await r_form.json();
              if (d_form.success) {
                setDialog({ 
-                 open: true, title: 'Başarılı', message: "Sipariş kaydedildi ve Uyumsoft tarafında fatura taslağı başarıyla oluşturuldu!", type: 'alert',
-                 onConfirm: () => { setDialog({ open: false }); onSaved?.(); onClose(); }
+                 open: true, title: '✓ Sipariş Oluşturuldu', message: "Sipariş kaydedildi ve Uyumsoft tarafında fatura taslağı başarıyla oluşturuldu!", type: 'alert',
+                 onConfirm: () => { setDialog({ open: false }); closeClean(); }
                });
              } else {
                setDialog({ 
                  open: true, title: 'Bilgi', message: `Sipariş kaydedildi ancak fatura taslağı iletilemedi: ${d_form.error}`, type: 'alert',
-                 onConfirm: () => { setDialog({ open: false }); onSaved?.(); onClose(); }
+                 onConfirm: () => { setDialog({ open: false }); closeClean(); }
                });
              }
           } else {
              setDialog({ 
-               open: true, title: 'Hata', message: `Sipariş kaydedildi ancak fatura sistemi kaydı başarısız: ${d_create.error}`, type: 'alert',
-               onConfirm: () => { setDialog({ open: false }); onSaved?.(); onClose(); }
+               open: true, title: 'Bilgi', message: `Sipariş kaydedildi ancak fatura sistemi kaydı başarısız: ${d_create.error}`, type: 'alert',
+               onConfirm: () => { setDialog({ open: false }); closeClean(); }
              });
           }
         } catch (invErr) {
           setDialog({ 
             open: true, title: 'Hata', message: `Sipariş kaydedildi ama teknik hata oluştu: ${invErr.message}`, type: 'alert',
-            onConfirm: () => { setDialog({ open: false }); onSaved?.(); onClose(); }
+            onConfirm: () => { setDialog({ open: false }); closeClean(); }
           });
         }
       } else {
-        // Faturasız sipariş
+        // Faturasız sipariş — direkt kapat
         onSaved?.();
         onClose();
       }
-       // Fatura listesini yenilemek için cache temizle
-       if (invoiceToggle) {
-         try { sessionStorage.removeItem('page_cache_invoices_outbox'); } catch(e){}
-       }
+      // Fatura listesini yenilemek için cache temizle
+      if (invoiceToggle) {
+        try { sessionStorage.removeItem('page_cache_invoices_outbox'); } catch(e){}
+      }
     } catch (e) { 
         setDialog({ open: true, title: 'Hata', message: e.message, type: 'alert' }); 
     }

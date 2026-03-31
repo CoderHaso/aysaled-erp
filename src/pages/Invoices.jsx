@@ -29,6 +29,37 @@ const STATUS_MAP = {
 const fmt  = (n) => n != null ? Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
 const fmtD = (d) => d ? new Date(d).toLocaleDateString('tr-TR', { year:'numeric', month:'long', day:'numeric' }) : '-';
 
+// UBL birim kodu → Türkçe karşılık (UN/ECE Rec 20 + yaygın kullanımlar)
+const UBL_UNITS = {
+  NIU: 'Adet',   // Number of Items/Units
+  C62: 'Adet',   // One (unit)
+  H87: 'Adet',
+  PCE: 'Adet',
+  EA:  'Adet',
+  PCS: 'Adet',
+  UN:  'Adet',
+  MTR: 'Metre',
+  M:   'Metre',
+  KGM: 'Kg',
+  KG:  'Kg',
+  GRM: 'Gram',
+  LTR: 'Litre',
+  MTK: 'M²',
+  MTQ: 'M³',
+  HUR: 'Saat',
+  MIN: 'Dakika',
+  DAY: 'Gün',
+  MON: 'Ay',
+  ANN: 'Yıl',
+  SET: 'Set',
+  RL:  'Rulo',
+  PKG: 'Paket',
+  BX:  'Kutu',
+  PR:  'Çift',
+};
+const unitLabel = (code) => UBL_UNITS[code?.toUpperCase?.()] || code || '';
+const currSymbol = (c) => ({ USD:'$', EUR:'€', GBP:'£', TRY:'₺' }[c] || c || '₺');
+
 function StatusBadge({ status }) {
   const s = STATUS_MAP[status] || { label: status || '-', color: '#94a3b8' };
   return (
@@ -40,7 +71,8 @@ function StatusBadge({ status }) {
 }
 
 // ─── Gerçek Fatura Tablosu ────────────────────────────────────────────────────
-function InvoiceTable({ items }) {
+function InvoiceTable({ items, currency = 'TRY' }) {
+  const sym = currSymbol(currency);
   const hasDiscount = items.some(i => i.discount_rate || i.discount_amount);
   const hasItemCode = items.some(i => i.item_code);
 
@@ -90,9 +122,9 @@ function InvoiceTable({ items }) {
                 </td>
                 <td className="px-3 py-3 text-right text-slate-300 whitespace-nowrap">
                   {item.quantity != null ? fmt(item.quantity) : '-'}
-                  {item.unit && <span className="text-slate-500 ml-1">{item.unit}</span>}
+                  {item.unit && <span className="text-slate-500 ml-1">{unitLabel(item.unit)}</span>}
                 </td>
-                <td className="px-3 py-3 text-right text-slate-300 whitespace-nowrap">{fmt(item.unit_price)}</td>
+                <td className="px-3 py-3 text-right text-slate-300 whitespace-nowrap">{fmt(item.unit_price)} <span className="text-slate-500">{sym}</span></td>
                 {hasDiscount && (
                   <td className="px-3 py-3 text-right text-slate-400 whitespace-nowrap">
                     {item.discount_rate ? `%${fmt(item.discount_rate)}` : '-'}
@@ -104,8 +136,8 @@ function InvoiceTable({ items }) {
                   </td>
                 )}
                 <td className="px-3 py-3 text-right text-slate-300 whitespace-nowrap">%{item.tax_percent || 0}</td>
-                <td className="px-3 py-3 text-right text-slate-300 whitespace-nowrap">{fmt(item.tax_amount)}</td>
-                <td className="px-3 py-3 text-right font-bold text-slate-100 whitespace-nowrap">{fmt(item.line_total)}</td>
+                <td className="px-3 py-3 text-right text-slate-300 whitespace-nowrap">{fmt(item.tax_amount)} <span className="text-slate-500">{sym}</span></td>
+                <td className="px-3 py-3 text-right font-bold text-slate-100 whitespace-nowrap">{fmt(item.line_total)} <span className="text-slate-400 font-normal text-[10px]">{sym}</span></td>
               </tr>
             ))}
           </tbody>
@@ -115,22 +147,22 @@ function InvoiceTable({ items }) {
       {/* Özet & Toplamlar */}
       <div className="flex justify-end">
         <div className="rounded-2xl overflow-hidden min-w-[320px]" style={{ border: '1px solid rgba(148,163,184,0.12)', background: 'rgba(255,255,255,0.03)' }}>
-          <SumRow label="Mal/Hizmet Toplam Tutarı" value={fmt(totalLineExt)} />
-          {totalDiscount > 0 && <SumRow label="Toplam İskonto" value={fmt(totalDiscount)} color="#f97316" />}
+          <SumRow label="Mal/Hizmet Toplam Tutarı" value={`${fmt(totalLineExt)} ${sym}`} />
+          {totalDiscount > 0 && <SumRow label="Toplam İskonto" value={`${fmt(totalDiscount)} ${sym}`} color="#f97316" />}
 
           {/* KDV dökümü */}
           {Object.entries(vatBreakdown).map(([pct, d]) => (
             <React.Fragment key={pct}>
-              <SumRow label={`KDV Matrahı (%${pct})`} value={fmt(d.taxable)} muted />
-              <SumRow label={`Hesaplanan KDV (%${pct})`} value={fmt(d.vat)} color="#60a5fa" />
+              <SumRow label={`KDV Matrahı (%${pct})`} value={`${fmt(d.taxable)} ${sym}`} muted />
+              <SumRow label={`Hesaplanan KDV (%${pct})`} value={`${fmt(d.vat)} ${sym}`} color="#60a5fa" />
             </React.Fragment>
           ))}
 
           <div style={{ borderTop: '1px solid rgba(148,163,184,0.15)' }}>
-            <SumRow label="Vergiler Dahil Toplam" value={fmt(totalWithVat)} bold />
+            <SumRow label="Vergiler Dahil Toplam" value={`${fmt(totalWithVat)} ${sym}`} bold />
           </div>
           <div style={{ borderTop: '2px solid rgba(148,163,184,0.2)', background: 'rgba(255,255,255,0.04)' }}>
-            <SumRow label="Ödenecek Tutar" value={fmt(totalWithVat)} bold accent />
+            <SumRow label="Ödenecek Tutar" value={`${fmt(totalWithVat)} ${sym}`} bold accent />
           </div>
         </div>
       </div>
@@ -295,7 +327,7 @@ function InvoiceDetailDrawer({ invoice, isInbox, onClose, onLineItemsLoaded }) {
                 </div>
               )}
               {fetchState === 'done' && lineItems?.length > 0 && (
-                <InvoiceTable items={lineItems} />
+                <InvoiceTable items={lineItems} currency={invoice.currency} />
               )}
             </div>
 
