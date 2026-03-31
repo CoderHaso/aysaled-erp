@@ -10,6 +10,7 @@ import { supabase } from '../lib/supabaseClient';
 import InvoicePreviewModal from '../components/InvoicePreviewModal';
 import { useLocation } from 'react-router-dom';
 import { pageCache } from '../lib/pageCache';
+import CustomDialog from '../components/CustomDialog';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const STATUS_MAP = {
@@ -370,6 +371,13 @@ export default function Invoices({ type = 'inbox' }) {
   const [quickItemForm, setQuickItemForm] = useState(null); // null | { lineId, name }
   const [quickItemSaving, setQuickItemSaving] = useState(false);
   const location = useLocation();
+  const [toast, setToast]       = useState(null);
+  const [dialog, setDialog]     = useState({ open: false, title: '', message: '', type: 'confirm', onConfirm: null, loading: false });
+
+  const showToast = (msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   // Cari/Tedarikçi drawer’dan yönlendirme gelirse faturayı otomatik aç
   useEffect(() => {
@@ -723,18 +731,31 @@ export default function Invoices({ type = 'inbox' }) {
   };
 
   const handleDeleteDraft = async (inv) => {
-    if (!confirm(`"${inv.invoice_id}" faturasını ve (varsa) Uyumsoft üzerindeki taslağını iptal edip silmek istediğinizden emin misiniz?`)) return;
-    setFormalizing(inv.invoice_id);
-    try {
-      const r = await fetch('/api/invoices-api?action=delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invoiceId: inv.invoice_id }) });
-      const data = await r.json();
-      if (!data.success) throw new Error(data.error);
-      invoiceCache.delete(type);
-      pageCache.invalidate(`invoices_${type}`);
-      await fetchInvoices(true);
-      alert(data.message);
-    } catch (err) { alert('Hata: ' + err.message); }
-    finally { setFormalizing(null); }
+    setDialog({
+        open: true,
+        title: 'Taslağı Sil / İptal Et',
+        message: `"${inv.invoice_id}" numaralı taslak faturayı silmek istediğinize emin misiniz?\n\n` +
+                 "• Sistem kayıtlarından tamamen silinecek.\n" +
+                 "• Uyumsoft portalı üzerinden iptal edilecek.\n" +
+                 "• Bu işlem geri alınamaz.",
+        type: 'danger',
+        onConfirm: async () => {
+            setDialog(d => ({ ...d, loading: true }));
+            try {
+                const r = await fetch('/api/invoices-api?action=delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invoiceId: inv.invoice_id }) });
+                const d = await r.json();
+                if (!d.success) throw new Error(d.error);
+                
+                invoiceCache.delete(type);
+                pageCache.invalidate(`invoices_${type}`);
+                await fetchInvoices(true);
+                showToast('Fatura taslağı silindi');
+                setDialog({ open: false });
+            } catch (err) {
+                setDialog({ open: true, title: 'Hata', message: 'İşlem başarısız: ' + err.message, type: 'alert' });
+            }
+        }
+    });
   };
 
   const filtered = invoices.filter(inv => {
@@ -1430,6 +1451,12 @@ export default function Invoices({ type = 'inbox' }) {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <CustomDialog
+        {...dialog}
+        onClose={() => setDialog({ ...dialog, open: false })}
+        onConfirm={dialog.onConfirm ? dialog.onConfirm : () => setDialog({ ...dialog, open: false })}
+      />
     </>
   );
 }

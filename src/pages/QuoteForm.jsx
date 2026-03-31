@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
+import CustomDialog from '../components/CustomDialog';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt     = (n, d = 2) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -36,10 +37,12 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, onAddN
   useEffect(() => { setQ(line.name || ''); }, []);
 
   const suggestions = (allItems && q.trim().length >= 1)
-    ? allItems.filter(i =>
-        (i.name || '').toLowerCase().includes(q.toLowerCase()) ||
-        (i.item_code || '').toLowerCase().includes(q.toLowerCase())
-      ).slice(0, 10)
+    ? allItems.filter(i => {
+        const i_name = (i.name || i.item_name || '').toLowerCase();
+        const i_code = (i.item_code || '').toLowerCase();
+        const search = q.toLowerCase();
+        return i_name.includes(search) || i_code.includes(search);
+      }).slice(0, 15)
     : [];
 
   const selectItem = (item) => {
@@ -558,8 +561,9 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
       setForm(f => ({ ...f, company_name: data.name, address: data.address || '', phone: data.phone || '', email: data.email || '' }));
       setCustQ(data.name);
       setQuickEntityForm(null);
-    } catch (e) { alert('Müşteri kaydedilemedi: ' + e.message); }
-    finally { setSaving(false); }
+    } catch (e) {
+      setDialog({ open: true, title: 'Hata', message: 'Müşteri kaydedilemedi: ' + e.message, type: 'alert' });
+    } finally { setSaving(false); }
   };
 
   const submitQuickItem = async () => {
@@ -577,8 +581,9 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
       setAllItems(prev => [...prev, data]);
       updateLine(quickItemForm.lineId, { name: data.name, item_code: data.item_code || '', unit_price: data.sale_price || 0, unit: data.unit || 'Adet' });
       setQuickItemForm(null);
-    } catch(e) { alert('Ürün eklendiğinde hata: ' + e.message); }
-    finally { setSaving(false); }
+    } catch(e) {
+      setDialog({ open: true, title: 'Hata', message: 'Ürün eklenirken hata oluştu: ' + e.message, type: 'alert' });
+    } finally { setSaving(false); }
   };
 
   // Satır güncelle/sil/ekle
@@ -1111,6 +1116,11 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
           </div>
         </div>
       )}
+      <CustomDialog
+        {...dialog}
+        onClose={() => setDialog({ ...dialog, open: false })}
+        onConfirm={dialog.onConfirm ? dialog.onConfirm : () => setDialog({ ...dialog, open: false })}
+      />
     </div>
   );
 }

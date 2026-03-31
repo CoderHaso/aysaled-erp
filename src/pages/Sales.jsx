@@ -11,6 +11,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import InvoicePreviewModal from '../components/InvoicePreviewModal';
+import CustomDialog from '../components/CustomDialog';
 
 // ─── Sabitler & Yardımcılar ───────────────────────────────────────────────────
 const STATUS = {
@@ -276,6 +277,7 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
     delivery_address:    order?.delivery_address || '',
     billing_address:     order?.billing_address || '',
     notes:               order?.notes || '',
+    quote_id:            order?.quote_id || null,
   });
   const [lines, setLines]   = useState(order?.items?.length ? order.items.map(i => ({ ...i, _key: Math.random() })) : [blankLine()]);
   const [saving, setSaving] = useState(false);
@@ -297,9 +299,11 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
       if (res.ok) {
         const data = await res.json();
         setExchangeRate(data);
-      } else { setExchangeRate(null); }
-    } catch { setExchangeRate(null); }
-  };
+              } else { setExchangeRate(null); }
+            } catch { 
+              setExchangeRate(null);
+            }
+          };
 
   useEffect(() => {
     fetchExchangeRate(form.currency, form.due_date);
@@ -352,12 +356,17 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
 
     if (invoiceToggle && !isEdit) {
       if (!form.customer_vkntckn || !form.customer_tax_office || !form.customer_city || !form.customer_address) {
-        return alert("Resmi fatura oluşturabilmek için müşterinin VKN/TCKN, Vergi Dairesi, Şehir ve Açık Adres alanları Uyumsoft tarafından zorunlu tutulmaktadır!");
+        setDialog({ open: true, title: 'Eksik Bilgi', message: "Resmi fatura oluşturabilmek için müşterinin VKN/TCKN, Vergi Dairesi, Şehir ve Açık Adres alanları Uyumsoft tarafından zorunlu tutulmaktadır!", type: 'alert' });
+        return;
       }
     }
 
     setSaving(true);
     try {
+      if (form.currency !== 'TRY' && (!exchangeRate || !exchangeRate.rate)) {
+        throw new Error('Dövizli fatura için kur bilgisi bulunamadı! Lütfen bekleyin veya sayfayı yenileyip kurun yüklendiğinden emin olun.');
+      }
+
       const orderData = {
         ...form,
         subtotal:    Math.round(subtotal   * 100) / 100,
@@ -421,25 +430,40 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
              const r_form = await fetch('/api/invoices-api?action=formalize', { method: 'POST', body: JSON.stringify({ invoiceId: d_create.invoice_id }), headers: {'Content-Type': 'application/json'} });
              const d_form = await r_form.json();
              if (d_form.success) {
-               alert(`Sipariş kaydedildi ve Uyumsoft tarafında fatura taslağı başarıyla oluşturuldu!`);
+               setDialog({ 
+                 open: true, title: 'Başarılı', message: "Sipariş kaydedildi ve Uyumsoft tarafında fatura taslağı başarıyla oluşturuldu!", type: 'alert',
+                 onConfirm: () => { setDialog({ open: false }); onSaved?.(); onClose(); }
+               });
              } else {
-               alert(`Sipariş kaydedildi ancak fatura taslağı Uyumsoft'a iletilemedi: ${d_form.error}`);
+               setDialog({ 
+                 open: true, title: 'Bilgi', message: `Sipariş kaydedildi ancak fatura taslağı iletilemedi: ${d_form.error}`, type: 'alert',
+                 onConfirm: () => { setDialog({ open: false }); onSaved?.(); onClose(); }
+               });
              }
           } else {
-             alert(`Sipariş kaydedildi ancak Fatura sistemi kaydı başarısız oldu: ${d_create.error}`);
+             setDialog({ 
+               open: true, title: 'Hata', message: `Sipariş kaydedildi ancak fatura sistemi kaydı başarısız: ${d_create.error}`, type: 'alert',
+               onConfirm: () => { setDialog({ open: false }); onSaved?.(); onClose(); }
+             });
           }
         } catch (invErr) {
-          alert(`Sipariş kaydedildi ama Uyumsoft taslağı oluşturulurken teknik hata oluştu: ${invErr.message}`);
+          setDialog({ 
+            open: true, title: 'Hata', message: `Sipariş kaydedildi ama teknik hata oluştu: ${invErr.message}`, type: 'alert',
+            onConfirm: () => { setDialog({ open: false }); onSaved?.(); onClose(); }
+          });
         }
+      } else {
+        // Faturasız sipariş
+        onSaved?.();
+        onClose();
       }
-
-       onSaved?.();
-       onClose();
        // Fatura listesini yenilemek için cache temizle
        if (invoiceToggle) {
          try { sessionStorage.removeItem('page_cache_invoices_outbox'); } catch(e){}
        }
-    } catch (e) { alert(e.message); }
+    } catch (e) { 
+        setDialog({ open: true, title: 'Hata', message: e.message, type: 'alert' }); 
+    }
     finally { setSaving(false); }
   };
 
@@ -623,15 +647,34 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
             <SumRow label="Ara Toplam (KDV hariç)" value={fmt(subtotal, form.currency)} />
             <SumRow label="Toplam KDV" value={fmt(taxTotal, form.currency)} color="#60a5fa" />
             
-            {exchangeRate && form.currency !== 'TRY' && (
-              <div className="px-4 py-2 bg-slate-800/50 flex justify-between items-center text-[11px] italic text-slate-400">
-                <span>Döviz Kuru ({exchangeRate.source === 'tcmb' ? 'TCMB' : 'Oto'})</span>
-                <span>1 {form.currency} = {exchangeRate.rate?.toFixed(4)} ₺</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-800/30 p-4 border-y border-slate-700/50">
+              <div className="space-y-1">
+                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Kur Kaynağı & Durum</p>
+                 <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
+                    <TrendingUp size={12} className="text-violet-400" />
+                    {exchangeRate ? (
+                      <span>1 {form.currency} = {exchangeRate.rate?.toFixed(4)} ₺ ({exchangeRate.source === 'tcmb' ? 'TCMB' : 'Manuel'})</span>
+                    ) : (
+                      <span className="text-red-400 italic">Kur bulunamadı!</span>
+                    )}
+                 </div>
               </div>
-            )}
+              {form.currency !== 'TRY' && (
+                <Field label="Kur (Manuel Düzenle)" type="number" 
+                  value={exchangeRate?.rate || ''} 
+                  onChange={v => setExchangeRate({ rate: Number(v), source: 'manual', date: new Date().toISOString() })} 
+                  placeholder="Örn: 32.45" />
+              )}
+            </div>
 
             <div style={{ borderTop: '2px solid rgba(148,163,184,0.15)', background: 'rgba(255,255,255,0.03)' }}>
               <SumRow label="GENEL TOPLAM" value={fmt(grandTotal, form.currency)} bold accent />
+              {form.currency !== 'TRY' && (
+                <div className="px-4 py-2 border-t border-white/5 flex justify-between items-center text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                  <span>Genel Toplam (TL)</span>
+                  <span>{fmt(grandTotal * (exchangeRate?.rate || 1), 'TRY')}</span>
+                </div>
+              )}
             </div>
           </div>
         </SectionCard>
@@ -668,7 +711,10 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
                         <Field label="VKN / TCKN *" value={form.customer_vkntckn} onChange={v => setForm(f => ({ ...f, customer_vkntckn: v }))} placeholder="10 veya 11 hane" />
                         <button onClick={async () => {
                           const vkn = form.customer_vkntckn?.trim();
-                          if (!vkn || vkn.length < 10) return alert('Geçerli bir VKN/TCKN girin.');
+                          if (!vkn || vkn.length < 10) {
+                              setDialog({ open: true, title: 'Geçersiz Giriş', message: 'Lütfen geçerli bir VKN (10 hane) veya TCKN (11 hane) girin.', type: 'alert' });
+                              return;
+                          }
                           setDraftLoading(true);
                           try {
                             const r = await fetch('/api/invoices-api?action=fetchCustomerInfo', { method: 'POST', body: JSON.stringify({ vkn }), headers: {'Content-Type': 'application/json'} });
@@ -683,7 +729,9 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
                                 customer_tax_office: d.data.vergiDairesi || f.customer_tax_office
                               }));
                             } else throw new Error(d.error);
-                          } catch (e) { alert('Sorgu hatası: ' + e.message); }
+                          } catch (e) { 
+                              setDialog({ open: true, title: 'Sorgu Hatası', message: e.message, type: 'alert' }); 
+                          }
                           finally { setDraftLoading(false); }
                         }}
                           disabled={draftLoading || saving}
@@ -891,11 +939,13 @@ export default function Sales() {
           customer_address: parsed.address || matchedCust?.address || q.address || '',
           customer_district: parsed.district || matchedCust?.district || '',
           customer_city: parsed.city || matchedCust?.city || '',
-          customer_phone: matchedCust?.phone || '',
           customer_email: matchedCust?.email || '',
+          delivery_address: parsed.address || matchedCust?.address || q.address || '',
+          billing_address:  parsed.address || matchedCust?.address || q.address || '',
           currency: q.currency || 'TRY',
           notes: q.notes || '',
-          items: newItems
+          items: newItems,
+          quote_id: q.id
         });
         setShowForm(true);
 
@@ -906,7 +956,53 @@ export default function Sales() {
     initFromQuote();
   }, [location.state, customers, allItems]);
 
+  const [dialog, setDialog] = useState({ open: false, title: '', message: '', type: 'confirm', onConfirm: null, loading: false });
+
   const updateStatus = async (orderId, status) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
+
+    if (status === 'cancelled') {
+        setDialog({
+            open: true,
+            title: 'Siparişi İptal Et',
+            message: `${order.order_number} numaralı siparişi iptal etmek istediğinize emin misiniz?\n\n` +
+                     (order.quote_id ? "• Bağlı olduğu TEKLİF reddedildi olarak işaretlenecek.\n" : "") +
+                     "• Varsa Uyumsoft üzerindeki taslak fatura SİLİNECEK.\n" +
+                     "• Sipariş kaydı 'İptal' durumuna çekilecek.",
+            type: 'danger',
+            onConfirm: async () => {
+                setDialog(d => ({ ...d, loading: true }));
+                try {
+                    // 1. Siparişi iptal et
+                    const patch = { status: 'cancelled', completed_at: null };
+                    await supabase.from('orders').update(patch).eq('id', orderId);
+
+                    // 2. Bağlı teklif varsa reddet
+                    if (order.quote_id) {
+                        await supabase.from('quotes').update({ status: 'rejected' }).eq('id', order.quote_id);
+                    }
+
+                    // 3. Taslak fatura varsa bul ve sil
+                    // order_number genelde invoice cari_name içinde veya mapping'i vardır
+                    // en garanti yol invoices tablosunda aramak (cari_name'den veya sync'ten)
+                    const { data: inv } = await supabase.from('invoices').select('invoice_id').ilike('cari_name', `%${order.customer_name}%`).eq('status', 'Draft').limit(1).single();
+                    if (inv?.invoice_id) {
+                        await fetch('/api/invoices-api?action=delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invoiceId: inv.invoice_id }) });
+                        try { sessionStorage.removeItem('page_cache_invoices_outbox'); } catch(e){}
+                    }
+
+                    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...patch } : o));
+                    showToast('Sipariş ve bağlı kayıtlar iptal edildi ✓');
+                    setDialog({ open: false });
+                } catch (err) {
+                    setDialog({ open: true, title: 'Hata', message: 'İptal işlemi başarısız: ' + err.message, type: 'alert' });
+                }
+            }
+        });
+        return;
+    }
+
     const patch = status === 'completed' ? { status, completed_at: new Date().toISOString() } : { status };
     await supabase.from('orders').update(patch).eq('id', orderId);
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...patch } : o));
@@ -1075,6 +1171,13 @@ export default function Sales() {
           </motion.div>
         )}
       </AnimatePresence>
+ 
+      {/* Custom Dialogs */}
+      <CustomDialog 
+        {...dialog} 
+        onClose={() => setDialog({ ...dialog, open: false })}
+        onConfirm={dialog.onConfirm ? dialog.onConfirm : () => setDialog({ ...dialog, open: false })}
+      />
     </>
   );
 }

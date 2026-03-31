@@ -8,6 +8,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import QuoteForm, { QuotePreview } from './QuoteForm';
+import CustomDialog from '../components/CustomDialog';
 
 const STATUS = {
   draft:    { label: 'Taslak',        color: '#94a3b8', icon: Clock },
@@ -56,6 +57,7 @@ export default function Quotes() {
   const [previewQ, setPreviewQ] = useState(null);
   const [acceptModal, setAcceptModal] = useState(null);
   const [toast, setToast]       = useState(null);
+  const [dialog, setDialog]     = useState({ open: false, title: '', message: '', type: 'confirm', onConfirm: null, loading: false });
 
   const showToast = (msg, type = 'success') => setToast({ msg, type });
 
@@ -71,7 +73,9 @@ export default function Quotes() {
       setAcceptModal(null);
       // Faturayı otomatik oluşturmak yerine satış ekranına yönlendiriyoruz, kullanıcı orada karar verir.
       navigate('/sales', { state: { createFromQuote: q, quoteMsg: 'Teklif onaylandı ve Sipariş formuna yansıtıldı.' } });
-    } catch (e) { alert('Hata: ' + e.message); }
+    } catch (e) { 
+      setDialog({ open: true, title: 'Hata', message: 'İşlem sırasında hata oluştu: ' + e.message, type: 'alert' });
+    }
   };
 
   const load = useCallback(async () => {
@@ -88,10 +92,23 @@ export default function Quotes() {
   useEffect(() => { load(); }, [load]);
 
   const deleteQuote = async (id, no) => {
-    if (!window.confirm(`"${no}" silinsin mi?`)) return;
-    await fetch(`/api/quotes?id=${id}`, { method: 'DELETE' });
-    showToast('Teklif silindi');
-    load();
+    setDialog({
+      open: true,
+      title: 'Teklifi Sil',
+      message: `"${no}" numaralı teklifi silmek istediğinize emin misiniz? Bu işlem geri alınamaz.`,
+      type: 'danger',
+      onConfirm: async () => {
+        setDialog(d => ({ ...d, loading: true }));
+        try {
+          await fetch(`/api/quotes?id=${id}`, { method: 'DELETE' });
+          showToast('Teklif silindi');
+          load();
+          setDialog({ open: false });
+        } catch (e) {
+          setDialog({ open: true, title: 'Hata', message: 'Silme başarısız: ' + e.message, type: 'alert' });
+        }
+      }
+    });
   };
 
   const filtered = quotes.filter(q => {
@@ -311,6 +328,12 @@ export default function Quotes() {
       <AnimatePresence>
         {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
       </AnimatePresence>
+
+      <CustomDialog 
+        {...dialog} 
+        onClose={() => setDialog({ ...dialog, open: false })}
+        onConfirm={dialog.onConfirm ? dialog.onConfirm : () => setDialog({ ...dialog, open: false })}
+      />
     </>
   );
 }
