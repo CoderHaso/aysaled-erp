@@ -50,26 +50,48 @@ async function generateOrderNumber(customerName) {
 // Adresten ilçe/şehir ayıklama (Örn: (ÇİĞLİ) ... , İZMİR)
 function parseTurkishAddress(addr) {
   if (!addr) return { address: '', district: '', city: '' };
-  let address = addr.trim();
+  
+  // Normalize whitespace and remove multiple commas
+  let fullRaw = addr.replace(/\s+/g, ' ').replace(/,+/g, ',').trim();
+  let address = fullRaw;
   let district = '';
   let city = '';
 
-  // (İLÇE) başa veya sona gelebilir
-  const distMatch = address.match(/^\(([^)]+)\)\s*/) || address.match(/\s*\(([^)]+)\)$/);
+  // 1. Extract Parenthesized District (usually at start)
+  // Matches: (ÇİĞLİ) AOSB... or AOSB... (ÇİĞLİ)
+  const distRegex = /\(([^)]+)\)/;
+  const distMatch = address.match(distRegex);
   if (distMatch) {
-    district = distMatch[1].trim();
+    district = distMatch[1].trim().toUpperCase();
     address = address.replace(distMatch[0], '').trim();
   }
 
-  // Virgülden sonra genelde şehir gelir
-  const parts = address.split(',');
+  // 2. Extract City from end (after comma or last word if it looks like a city)
+  const parts = address.split(',').map(s => s.trim());
   if (parts.length > 1) {
-    const last = parts.pop().trim();
-    if (last.length < 15 && last === last.toUpperCase()) { // Şehir genelde büyük harf ve kısa
-      city = last;
+    const potentialCity = parts[parts.length - 1].toUpperCase();
+    // Common Turkish cities list for better matching could go here, but checking for uppercase + length
+    if (potentialCity.length < 20) {
+      city = potentialCity;
+      parts.pop(); // remove city from address parts
       address = parts.join(',').trim();
     }
   }
+
+  // 3. Fallback City Detection if no comma
+  if (!city) {
+    const words = address.split(' ');
+    const lastWord = words[words.length - 1].toUpperCase();
+    if (lastWord.length > 2 && lastWord.length < 15 && words.length > 2) {
+       // Simple heuristic: if last word is uppercase and we have enough other words
+       city = lastWord;
+       words.pop();
+       address = words.join(' ').trim();
+    }
+  }
+
+  // Final cleanup: remove trailing/leading commas/dots
+  address = address.replace(/^[,\.\s]+|[,\.\s]+$/g, '');
 
   return { address, district, city };
 }
@@ -306,8 +328,9 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
           };
 
   useEffect(() => {
-    fetchExchangeRate(form.currency, form.due_date);
-  }, [form.currency, form.due_date]);
+    // Kur bilgisini daima bugün veya düzenleme tarihine göre çek (vade tarihine göre değil!)
+    fetchExchangeRate(form.currency, today());
+  }, [form.currency]);
 
   // Müşteri seçince: sipariş no üret + adres/iletişim auto-fill
   const selectCustomer = async (cust) => {
@@ -367,22 +390,17 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
         throw new Error('Dövizli fatura için kur bilgisi bulunamadı! Lütfen bekleyin veya sayfayı yenileyip kurun yüklendiğinden emin olun.');
       }
 
-      const orderData = {
-        ...form,
+      // SANITIZE: Remove explicitly unsupported fields in 'orders' schema
+      const { 
+        customer_address, customer_district, customer_city,
+        customer_vkntckn, customer_tax_office, customer_phone,
+        customer_email, ...orderData 
+      } = { ...form,
         subtotal:    Math.round(subtotal   * 100) / 100,
         tax_total:   Math.round(taxTotal   * 100) / 100,
         grand_total: Math.round(grandTotal * 100) / 100,
         due_date: form.due_date ? new Date(form.due_date).toISOString() : null,
       };
-
-      // SANITIZE: Remove explicitly unsupported fields in 'orders' schema
-      delete orderData.customer_address;
-      delete orderData.customer_district;
-      delete orderData.customer_city;
-      delete orderData.customer_vkntckn;
-      delete orderData.customer_tax_office;
-      delete orderData.customer_phone;
-      delete orderData.customer_email;
 
       let orderId;
       if (isEdit) {
@@ -469,12 +487,12 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
 
   return (
     <>
-    <motion.div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+    <motion.div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/50 backdrop-blur-sm"
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       {/* Background overlay click-to-close */}
       <div className="absolute inset-0 z-0" onClick={onClose} />
       
-      <motion.div className="relative w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-3xl shadow-2xl z-10"
+      <motion.div className="relative w-full max-w-5xl max-h-[96vh] overflow-y-auto rounded-3xl shadow-2xl z-10"
         style={{ background: '#0f172a', border: '1px solid rgba(148,163,184,0.15)' }}
         initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}>
 

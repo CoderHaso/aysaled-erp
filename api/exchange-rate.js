@@ -1,10 +1,3 @@
-/**
- * /api/exchange-rate.js
- * TCMB (Türkiye Cumhuriyet Merkez Bankası) döviz kuru servisi.
- * 
- * GET /api/exchange-rate?currency=USD       → Güncel kur
- * GET /api/exchange-rate?currency=USD&date=2024-01-15  → Tarihe göre kur
- */
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -24,57 +17,77 @@ export default async function handler(req, res) {
   }
 
   try {
-    // TCMB XML feed — güncel kurlar
-    // today.xml: günlük kurlar, belirli tarih: /YYYY/MM/DDMMYYYY.xml
-    let tcmbUrl;
-    if (dateStr) {
-      const d = new Date(dateStr);
-      const yy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      tcmbUrl = `https://www.tcmb.gov.tr/kurlar/${yy}${mm}/${dd}${mm}${yy}.xml`;
-    } else {
-      tcmbUrl = 'https://www.tcmb.gov.tr/kurlar/today.xml';
-    }
+    let xml = '';
+    let usedTcmbUrl = '';
+    let actualDateUsed = '';
 
-    const response = await fetch(tcmbUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 A-ERP/1.0' }
-    });
-
-    if (!response.ok) {
-      // Hafta sonu/tatil günlerinde today.xml boş olabilir, bir önceki iş gününü dene
-      if (!dateStr) {
-        // Alternatif: TCMB JSON API
-        const altRes = await fetch('https://api.genelpara.com/embed/doviz.json');
-        if (altRes.ok) {
-          const altData = await altRes.json();
-          const currMap = { USD: 'USD', EUR: 'EUR', GBP: 'GBP' };
-          const key = currMap[currency];
-          if (key && altData[key]) {
-            return res.json({
-              success: true,
-              currency,
-              rate: parseFloat(altData[key].satis) || 0,
-              buyRate: parseFloat(altData[key].alis) || 0,
-              source: 'genelpara_fallback',
-              date: new Date().toISOString().slice(0, 10)
-            });
-          }
-        }
+    const tryFetch = async (targetDate) => {
+      let tcmbUrl;
+      const trOffset = 3 * 60 * 60 * 1000; // Turkey is UTC+3
+      
+      if (targetDate) {
+        const yy = targetDate.getFullYear();
+        const mm = String(targetDate.getMonth() + 1).padStart(2, '0');
+        const dd = String(targetDate.getDate()).padStart(2, '0');
+        tcmbUrl = `https://www.tcmb.gov.tr/kurlar/${yy}${mm}/${dd}${mm}${yy}.xml`;
+        actualDateUsed = `${yy}-${mm}-${dd}`;
+      } else {
+        // "Today" in Turkey time
+        const now = new Date();
+        const nowTR = new Date(now.getTime() + trOffset);
+        tcmbUrl = 'https://www.tcmb.gov.tr/kurlar/today.xml';
+        actualDateUsed = nowTR.toISOString().slice(0, 10);
       }
-      throw new Error(`TCMB yanıtı başarısız: ${response.status}`);
-    }
 
-    const xml = await response.text();
+      console.log(`[exchange-rate] Fetching: ${tcmbUrl}`);
+      const response = await fetch(tcmbUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 A-ERP/1.0' }
+      });
 
-    // XML'den kur çekme (basit regex — XML parser gerektirmez)
-    const currencyCodeMap = {
-      USD: 'US DOLLAR', EUR: 'EURO', GBP: 'BRITISH POUND', CHF: 'SWISS FRANC',
-      JPY: 'JAPANESE YEN', CAD: 'CANADIAN DOLLAR', AUD: 'AUSTRALIAN DOLLAR',
-      SEK: 'SWEDISH KRONA', NOK: 'NORWEGIAN KRONE', DKK: 'DANISH KRONE',
-      SAR: 'SAUDI RIYAL', KWD: 'KUWAITI DINAR', RUB: 'RUSSIAN ROUBLE', CNY: 'CHINESE RENMINBI'
+      if (response.ok) {
+        usedTcmbUrl = tcmbUrl;
+        return await response.text();
+      }
+      if (response.status === 404) return null;
+      throw new Error(`TCMB API error: ${response.status}`);
     };
 
+    if (dateStr) {
+      let currentTryDate = new Date(dateStr);
+      // Hafta sonu veya tatil olabilir, 5 gün geriye kadar dene
+      for (let i = 0; i < 5; i++) {
+        xml = await tryFetch(currentTryDate);
+        if (xml) break;
+        // Bir gün geriye git
+        currentTryDate.setDate(currentTryDate.getDate() - 1);
+      }
+    } else {
+      xml = await tryFetch(null);
+    }
+
+    if (!xml) {
+      // Hala bulunamadıysa (veya dateStr yokken failure aldıysak) fallback servisleri dene
+      const altRes = await fetch('https://api.genelpara.com/embed/doviz.json');
+      if (altRes.ok) {
+        const altData = await altRes.json();
+        const currMap = { USD: 'USD', EUR: 'EUR', GBP: 'GBP' };
+        const key = currMap[currency];
+        if (key && altData[key]) {
+          return res.json({
+            success: true,
+            currency,
+            rate: parseFloat(altData[key].satis) || 0,
+            buyRate: parseFloat(altData[key].alis) || 0,
+            source: 'genelpara_fallback',
+            requestedDate: dateStr || 'today',
+            date: new Date().toISOString().slice(0, 10)
+          });
+        }
+      }
+      throw new Error(`TCMB verisi bulunamadı (Son 5 gün denendi).`);
+    }
+
+    // XML'den kur çekme (basit regex — XML parser gerektirmez)
     // Döviz koduna göre Currency bloğunu bul
     const crossCodeRegex = new RegExp(`<Currency\\s+CrossOrder="\\d+"\\s+Kod="${currency}"[^>]*>([\\s\\S]*?)</Currency>`);
     const match = xml.match(crossCodeRegex);
@@ -88,7 +101,8 @@ export default async function handler(req, res) {
           currency,
           rate: parseFloat(altMatch[1].replace(',', '.')) || 0,
           source: 'tcmb_alt',
-          date: dateStr || new Date().toISOString().slice(0, 10)
+          requestedDate: dateStr || 'today',
+          date: actualDateUsed
         });
       }
       throw new Error(`${currency} kuru TCMB verisinde bulunamadı`);
@@ -103,19 +117,21 @@ export default async function handler(req, res) {
     const sellRate = parseFloat((forexSelling || '0').replace(',', '.'));
     const buyRate = parseFloat((forexBuying || '0').replace(',', '.'));
 
-    // Tarih bilgisi
+    // XML içindeki gerçek tarih
     const dateMatch = xml.match(/<Tarih_Date\s+Tarih="([\d.]+)"/);
-    const tcmbDate = dateMatch ? dateMatch[1] : (dateStr || new Date().toISOString().slice(0, 10));
+    const tcmbDate = dateMatch ? dateMatch[1] : actualDateUsed;
 
     return res.json({
       success: true,
       currency,
-      rate: sellRate,        // Satış kuru (fatura için bu kullanılır)
-      buyRate,               // Alış kuru
+      rate: sellRate,
+      buyRate,
       banknoteSelling: parseFloat((banknoteSelling || '0').replace(',', '.')) || null,
       banknoteBuying: parseFloat((banknoteBuying || '0').replace(',', '.')) || null,
       source: 'tcmb',
-      date: tcmbDate
+      requestedDate: dateStr || 'today',
+      date: tcmbDate,
+      actualDateUsed
     });
   } catch (err) {
     console.error('[exchange-rate]', err.message);

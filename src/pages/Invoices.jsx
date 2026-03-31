@@ -210,7 +210,7 @@ function InvoiceDetailDrawer({ invoice, isInbox, onClose, onLineItemsLoaded }) {
             style={{ background: 'rgba(12,21,38,0.97)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(148,163,184,0.08)' }}>
             <div>
               <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-0.5">
-              {isInbox ? 'Gider Faturası' : 'Gelir Faturası'}
+              {isInbox ? 'Gelen Fatura' : 'Giden Fatura'}
               </p>
               <h2 className="text-base font-bold text-slate-100 font-mono">{invoice.invoice_id}</h2>
             </div>
@@ -398,7 +398,7 @@ export default function Invoices({ type = 'inbox' }) {
 
   const isInbox = type === 'inbox';
   const Icon    = isInbox ? FileDown : FileUp;
-  const label   = isInbox ? 'Gelen (Alış)' : 'Giden (Satış)';
+  const label   = isInbox ? 'Gelen' : 'Giden';
 
   const c = {
     card:   isDark ? 'rgba(30,41,59,0.7)' : '#ffffff',
@@ -630,8 +630,8 @@ export default function Invoices({ type = 'inbox' }) {
 
   const queryCustomerInfo = async () => {
     const vkn = createForm.vkntckn?.trim();
-    if (!vkn) return alert('Lütfen sorgulamak için bir VKN/TCKN girin.');
-    if (vkn.length < 10) return alert('Geçerli bir VKN (10) veya TCKN (11) giriniz.');
+    if (!vkn) return setDialog({ open: true, title: 'Uyarı', message: 'Lütfen sorgulamak için bir VKN/TCKN girin.', type: 'alert' });
+    if (vkn.length < 10) return setDialog({ open: true, title: 'Uyarı', message: 'Geçerli bir VKN (10) veya TCKN (11) giriniz.', type: 'alert' });
     
     setQueryingVkn(true);
     try {
@@ -654,37 +654,47 @@ export default function Invoices({ type = 'inbox' }) {
       // Optional: Inform user
       // alert('Firma bilgileri başarıyla getirildi!');
     } catch (err) {
-      alert('Sorgulama başarısız: ' + err.message);
+      setDialog({ open: true, title: 'Hata', message: 'Sorgulama başarısız: ' + err.message, type: 'alert' });
     } finally {
       setQueryingVkn(false);
     }
   };
 
   const handleCreate = async () => {
-    if (!createForm.cari_name) return alert('Cari adı zorunlu');
+    if (!createForm.cari_name) return setDialog({ open: true, title: 'Eksik Bilgi', message: 'Cari adı zorunlu', type: 'alert' });
     if (createType === 'outbox' && (!createForm.city || !createForm.district || !createForm.address || !createForm.tax_office)) {
-      return alert('Gelir faturası için Ülke(TR), Şehir, İlçe, Adres ve Vergi Dairesi alanları Uyumsoft tarafından zorunlu tutulmaktadır.');
+      return setDialog({ open: true, title: 'Eksik Bilgi', message: 'Gelen faturası için Ülke(TR), Şehir, İlçe, Adres ve Vergi Dairesi alanları Uyumsoft tarafından zorunlu tutulmaktadır.', type: 'alert' });
     }
-    if (!createForm.lines.some(l => l.name)) return alert('En az 1 kalem giriniz');
-    if (createForm.currency !== 'TRY' && !createForm.exchange_rate) return alert('Döviz kuru gerekli');
+    if (!createForm.lines.some(l => l.name)) return setDialog({ open: true, title: 'Eksik Bilgi', message: 'En az 1 kalem giriniz', type: 'alert' });
+    if (createForm.currency !== 'TRY' && !createForm.exchange_rate) return setDialog({ open: true, title: 'Eksik Bilgi', message: 'Döviz kuru gerekli', type: 'alert' });
 
     // Eksik Müşteri Bilgisi Güncelleme Teklifi
     if (createType === 'outbox' && createForm.customer_id) {
       const orig = entities.find(e => e.id === createForm.customer_id);
       if (orig && (!orig.city || !orig.address || !orig.tax_office)) {
-        if (confirm("Girdiğiniz adres ve vergi dairesi bilgileri bu müşterinin veritabanı kaydında eksik.\nSonraki faturalarda otomatik gelmesi için müşteri kaydını bu bilgilerle güncelleyelim mi?")) {
-          // 'district' sütunu bulunmama ihtimaline karşı address alanına katıyoruz
-          const fullAddress = createForm.district ? `(${createForm.district}) ${createForm.address}` : createForm.address;
-          await supabase.from('customers').update({ 
-            city: createForm.city, 
-            address: fullAddress, 
-            tax_office: createForm.tax_office 
-          }).eq('id', createForm.customer_id);
-        }
+        setDialog({
+          open: true,
+          title: 'Müşteri Bilgilerini Güncelle?',
+          message: "Girdiğiniz adres ve vergi dairesi bilgileri bu müşterinin veritabanı kaydında eksik. Sonraki faturalarda otomatik gelmesi için müşteri kaydını bu bilgilerle güncelleyelim mi?",
+          type: 'confirm',
+          onConfirm: async () => {
+            const fullAddress = createForm.district ? `(${createForm.district}) ${createForm.address}` : createForm.address;
+            await supabase.from('customers').update({ 
+               city: createForm.city, 
+               address: fullAddress, 
+               tax_office: createForm.tax_office 
+            }).eq('id', createForm.customer_id);
+            setDialog({ open: false });
+            continueCreate();
+          }
+        });
+        return;
       }
     }
+    continueCreate();
+  };
 
-    setCreating(true);
+  const continueCreate = async () => {
     try {
       const body = {
         ...createForm,
@@ -699,43 +709,59 @@ export default function Invoices({ type = 'inbox' }) {
       invoiceCache.delete(type);
       pageCache.invalidate(`invoices_${type}`);
       await fetchInvoices(true);
-      alert(`Fatura oluşturuldu: ${data.invoice_id}`);
-    } catch (err) { alert('Hata: ' + err.message); }
+      setDialog({ open: true, title: 'Başarılı', message: `Fatura oluşturuldu: ${data.invoice_id}`, type: 'alert' });
+    } catch (err) { setDialog({ open: true, title: 'Hata', message: 'Hata: ' + err.message, type: 'alert' }); }
     finally { setCreating(false); }
   };
 
   // Uyumsoft'a Taslak Gönder (SaveAsDraft)
   const handleFormalize = async (invoiceId) => {
-    if (!confirm(`"${invoiceId}" faturasını Uyumsoft'a taslak olarak göndermek istediğinizden emin misiniz?`)) return;
-    setFormalizing(invoiceId);
-    try {
-      const r = await fetch('/api/invoices-api?action=formalize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invoiceId }) });
-      const data = await r.json();
-      if (!data.success) throw new Error(data.error + (data.debug ? `\n\n[Sistem Mesajı: ${data.debug}]` : ''));
-      invoiceCache.delete(type);
-      pageCache.invalidate(`invoices_${type}`);
-      await fetchInvoices(true);
-      alert(data.message);
-    } catch (err) { alert('Hata: ' + err.message); }
-    finally { setFormalizing(null); }
+    setDialog({
+      open: true,
+      title: 'Taslağı Gönder',
+      message: `"${invoiceId}" faturasını Uyumsoft'a taslak olarak göndermek istediğinizden emin misiniz?`,
+      type: 'confirm',
+      onConfirm: async () => {
+        setDialog(d => ({ ...d, loading: true }));
+        try {
+          const r = await fetch('/api/invoices-api?action=formalize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invoiceId }) });
+          const data = await r.json();
+          if (!data.success) throw new Error(data.error + (data.debug ? `\n\n[Sistem Mesajı: ${data.debug}]` : ''));
+          invoiceCache.delete(type);
+          pageCache.invalidate(`invoices_${type}`);
+          await fetchInvoices(true);
+          setDialog({ open: true, title: 'Başarılı', message: data.message, type: 'alert' });
+        } catch (err) { 
+          setDialog({ open: true, title: 'Hata', message: 'Hata: ' + err.message, type: 'alert' }); 
+        }
+        finally { setFormalizing(null); }
+      }
+    });
   };
 
   // Uyumsoft'taki taslağı resmileştir (SendDraft)
   const handleSendDraft = async (invoiceId) => {
-    if (!confirm(`"${invoiceId}" faturasını resmileştirmek istediğinizden emin misiniz? Bu işlem geri alınamaz!`)) return;
-    setFormalizing(invoiceId);
-    try {
-      const r = await fetch('/api/invoices-api?action=sendDraft', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invoiceId }) });
-      const data = await r.json();
-      if (!data.success) throw new Error(data.error);
-      invoiceCache.delete(type);
-      pageCache.invalidate(`invoices_${type}`);
-      await fetchInvoices(true);
-      setDialog({ open: true, title: 'Başarılı', message: data.message, type: 'alert' });
-    } catch (err) { 
-      setDialog({ open: true, title: 'Hata', message: 'Hata: ' + err.message, type: 'alert' });
-    }
-    finally { setFormalizing(null); }
+    setDialog({
+      open: true,
+      title: 'Resmileştir',
+      message: `"${invoiceId}" faturasını resmileştirmek istediğinizden emin misiniz? Bu işlem geri alınamaz!`,
+      type: 'confirm',
+      onConfirm: async () => {
+        setDialog(d => ({ ...d, loading: true }));
+        try {
+          const r = await fetch('/api/invoices-api?action=sendDraft', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invoiceId }) });
+          const data = await r.json();
+          if (!data.success) throw new Error(data.error);
+          invoiceCache.delete(type);
+          pageCache.invalidate(`invoices_${type}`);
+          await fetchInvoices(true);
+          setDialog({ open: true, title: 'Başarılı', message: data.message, type: 'alert' });
+        } catch (err) { 
+          setDialog({ open: true, title: 'Hata', message: 'Hata: ' + err.message, type: 'alert' });
+        }
+        finally { setFormalizing(null); }
+      }
+    });
   };
 
   const handleDeleteDraft = async (inv) => {
@@ -786,7 +812,7 @@ export default function Invoices({ type = 'inbox' }) {
             </div>
             <div>
               <h1 className="text-2xl font-bold" style={{ color: c.text }}>
-                {isInbox ? 'Gelen (Alış) Faturaları' : 'Giden (Satış) Faturaları'}
+                {isInbox ? 'Gelen Faturalar' : 'Giden Faturalar'}
               </h1>
               <p className="text-sm mt-0.5" style={{ color: c.muted }}>
                 {invoices.length} kayıt · Uyumsoft e-Fatura

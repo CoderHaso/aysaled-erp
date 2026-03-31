@@ -20,6 +20,26 @@ const currSymbol = (c) => {
   return '₺';
 };
 
+const parseTurkishAddress = (str) => {
+    if (!str) return { city: '', district: '', address: '' };
+    const s = str.trim();
+    // AOSB MAH. 10036 SK., 35620 Çiğli/İzmir formatına uygun
+    // Veya (ÇİĞLİ) AOSB MAH. ... formatına uygun
+    let city = '', district = '', address = s;
+    const parts = s.split(/[\/,]/).map(p => p.trim());
+    if (parts.length >= 2) {
+      city = parts[parts.length - 1];
+      district = parts[parts.length - 2];
+    }
+    // Parantez içi ilçe kontrolü: (ÇİĞLİ) ...
+    const match = s.match(/^\(([^)]+)\)\s*(.*)/);
+    if (match) {
+        district = match[1];
+        address = match[2];
+    }
+    return { city, district, address };
+};
+
 function emptyLine() {
   return {
     id: Math.random().toString(36).slice(2),
@@ -40,8 +60,9 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, onAddN
     ? allItems.filter(i => {
         const i_name = (i.name || i.item_name || '').toLowerCase();
         const i_code = (i.item_code || '').toLowerCase();
+        const i_desc = (i.description || '').toLowerCase();
         const search = q.toLowerCase();
-        return i_name.includes(search) || i_code.includes(search);
+        return i_name.includes(search) || i_code.includes(search) || i_desc.includes(search);
       }).slice(0, 15)
     : [];
 
@@ -196,8 +217,8 @@ export function QuotePreview({ quote, onClose, colWidths = {}, rowHeight = 58 })
   const grandTotal = subtotal + vatAmt;
 
   return (
-    <div className="fixed inset-0 z-[500] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.75)' }}>
-      <div className="bg-white w-full max-w-4xl max-h-[97vh] overflow-auto rounded-2xl shadow-2xl">
+    <div className="fixed inset-0 z-[500] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.75)' }}>
+      <div className="bg-white w-full max-w-5xl max-h-[97vh] overflow-auto rounded-2xl shadow-2xl">
 
         {/* Araç çubuğu */}
         <div className="no-print flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-gray-50">
@@ -643,7 +664,7 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
       const { data } = await supabase.from('media').select('*').order('created_at', { ascending: false });
       setMediaItems(data || []);
     } catch (e) {
-      alert('Yükleme hatası: ' + e.message);
+      setDialog({ open: true, title: 'Hata', message: 'Yükleme hatası: ' + e.message, type: 'alert' });
     } finally { setUploadingImg(false); }
   };
 
@@ -658,7 +679,7 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
       const data   = await res.json();
       if (!data.success) throw new Error(data.error);
       onSaved?.(data.quote);
-    } catch (e) { alert(e.message); }
+    } catch (e) { setDialog({ open: true, title: 'Hata', message: 'Kaydetme hatası: ' + e.message, type: 'alert' }); }
     finally { setSaving(false); }
   };
 
@@ -908,6 +929,7 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
                 {lines.map((line, i) => (
                   <QuoteLine key={line.id} line={line} idx={i} allItems={allItems}
                     onUpdate={updateLine} onDelete={deleteLine} onAddImage={openImageModal}
+                    onAddNewItem={(q) => setQuickItemForm({ lineId: line.id, name: q })}
                     rowHeight={rowHeight} imgWidth={colWidths.img} />
                 ))}
               </tbody>
@@ -1101,6 +1123,37 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
               <div>
                 <label className="text-xs font-semibold text-gray-500 mb-1 block">E-Posta</label>
                 <input type="email" value={quickEntityForm.email || ''} onChange={e => setQuickEntityForm(p => ({...p, email: e.target.value}))} className={fieldCls} />
+              </div>
+              <div className="relative">
+                <label className="text-xs font-semibold text-gray-500 mb-1 block">VKN / TCKN</label>
+                <div className="relative">
+                    <input value={quickEntityForm.vkntckn || ''} onChange={e => setQuickEntityForm(p => ({...p, vkntckn: e.target.value}))} className={fieldCls} placeholder="10-11 hane" />
+                    <button onClick={async () => {
+                      const vkn = quickEntityForm.vkntckn?.trim();
+                      if (!vkn || vkn.length < 10) {
+                        setDialog({ open: true, title: 'Geçersiz Giriş', message: 'Lütfen geçerli bir VKN/TCKN girin.', type: 'alert' });
+                        return;
+                      }
+                      setSaving(true);
+                      try {
+                        const r = await fetch('/api/invoices-api?action=fetchCustomerInfo', { method: 'POST', body: JSON.stringify({ vkn }), headers: {'Content-Type': 'application/json'} });
+                        const d = await r.json();
+                        if (d.success) {
+                          const parsed = parseTurkishAddress(d.data.adres);
+                          setQuickEntityForm(p => ({
+                            ...p,
+                            name: d.data.unvan || p.name,
+                            city: d.data.sehir || p.city,
+                            address: parsed.address || d.data.adres || p.address
+                          }));
+                        } else throw new Error(d.error);
+                      } catch (e) {
+                          setDialog({ open: true, title: 'Sorgu Hatası', message: e.message, type: 'alert' });
+                      } finally { setSaving(false); }
+                    }} className="absolute right-1.5 top-1.5 px-2 py-1 rounded bg-indigo-600 text-[10px] font-bold text-white hover:bg-indigo-700 transition-colors">
+                        Sorgula
+                    </button>
+                </div>
               </div>
               <div>
                 <label className="text-xs font-semibold text-gray-500 mb-1 block">Adres / Şehir</label>
