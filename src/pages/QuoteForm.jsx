@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback, createPortal } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Image as ImageIcon, Printer, Save, X, Package,
