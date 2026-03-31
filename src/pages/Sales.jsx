@@ -1036,13 +1036,26 @@ export default function Sales() {
                         await supabase.from('quotes').update({ status: 'rejected' }).eq('id', order.quote_id);
                     }
 
-                    // 3. Taslak fatura varsa bul ve sil
-                    // order_number genelde invoice cari_name içinde veya mapping'i vardır
-                    // en garanti yol invoices tablosunda aramak (cari_name'den veya sync'ten)
-                    const { data: inv } = await supabase.from('invoices').select('invoice_id').ilike('cari_name', `%${order.customer_name}%`).eq('status', 'Draft').limit(1).single();
-                    if (inv?.invoice_id) {
-                        await fetch('/api/invoices-api?action=delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invoiceId: inv.invoice_id }) });
-                        try { sessionStorage.removeItem('page_cache_invoices_outbox'); } catch(e){}
+                    // 3. Taslak fatura varsa bul ve iptal et (Uyumsoft CancelDraft)
+                    try {
+                        const { data: inv } = await supabase
+                            .from('invoices')
+                            .select('invoice_id')
+                            .ilike('cari_name', `%${order.customer_name}%`)
+                            .eq('status', 'Draft')
+                            .limit(1)
+                            .maybeSingle(); // 0 satır gelince null döner, hata fırlatmaz
+                        if (inv?.invoice_id) {
+                            await fetch('/api/invoices-api?action=cancelDraft', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ invoiceIds: [inv.invoice_id] })
+                            });
+                            try { sessionStorage.removeItem('page_cache_invoices_outbox'); } catch(e){}
+                        }
+                    } catch (_invErr) {
+                        // Taslak fatura silme başarısız olsa da siparişi iptal etmeye devam et
+                        console.warn('[cancel] Draft invoice lookup/cancel failed:', _invErr);
                     }
 
                     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...patch } : o));
