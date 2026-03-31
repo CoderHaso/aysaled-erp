@@ -473,8 +473,10 @@ export default function Invoices({ type = 'inbox' }) {
       invoiceCache.delete(type);
       pageCache.invalidate(`invoices_${type}`);
       await fetchInvoices(true);
-      alert(data.message);
-    } catch (err) { setError(err.message); }
+      setDialog({ open: true, title: 'Başarılı', message: data.message, type: 'alert' });
+    } catch (err) { 
+      setDialog({ open: true, title: 'Hata', message: 'Eşitleme başarısız: ' + err.message, type: 'alert' });
+    }
     finally { setSyncing(false); }
   };
 
@@ -547,7 +549,9 @@ export default function Invoices({ type = 'inbox' }) {
       if (error) throw error;
       setEntities(prev => [...prev, data]);
       selectEntity(data);
-    } catch (e) { alert('Kayıt oluşturulamadı: ' + e.message); }
+    } catch (e) { 
+      setDialog({ open: true, title: 'Hata', message: 'Kayıt oluşturulamadı: ' + e.message, type: 'alert' });
+    }
     finally { setQuickEntitySaving(false); }
   };
 
@@ -574,7 +578,9 @@ export default function Invoices({ type = 'inbox' }) {
       setQuickItemForm(null);
       setItemOpenId(null);
       setItemSearch(p => ({ ...p, [quickItemForm.lineId]: '' }));
-    } catch (e) { alert('Stok kalemi oluşturulamadı: ' + e.message); }
+    } catch (e) { 
+      setDialog({ open: true, title: 'Hata', message: 'Stok kalemi oluşturulamadı: ' + e.message, type: 'alert' });
+    }
     finally { setQuickItemSaving(false); }
   };
 
@@ -725,8 +731,10 @@ export default function Invoices({ type = 'inbox' }) {
       invoiceCache.delete(type);
       pageCache.invalidate(`invoices_${type}`);
       await fetchInvoices(true);
-      alert(data.message);
-    } catch (err) { alert('Hata: ' + err.message); }
+      setDialog({ open: true, title: 'Başarılı', message: data.message, type: 'alert' });
+    } catch (err) { 
+      setDialog({ open: true, title: 'Hata', message: 'Hata: ' + err.message, type: 'alert' });
+    }
     finally { setFormalizing(null); }
   };
 

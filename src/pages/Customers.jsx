@@ -9,6 +9,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import { useNavigate } from 'react-router-dom';
 import { pageCache } from '../lib/pageCache';
+import CustomDialog from '../components/CustomDialog';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n) => n != null ? Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2 }) : '0,00';
@@ -27,7 +28,7 @@ function Toast({ msg, type, onClose }) {
 }
 
 // ─── Detail Drawer ─────────────────────────────────────────────────────────
-function CustomerDrawer({ customer, onClose, onSaved }) {
+function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
   const { currentColor } = useTheme();
   const navigate = useNavigate();
   const [invoices, setInvoices]       = useState([]);
@@ -61,7 +62,9 @@ function CustomerDrawer({ customer, onClose, onSaved }) {
       }
       onSaved?.();
       onClose();
-    } catch (e) { alert(e.message); }
+    } catch (e) { 
+      setDialog({ open: true, title: 'Hata', message: 'Kayıt sırasında hata oluştu: ' + e.message, type: 'alert' });
+    }
     finally { setSaving(false); }
   };
 
@@ -302,6 +305,7 @@ export default function Customers() {
   const [syncingInv, setSyncingInv] = useState(false);
   const [enriching,  setEnriching]  = useState(false);
   const [enrichLog,  setEnrichLog]  = useState(null);  // { enriched, processed, errors[]}
+  const [dialog,     setDialog]     = useState({ open: false, title: '', message: '', type: 'confirm', onConfirm: null, loading: false });
 
   const c = {
     card:   isDark ? 'rgba(30,41,59,0.7)' : '#ffffff',
@@ -384,11 +388,25 @@ export default function Customers() {
 
 
   const deleteCustomer = async (id, name) => {
-    if (!window.confirm(`"${name}" silinsin mi?`)) return;
-    pageCache.invalidate('customers');
-    const { error } = await supabase.from('customers').delete().eq('id', id);
-    if (error) showToast(error.message, 'error');
-    else { showToast('Cari silindi'); loadCustomers(true); }
+    setDialog({
+      open: true,
+      title: 'Cari Sil',
+      message: `"${name}" isimli cariyi silmek istediğinize emin misiniz? Bu işlem geri alınamaz.`,
+      type: 'danger',
+      onConfirm: async () => {
+        setDialog(d => ({ ...d, loading: true }));
+        try {
+          pageCache.invalidate('customers');
+          const { error } = await supabase.from('customers').delete().eq('id', id);
+          if (error) throw error;
+          showToast('Cari silindi');
+          loadCustomers(true);
+          setDialog({ open: false });
+        } catch (e) {
+          setDialog({ open: true, title: 'Hata', message: 'Silme başarısız: ' + e.message, type: 'alert' });
+        }
+      }
+    });
   };
 
   const filtered = customers.filter(c => {
@@ -613,6 +631,7 @@ export default function Customers() {
             customer={selected}
             onClose={() => setSelected(null)}
             onSaved={() => { loadCustomers(); showToast('Cari güncellendi ✓'); }}
+            setDialog={setDialog}
           />
         )}
         {showNew && (
@@ -620,6 +639,7 @@ export default function Customers() {
             customer={{ name: '', vkntckn: '', phone: '', email: '', address: '', city: '', notes: '', tax_office: '', is_active: true }}
             onClose={() => setShowNew(false)}
             onSaved={() => { loadCustomers(); setShowNew(false); showToast('Yeni cari eklendi ✓'); }}
+            setDialog={setDialog}
           />
         )}
       </AnimatePresence>
@@ -627,6 +647,12 @@ export default function Customers() {
       <AnimatePresence>
         {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
       </AnimatePresence>
+
+      <CustomDialog 
+        {...dialog} 
+        onClose={() => setDialog({ ...dialog, open: false })}
+        onConfirm={dialog.onConfirm ? dialog.onConfirm : () => setDialog({ ...dialog, open: false })}
+      />
     </>
   );
 }

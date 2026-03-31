@@ -9,6 +9,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import { useNavigate } from 'react-router-dom';
 import { pageCache } from '../lib/pageCache';
+import CustomDialog from '../components/CustomDialog';
 
 const fmt = (n) => n != null ? Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2 }) : '0,00';
 const fmtD = (d) => d ? new Date(d).toLocaleDateString('tr-TR') : '-';
@@ -36,7 +37,7 @@ function StatusDot({ status }) {
 }
 
 // ─── Supplier Detail Drawer ────────────────────────────────────────────────────
-function SupplierDrawer({ supplier, onClose, onSaved }) {
+function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
   const { currentColor } = useTheme();
   const navigate = useNavigate();
   const [invoices, setInvoices]     = useState([]);
@@ -70,7 +71,9 @@ function SupplierDrawer({ supplier, onClose, onSaved }) {
       }
       onSaved?.();
       onClose();
-    } catch (e) { alert(e.message); }
+    } catch (e) { 
+      setDialog({ open: true, title: 'Hata', message: 'Kayıt sırasında hata oluştu: ' + e.message, type: 'alert' });
+    }
     finally { setSaving(false); }
   };
 
@@ -296,6 +299,7 @@ export default function Suppliers() {
   const [syncing, setSyncing]     = useState(false);
   const [enriching,  setEnriching]  = useState(false);
   const [enrichLog,  setEnrichLog]  = useState(null);
+  const [dialog,     setDialog]     = useState({ open: false, title: '', message: '', type: 'confirm', onConfirm: null, loading: false });
 
   const ACCENT = '#f97316';
 
@@ -376,11 +380,25 @@ export default function Suppliers() {
   };
 
   const deleteSupplier = async (id, name) => {
-    if (!window.confirm(`"${name}" silinsin mi?`)) return;
-    pageCache.invalidate('suppliers');
-    const { error } = await supabase.from('suppliers').delete().eq('id', id);
-    if (error) showToast(error.message, 'error');
-    else { showToast('Tedarikçi silindi'); loadSuppliers(true); }
+    setDialog({
+      open: true,
+      title: 'Tedarikçi Sil',
+      message: `"${name}" isimli tedarikçiyi silmek istediğinize emin misiniz? Bu işlem geri alınamaz.`,
+      type: 'danger',
+      onConfirm: async () => {
+        setDialog(d => ({ ...d, loading: true }));
+        try {
+          pageCache.invalidate('suppliers');
+          const { error } = await supabase.from('suppliers').delete().eq('id', id);
+          if (error) throw error;
+          showToast('Tedarikçi silindi');
+          loadSuppliers(true);
+          setDialog({ open: false });
+        } catch (e) {
+          setDialog({ open: true, title: 'Hata', message: 'Silme başarısız: ' + e.message, type: 'alert' });
+        }
+      }
+    });
   };
 
   const filtered = suppliers.filter(s => {
@@ -596,6 +614,7 @@ export default function Suppliers() {
             supplier={selected}
             onClose={() => setSelected(null)}
             onSaved={() => { loadSuppliers(); showToast('Tedarikçi güncellendi ✓'); }}
+            setDialog={setDialog}
           />
         )}
         {showNew && (
@@ -603,6 +622,7 @@ export default function Suppliers() {
             supplier={{ name: '', vkntckn: '', phone: '', email: '', address: '', city: '', notes: '', tax_id: '', is_active: true }}
             onClose={() => setShowNew(false)}
             onSaved={() => { loadSuppliers(); setShowNew(false); showToast('Yeni tedarikçi eklendi ✓'); }}
+            setDialog={setDialog}
           />
         )}
       </AnimatePresence>
@@ -610,6 +630,12 @@ export default function Suppliers() {
       <AnimatePresence>
         {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
       </AnimatePresence>
+
+      <CustomDialog 
+        {...dialog} 
+        onClose={() => setDialog({ ...dialog, open: false })}
+        onConfirm={dialog.onConfirm ? dialog.onConfirm : () => setDialog({ ...dialog, open: false })}
+      />
     </>
   );
 }

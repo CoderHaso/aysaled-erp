@@ -415,6 +415,7 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
     line_items: [emptyLine()],
   });
   const [saving, setSaving]     = useState(false);
+  const [dialog, setDialog]     = useState({ open: false, title: '', message: '', type: 'confirm', onConfirm: null, loading: false });
   const [preview, setPreview]   = useState(false);
   const [imageModal, setImageModal] = useState(null);
   const [mediaItems, setMediaItems] = useState([]);
