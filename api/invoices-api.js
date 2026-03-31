@@ -260,11 +260,9 @@ async function handleCreate(body, res) {
     lineItems[0].customer_info = { city, district, address, tax_office };
   }
 
-  const trOffset = 3 * 60 * 60 * 1000;
-  const nowTR = new Date(new Date().getTime() + trOffset);
   const row = {
     type, invoice_id, vkntckn, cari_name,
-    issue_date: issue_date || nowTR.toISOString().slice(0, 10),
+    issue_date: issue_date || new Date().toISOString().slice(0, 10),
     amount: grandTotal, tax_exclusive_amount: subtotal, tax_total: taxTotal,
     currency, status: 'Draft', line_items: lineItems,
     message: notes,
@@ -300,10 +298,7 @@ async function handleFormalize(body, res) {
   const taxTotal = inv.tax_total || lines.reduce((s, l) => s + (l.tax_amount || 0), 0);
   const grandTotal = inv.amount || (subtotal + taxTotal);
   const currency = inv.currency || 'TRY';
-  const now = new Date();
-  const trOffset = 3 * 60 * 60 * 1000;
-  const nowTR = new Date(now.getTime() + trOffset);
-  const issueDate = (inv.issue_date || nowTR.toISOString()).slice(0, 10);
+  const issueDate = (inv.issue_date || new Date().toISOString()).slice(0, 10);
 
   // UBL birim kodu eşleme
   const unitMap = { 'Adet': 'C62', 'Kg': 'KGM', 'Ton': 'TNE', 'm²': 'MTK', 'm³': 'MTQ', 'Litre': 'LTR', 'Paket': 'PA', 'Kutu': 'BX', 'Takım': 'SET' };
