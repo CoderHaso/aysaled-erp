@@ -46,6 +46,33 @@ async function generateOrderNumber(customerName) {
   return `AYS-${firstWord}-${seq}`;
 }
 
+// Adresten ilçe/şehir ayıklama (Örn: (ÇİĞLİ) ... , İZMİR)
+function parseTurkishAddress(addr) {
+  if (!addr) return { address: '', district: '', city: '' };
+  let address = addr.trim();
+  let district = '';
+  let city = '';
+
+  // (İLÇE) başa veya sona gelebilir
+  const distMatch = address.match(/^\(([^)]+)\)\s*/) || address.match(/\s*\(([^)]+)\)$/);
+  if (distMatch) {
+    district = distMatch[1].trim();
+    address = address.replace(distMatch[0], '').trim();
+  }
+
+  // Virgülden sonra genelde şehir gelir
+  const parts = address.split(',');
+  if (parts.length > 1) {
+    const last = parts.pop().trim();
+    if (last.length < 15 && last === last.toUpperCase()) { // Şehir genelde büyük harf ve kısa
+      city = last;
+      address = parts.join(',').trim();
+    }
+  }
+
+  return { address, district, city };
+}
+
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 function StatusBadge({ status, urgent }) {
   const s = STATUS[status] || STATUS.pending;
@@ -266,7 +293,7 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
     try {
       const qs = new URLSearchParams({ currency: curr });
       if (date) qs.append('date', date);
-      const res = await fetch(`/api/tcmb?${qs.toString()}`);
+      const res = await fetch(`/api/exchange-rate?${qs.toString()}`);
       if (res.ok) {
         const data = await res.json();
         setExchangeRate(data);
@@ -281,20 +308,20 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
   // Müşteri seçince: sipariş no üret + adres/iletişim auto-fill
   const selectCustomer = async (cust) => {
     const num = await generateOrderNumber(cust.name);
+    const parsed = parseTurkishAddress(cust.address);
     setForm(f => ({
       ...f,
       customer_id:         cust.id,
       customer_name:       cust.name,
       customer_vkntckn:    cust.vkntckn    || '',
       customer_tax_office: cust.tax_office || '',
-      customer_address:    cust.address    || '',
-      customer_district:   cust.district   || '',
-      customer_city:       cust.city       || '',
+      customer_address:    parsed.address  || cust.address || '',
+      customer_district:   parsed.district || cust.district || '',
+      customer_city:       parsed.city     || cust.city || '',
       customer_phone:      cust.phone      || '',
       customer_email:      cust.email      || '',
-      // Teslimat/fatura adresi boşsa otomatik doldur
-      delivery_address: f.delivery_address || [cust.address, cust.city].filter(Boolean).join(', '),
-      billing_address:  f.billing_address  || [cust.address, cust.city].filter(Boolean).join(', '),
+      delivery_address: f.delivery_address || cust.address || '',
+      billing_address:  f.billing_address  || cust.address || '',
       order_number: isEdit ? f.order_number : num,
     }));
     setCustOpen(false); setCustQ('');
@@ -406,8 +433,12 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
         }
       }
 
-      onSaved?.();
-      onClose();
+       onSaved?.();
+       onClose();
+       // Fatura listesini yenilemek için cache temizle
+       if (invoiceToggle) {
+         try { sessionStorage.removeItem('page_cache_invoices_outbox'); } catch(e){}
+       }
     } catch (e) { alert(e.message); }
     finally { setSaving(false); }
   };
@@ -633,7 +664,33 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor 
                   </p>
                   
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2 p-4 rounded-xl" style={{ border: '1px solid rgba(139,92,246,0.25)', background: 'rgba(139,92,246,0.05)' }}>
-                      <Field label="VKN / TCKN *" value={form.customer_vkntckn} onChange={v => setForm(f => ({ ...f, customer_vkntckn: v }))} placeholder="10 veya 11 hane" />
+                      <div className="relative">
+                        <Field label="VKN / TCKN *" value={form.customer_vkntckn} onChange={v => setForm(f => ({ ...f, customer_vkntckn: v }))} placeholder="10 veya 11 hane" />
+                        <button onClick={async () => {
+                          const vkn = form.customer_vkntckn?.trim();
+                          if (!vkn || vkn.length < 10) return alert('Geçerli bir VKN/TCKN girin.');
+                          setDraftLoading(true);
+                          try {
+                            const r = await fetch('/api/invoices-api?action=fetchCustomerInfo', { method: 'POST', body: JSON.stringify({ vkn }), headers: {'Content-Type': 'application/json'} });
+                            const d = await r.json();
+                            if (d.success) {
+                              setForm(f => ({
+                                ...f,
+                                customer_name: d.data.unvan || f.customer_name,
+                                customer_city: d.data.sehir || f.customer_city,
+                                customer_district: d.data.ilce || f.customer_district,
+                                customer_address: d.data.adres || f.customer_address,
+                                customer_tax_office: d.data.vergiDairesi || f.customer_tax_office
+                              }));
+                            } else throw new Error(d.error);
+                          } catch (e) { alert('Sorgu hatası: ' + e.message); }
+                          finally { setDraftLoading(false); }
+                        }}
+                          disabled={draftLoading || saving}
+                          className="absolute right-0 top-6 px-3 py-1 rounded-lg text-[10px] font-bold bg-violet-600 text-white hover:bg-violet-700 transition-colors disabled:opacity-50">
+                          {draftLoading ? 'Sorgulanıyor...' : 'Ücretsiz Sorgula'}
+                        </button>
+                      </div>
                       <Field label="Vergi Dairesi *" value={form.customer_tax_office} onChange={v => setForm(f => ({ ...f, customer_tax_office: v }))} placeholder="Örn: BORNOVA" />
                       <Field label="Şehir *" value={form.customer_city} onChange={v => setForm(f => ({ ...f, customer_city: v }))} placeholder="Örn: İZMİR" />
                       <Field label="İlçe (Opsiyonel)" value={form.customer_district} onChange={v => setForm(f => ({ ...f, customer_district: v }))} placeholder="Örn: BAYRAKLI" />
@@ -799,47 +856,54 @@ export default function Sales() {
   useEffect(() => { loadAll(); }, [loadAll]);
 
   useEffect(() => {
-    const state = location.state;
-    if (state?.createFromQuote && customers.length > 0 && allItems.length > 0) {
-      const q = state.createFromQuote;
-      const cName = q.company_name || '';
-      const matchedCust = customers.find(c => c.name.toLowerCase() === cName.toLowerCase());
-      
-      const newItems = (q.line_items || []).map(l => {
-        const itemMatch = allItems.find(i => i.name === l.name || i.item_code === l.item_code) || {};
-        return {
-          _key: Math.random(),
-          item_name: l.name,
-          quantity: Number(l.quantity || 1),
-          unit: l.unit || 'Adet',
-          unit_price: Number(l.unit_price || 0),
-          tax_rate: Number(q.vat_rate || 20),
-          item_id: itemMatch.id || null,
-          item_type: itemMatch.item_type || 'product',
-          stock_count: itemMatch.stock_count || null,
-          notes: ''
-        };
-      });
+    const initFromQuote = async () => {
+      const state = location.state;
+      if (state?.createFromQuote && customers.length > 0 && allItems.length > 0) {
+        const q = state.createFromQuote;
+        const cName = q.company_name || '';
+        const matchedCust = customers.find(c => c.name.toLowerCase() === cName.toLowerCase());
+        
+        const num = await generateOrderNumber(cName);
+        const parsed = parseTurkishAddress(matchedCust?.address || q.address);
+        
+        const newItems = (q.line_items || []).map(l => {
+          const itemMatch = allItems.find(i => i.name === l.name || i.item_code === l.item_code) || {};
+          return {
+            _key: Math.random(),
+            item_name: l.name,
+            quantity: Number(l.quantity || 1),
+            unit: l.unit || 'Adet',
+            unit_price: Number(l.unit_price || 0),
+            tax_rate: Number(q.vat_rate || 20),
+            item_id: itemMatch.id || null,
+            item_type: itemMatch.item_type || 'product',
+            stock_count: itemMatch.stock_count || null,
+            notes: l.description || ''
+          };
+        });
 
-      setEditOrder({
-        customer_name: cName,
-        customer_id: matchedCust?.id || '',
-        customer_vkntckn: matchedCust?.vkntckn || '',
-        customer_tax_office: matchedCust?.tax_office || '',
-        customer_address: matchedCust?.address || '',
-        customer_city: matchedCust?.city || '',
-        customer_phone: matchedCust?.phone || '',
-        customer_email: matchedCust?.email || '',
-        currency: q.currency || 'TRY',
-        notes: q.notes || '',
-        items: newItems
-      });
-      setShowForm(true);
+        setEditOrder({
+          order_number: num,
+          customer_name: cName,
+          customer_id: matchedCust?.id || '',
+          customer_vkntckn: matchedCust?.vkntckn || '',
+          customer_tax_office: matchedCust?.tax_office || '',
+          customer_address: parsed.address || matchedCust?.address || q.address || '',
+          customer_district: parsed.district || matchedCust?.district || '',
+          customer_city: parsed.city || matchedCust?.city || '',
+          customer_phone: matchedCust?.phone || '',
+          customer_email: matchedCust?.email || '',
+          currency: q.currency || 'TRY',
+          notes: q.notes || '',
+          items: newItems
+        });
+        setShowForm(true);
 
-      if (state.quoteMsg) showToast(state.quoteMsg);
-      // Clean up state
-      window.history.replaceState({}, '');
-    }
+        if (state.quoteMsg) showToast(state.quoteMsg);
+        window.history.replaceState({}, '');
+      }
+    };
+    initFromQuote();
   }, [location.state, customers, allItems]);
 
   const updateStatus = async (orderId, status) => {

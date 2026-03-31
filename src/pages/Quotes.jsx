@@ -47,6 +47,7 @@ export default function Quotes() {
   const navigate = useNavigate();
 
   const [quotes, setQuotes]     = useState([]);
+  const [allItems, setAllItems] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -64,40 +65,23 @@ export default function Quotes() {
     load();
   };
 
-  const handleAccept = async (q, createInvoice) => {
+  const handleAccept = async (q) => {
     try {
       await fetch(`/api/quotes?id=${q.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'accepted' }) });
-      if (createInvoice && q.line_items) {
-        const createForm = {
-          type: 'outbox',
-          cari_name: q.company_name || 'Bilinmeyen Müşteri',
-          vkntckn: '',
-          issue_date: new Date().toISOString().slice(0, 10),
-          currency: q.currency || 'TRY',
-          notes: q.notes || '',
-          lines: q.line_items.map(l => ({
-            name: l.name,
-            quantity: Number(l.quantity || 1),
-            unit: l.unit || 'Adet',
-            unitPrice: Number(l.unit_price || 0),
-            taxRate: Number(q.vat_rate || 20),
-            total: Number(l.total || 0)
-          }))
-        };
-        await fetch('/api/invoices-api?action=create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(createForm) });
-        setAcceptModal(null);
-        navigate('/sales', { state: { createFromQuote: q, quoteMsg: 'Fatura taslağı oluşturuldu ve Sipariş formuna yansıtıldı.' } });
-      } else {
-        setAcceptModal(null);
-        navigate('/sales', { state: { createFromQuote: q, quoteMsg: 'Sipariş formuna yansıtıldı.' } });
-      }
+      setAcceptModal(null);
+      // Faturayı otomatik oluşturmak yerine satış ekranına yönlendiriyoruz, kullanıcı orada karar verir.
+      navigate('/sales', { state: { createFromQuote: q, quoteMsg: 'Teklif onaylandı ve Sipariş formuna yansıtıldı.' } });
     } catch (e) { alert('Hata: ' + e.message); }
   };
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from('quotes').select('*').order('created_at', { ascending: false });
-    setQuotes(data || []);
+    const [qRes, iRes] = await Promise.all([
+      supabase.from('quotes').select('*').order('created_at', { ascending: false }),
+      supabase.from('items').select('*').order('name')
+    ]);
+    setQuotes(qRes.data || []);
+    setAllItems(iRes.data || []);
     setLoading(false);
   }, []);
 
@@ -138,6 +122,7 @@ export default function Quotes() {
     return (
       <QuoteForm
         quoteId={editId}
+        allItems={allItems}
         onBack={() => { setView('list'); setEditId(null); load(); }}
         onSaved={(q) => { showToast(`${q.quote_no} kaydedildi ✓`); setView('list'); setEditId(null); load(); }}
       />
@@ -307,16 +292,12 @@ export default function Quotes() {
             </div>
             <h3 className="text-lg font-bold text-gray-800 text-center mb-2">Teklifi Onayla</h3>
             <p className="text-sm text-gray-500 text-center mb-6">
-              <strong className="text-gray-700">{acceptModal.company_name}</strong> adlı müşteriye ait teklif <span className="text-emerald-600 font-semibold mb-1">Kabul Edildi</span> aşamasına taşınacak. Satış işlemlerini hızlandırmak için giden faturayı <strong className="text-gray-700">Taslak</strong> olarak oluşturmak ister misiniz?
+              <strong className="text-gray-700">{acceptModal.company_name}</strong> adlı müşteriye ait teklif <span className="text-emerald-600 font-semibold mb-1">Kabul Edildi</span> aşamasına taşınacak ve sipariş formuna aktarılacak.
             </p>
             <div className="flex flex-col gap-2.5">
-              <button onClick={() => handleAccept(acceptModal, true)}
+              <button onClick={() => handleAccept(acceptModal)}
                 className="w-full py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold flex items-center justify-center gap-2 hover:bg-emerald-700 transition-colors shadow-sm">
-                <FileMinus size={15} /> Onayla ve Fatura Taslağı Oluştur
-              </button>
-              <button onClick={() => handleAccept(acceptModal, false)}
-                className="w-full py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold hover:bg-gray-50 transition-colors">
-                Gerek Yok, Sadece Onayla
+                <CheckCircle2 size={15} /> Onayla ve Siparişe Geç
               </button>
               <button onClick={() => setAcceptModal(null)}
                 className="w-full py-2.5 text-gray-400 text-sm font-medium hover:text-gray-600 mt-2 transition-colors">

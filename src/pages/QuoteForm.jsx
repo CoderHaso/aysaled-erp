@@ -35,7 +35,7 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, onAddN
   // allItems değişince q'yu başlatma (edit modunda)
   useEffect(() => { setQ(line.name || ''); }, []);
 
-  const suggestions = q.trim().length >= 1
+  const suggestions = (allItems && q.trim().length >= 1)
     ? allItems.filter(i =>
         (i.name || '').toLowerCase().includes(q.toLowerCase()) ||
         (i.item_code || '').toLowerCase().includes(q.toLowerCase())
@@ -134,11 +134,11 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, onAddN
             </div>
 
             {/* Kayıtsız devam et */}
-            {suggestions.length === 0 && (
-              <div onMouseDown={() => { setShowSugg(false); onUpdate(line.id, { name: q.trim() }); }}
+            {suggestions.length === 0 && q.trim() && (
+              <div onMouseDown={() => { setShowSugg(false); onUpdate(line.id, { name: q.trim(), item_code: '', image_url: '' }); }}
                  className="flex items-center gap-2.5 px-3 py-2 border-t border-gray-100 cursor-pointer bg-blue-50 hover:bg-blue-100">
                  <Check size={14} className="text-blue-600" />
-                 <span className="text-xs font-semibold text-blue-700">Kayıtsız kullan</span>
+                 <span className="text-xs font-semibold text-blue-700">"{q}" olarak kayıtsız kullan</span>
               </div>
             )}
           </div>
