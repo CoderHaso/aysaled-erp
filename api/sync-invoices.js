@@ -161,18 +161,26 @@ export default async function handler(req, res) {
 
     console.log(`[sync-invoices] ${upsertPayload.length} fatura Supabase'e yazıldı.`);
 
-    // ── Contact upsert: fatura listesindeki alanlardan zenginleştirilmiş veri ──
-    // Uyumsoft InvoiceList'te TargetTcknVkn ve TargetTitle zaten var.
-    // Detaylı adres için raw_data gerekli ama listelenmiş alanlarla en azından
-    // isim + VKN güncelleniyor. Tam adres enrichment için trigger zaten çalışıyor.
+    // ─── Contact upsert: fatura listesinden mevcut tüm alanları topla ────────
+    // GetOutboxInvoiceList / GetInboxInvoiceList bazı entegrasyonlarda
+    // ek alanlar döndürebilir. Hepsini kaydet.
     const contactsByVkn = {};
     list.forEach(inv => {
-      const vkn = inv.TargetTcknVkn;
-      if (!vkn || vkn === '') return;
-      if (contactsByVkn[vkn]) return; // dedup
+      const vkn = (inv.TargetTcknVkn || '').trim();
+      if (!vkn) return;
+      if (contactsByVkn[vkn]) return; // dedup: en üstteki (en yeni) fatura kazanır
+
       contactsByVkn[vkn] = {
-        name:       inv.TargetTitle  || 'Bilinmiyor',
+        name:       inv.TargetTitle                   || 'Bilinmiyor',
         vkntckn:    vkn,
+        // Adres alanları — bazı entegrasyonlar bunları doldurur
+        address:    inv.TargetAddress                 || inv.Address       || null,
+        city:       inv.TargetCity                    || inv.City          || null,
+        district:   inv.TargetDistrict                || inv.District      || null,
+        country:    inv.TargetCountry                 || inv.Country       || null,
+        tax_office: inv.TargetTaxOfficeName           || inv.TaxOfficeName || null,
+        phone:      inv.TargetPhone || inv.TargetTel  || inv.Phone         || null,
+        email:      inv.TargetEmail                   || inv.Email         || null,
         source:     'invoice_sync',
         updated_at: new Date().toISOString(),
       };
@@ -183,18 +191,30 @@ export default async function handler(req, res) {
       // inbox = bize gelen fatura → karşı taraf tedarikçi (suppliers)
       // outbox = bizim kestiğimiz → karşı taraf müşteri (customers)
       const table = type === 'inbox' ? 'suppliers' : 'customers';
+      
+      // NULL alanları upsert'e dahil etme (mevcut değerlerin üzerine NULL yazmasın)
+      const cleanedList = contactList.map(c => {
+        const cleaned = { name: c.name, vkntckn: c.vkntckn, source: c.source, updated_at: c.updated_at };
+        if (c.address)    cleaned.address    = c.address;
+        if (c.city)       cleaned.city       = c.city;
+        if (c.district)   cleaned.district   = c.district;
+        if (c.country)    cleaned.country    = c.country;
+        if (c.tax_office) cleaned.tax_office = c.tax_office;
+        if (c.phone)      cleaned.phone      = c.phone;
+        if (c.email)      cleaned.email      = c.email;
+        return cleaned;
+      });
+
       const { error: contactErr } = await supabase
         .from(table)
-        .upsert(contactList, {
-          onConflict: 'vkntckn',
-          ignoreDuplicates: false,
-        });
+        .upsert(cleanedList, { onConflict: 'vkntckn', ignoreDuplicates: false });
       if (contactErr) {
         console.warn(`[sync-invoices] ${table} upsert uyarısı:`, contactErr.message);
       } else {
-        console.log(`[sync-invoices] ${contactList.length} ${table} kaydı güncellendi/eklendi.`);
+        console.log(`[sync-invoices] ${cleanedList.length} ${table} kaydı güncellendi/eklendi.`);
       }
     }
+
 
     res.json({
       success: true,
