@@ -431,50 +431,59 @@ export default function Suppliers() {
 
   useEffect(() => { loadSuppliers(); }, [loadSuppliers]);
 
-  // Faturalardan tam detaylarıyla tedarikçi çek (INBOX = gelen faturalar, tek işlem)
+  // Faturalardan tedarikçileri çek (INBOX):
+  // 1. /api/sync-invoices?type=inbox çağırır (liste + UBL detayı)
+  // 2. Kalan > 0 ise devam eder
   const syncAll = async () => {
     setSyncing(true);
+    let total = 0, details = 0;
     try {
-      const { data: invs, error } = await supabase
+      let remaining = 1;
+      while (remaining > 0) {
+        const r = await fetch('/api/sync-invoices', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'inbox', detailLimit: 50 }),
+        });
+        const data = await r.json();
+        if (!data.success) throw new Error(data.error || 'Sync hatası');
+        total   += data.inserted      || 0;
+        details += data.detailFetched || 0;
+        remaining = data.remaining    ?? 0;
+      }
+
+      // invoices'dan suppliers'a aktar
+      const { data: invs } = await supabase
         .from('invoices')
-        .select('cari_name, vkntckn, tax_office, address, cari_address, city, cari_city, district, cari_district, country, cari_country, phone, cari_phone, email, cari_email, issue_date')
-        .eq('type', 'inbox')   // TEDArİKÇİ = inbox!
+        .select('cari_name, vkntckn, cari_tax_office, cari_address, cari_city, cari_district, cari_country, cari_postal, cari_phone, cari_email, issue_date')
+        .eq('type', 'inbox')
         .not('cari_name', 'is', null)
         .order('issue_date', { ascending: false });
 
-      if (error) throw error;
-
-      const byVkn  = {};
-      const byName = {};
-
+      const byVkn = {}, byName = {};
       (invs || []).forEach(inv => {
         const vkn  = (inv.vkntckn || '').trim();
         const name = (inv.cari_name || '').trim();
         if (!name) return;
-
         const row = {
-          name,
-          vkntckn:  vkn || null,
-          tax_id:   inv.tax_office   || null,
-          address:  inv.address      || inv.cari_address  || null,
-          city:     inv.city         || inv.cari_city     || null,
-          district: inv.district     || inv.cari_district || null,
-          country:  inv.country      || inv.cari_country  || 'Türkiye',
-          phone:    inv.phone        || inv.cari_phone    || null,
-          email:    inv.email        || inv.cari_email    || null,
-          source:   'invoice_sync',
-          is_active: true,
+          name, vkntckn: vkn || null,
+          tax_id:     inv.cari_tax_office || null,
+          address:    inv.cari_address    || null,
+          city:       inv.cari_city       || null,
+          district:   inv.cari_district   || null,
+          country:    inv.cari_country    || null,
+          postal_code:inv.cari_postal     || null,
+          phone:      inv.cari_phone      || null,
+          email:      inv.cari_email      || null,
+          source: 'invoice_sync', is_active: true,
         };
-
         if (vkn) {
           if (!byVkn[vkn]) byVkn[vkn] = row;
           else {
             const e = byVkn[vkn];
-            if (!e.address  && row.address)  e.address  = row.address;
-            if (!e.city     && row.city)     e.city     = row.city;
-            if (!e.district && row.district) e.district = row.district;
-            if (!e.phone    && row.phone)    e.phone    = row.phone;
-            if (!e.email    && row.email)    e.email    = row.email;
+            ['address','city','district','phone','email','tax_id','postal_code'].forEach(k => {
+              if (!e[k] && row[k]) e[k] = row[k];
+            });
           }
         } else {
           if (!byName[name.toLowerCase()]) byName[name.toLowerCase()] = row;
@@ -482,30 +491,21 @@ export default function Suppliers() {
       });
 
       const rows = [...Object.values(byVkn), ...Object.values(byName)];
-      if (rows.length === 0) { showToast('Senkronize edilecek gelen fatura bulunamadı'); return; }
-
-      const vknRows  = rows.filter(r => r.vkntckn);
-      const nameRows = rows.filter(r => !r.vkntckn);
-
-      if (vknRows.length > 0) {
-        const { error: e1 } = await supabase.from('suppliers').upsert(vknRows, { onConflict: 'vkntckn' });
-        if (e1) throw e1;
-      }
-
-      for (const r of nameRows) {
-        const { data: existing } = await supabase.from('suppliers')
-          .select('id').ilike('name', r.name).maybeSingle();
-        if (!existing) {
-          await supabase.from('suppliers').insert(r);
-        } else {
-          await supabase.from('suppliers').update({
-            ...(r.address  ? { address:  r.address  } : {}),
-            ...(r.city     ? { city:     r.city     } : {}),
-            ...(r.district ? { district: r.district } : {}),
-            ...(r.phone    ? { phone:    r.phone    } : {}),
-            ...(r.email    ? { email:    r.email    } : {}),
-            updated_at: new Date().toISOString(),
-          }).eq('id', existing.id);
+      if (rows.length > 0) {
+        const vknRows = rows.filter(r => r.vkntckn);
+        if (vknRows.length > 0) {
+          await supabase.from('suppliers').upsert(vknRows, { onConflict: 'vkntckn' });
+        }
+        for (const r of rows.filter(x => !x.vkntckn)) {
+          const { data: ex } = await supabase.from('suppliers').select('id').ilike('name', r.name).maybeSingle();
+          if (!ex) await supabase.from('suppliers').insert(r);
+          else {
+            const patch = {};
+            ['address','city','district','phone','email','tax_id','postal_code'].forEach(k => {
+              if (r[k] && !ex[k]) patch[k] = r[k];
+            });
+            if (Object.keys(patch).length) await supabase.from('suppliers').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', ex.id);
+          }
         }
       }
 

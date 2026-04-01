@@ -1,17 +1,90 @@
 import { createClient } from '@supabase/supabase-js';
 import { createUyumsoftClient, callSoap } from './_uyumsoft-client.js';
 
-// Vercel'de process.env doğrudan çalışır; VITE_ prefiksi olmayan değişkenler API'ye iletilir
-// Geçerli key'ler: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseKey || 'placeholder');
 
-if (!supabaseUrl) console.error('[sync-invoices] KRITIK: SUPABASE_URL env degiskeni bulunamadi!');
-if (!supabaseKey) console.error('[sync-invoices] KRITIK: SUPABASE_ANON_KEY env degiskeni bulunamadi!');
-const supabase = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co',
-  supabaseKey || 'placeholder'
-);
+// ─── UBL node'dan değer çekme ───────────────────────────────────────────────
+function val(node) {
+  if (node == null) return '';
+  if (typeof node === 'string') return node.trim();
+  if (typeof node === 'number') return String(node);
+  if (node._ !== undefined) return String(node._).trim();
+  if (node.$value !== undefined) return String(node.$value).trim();
+  if (node['#text'] !== undefined) return String(node['#text']).trim();
+  return '';
+}
+
+// ─── UBL Party node'undan adres/iletişim parse ─────────────────────────────
+function parseParty(party) {
+  if (!party) return {};
+
+  // VKN ve vergi dairesi
+  let vkn = '', taxOffice = '';
+  const ts = party?.PartyTaxScheme ?? party?.['cac:PartyTaxScheme'];
+  const tsList = Array.isArray(ts) ? ts : (ts ? [ts] : []);
+  for (const t of tsList) {
+    const cid = val(t?.CompanyID ?? t?.['cbc:CompanyID']);
+    if (cid && cid.length >= 10) vkn = cid;
+    const rn = val(t?.RegistrationName ?? t?.['cbc:RegistrationName']);
+    if (rn) taxOffice = rn;
+  }
+
+  // PostalAddress
+  const addrNode = party?.PostalAddress   ?? party?.['cac:PostalAddress']
+               ?? party?.Address          ?? party?.['cac:Address'];
+
+  const street   = val(addrNode?.StreetName              ?? addrNode?.['cbc:StreetName']);
+  const street2  = val(addrNode?.AdditionalStreetName    ?? addrNode?.['cbc:AdditionalStreetName']);
+  const bldgNum  = val(addrNode?.BuildingNumber          ?? addrNode?.['cbc:BuildingNumber']);
+  const bldgName = val(addrNode?.BuildingName            ?? addrNode?.['cbc:BuildingName']);
+  const cityName = val(addrNode?.CityName                ?? addrNode?.['cbc:CityName']);
+  const citySubD = val(addrNode?.CitySubdivisionName     ?? addrNode?.['cbc:CitySubdivisionName']);
+  const region   = val(addrNode?.CountrySubentity        ?? addrNode?.['cbc:CountrySubentity']);
+  const postal   = val(addrNode?.PostalZone ?? addrNode?.['cbc:PostalZone']
+                     ?? addrNode?.PostalCode ?? addrNode?.['cbc:PostalCode']);
+
+  const countryNode = addrNode?.Country ?? addrNode?.['cac:Country'];
+  const country = val(countryNode?.IdentificationCode ?? countryNode?.['cbc:IdentificationCode']
+                    ?? countryNode?.Name ?? countryNode?.['cbc:Name']) || null;
+
+  const addressParts = [street, street2, bldgNum ? `No:${bldgNum}` : '', bldgName].filter(Boolean);
+  const address  = addressParts.join(' ').trim() || null;
+  const city     = cityName || region || null;
+  const district = citySubD || null;
+
+  // İletişim
+  const c = party?.Contact ?? party?.['cac:Contact'];
+  const phone = val(c?.Telephone ?? c?.['cbc:Telephone'] ?? c?.Telefax ?? c?.['cbc:Telefax']) || null;
+  const email = val(c?.ElectronicMail ?? c?.['cbc:ElectronicMail']) || null;
+
+  return {
+    vkn,
+    taxOffice: taxOffice || null,
+    address,
+    city,
+    district,
+    country,
+    postal: postal || null,
+    phone,
+    email,
+  };
+}
+
+// ─── Paralel işleme (concurrency limit) ────────────────────────────────────
+async function pMap(items, fn, concurrency = 3) {
+  const results = [];
+  let i = 0;
+  async function next() {
+    while (i < items.length) {
+      const idx = i++;
+      results[idx] = await fn(items[idx], idx);
+    }
+  }
+  await Promise.all(Array.from({ length: concurrency }, next));
+  return results;
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -20,10 +93,10 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const { type = 'inbox', forceAll = false } = req.body || {};
-    const PAGE_SIZE = 100; // Vercel timeout için makul boyut
+    const { type = 'inbox', forceAll = false, detailLimit = 50 } = req.body || {};
+    const PAGE_SIZE = 100;
 
-    // 1) Incremental fetch: en son kaydın tarihini bul
+    // ── 1. Incremental: son kaydın tarihi ────────────────────────────────────
     let startDateStr = '2024-01-01T00:00:00';
     if (!forceAll) {
       const { data: latest } = await supabase
@@ -31,64 +104,53 @@ export default async function handler(req, res) {
         .select('create_date_utc, issue_date')
         .eq('type', type)
         .order('create_date_utc', { ascending: false })
-        .not('create_date_utc', 'is', 'null')
+        .not('create_date_utc', 'is', null)
         .limit(1)
         .maybeSingle();
 
       const lastDate = latest?.create_date_utc || latest?.issue_date;
       if (lastDate) {
         const sd = new Date(lastDate);
-        sd.setDate(sd.getDate() - 3); // 3 gün geçmişten tara (Tarih kesişimleri ve saat farkları için)
+        sd.setDate(sd.getDate() - 3);
         startDateStr = sd.toISOString().split('.')[0];
       }
     }
 
-    // Uyumsoft zaman dilimi (GMT+3) ile UTC arasındaki farkları kapatmak için endDate yarına ayarlanıyor
     const edt = new Date();
     edt.setDate(edt.getDate() + 1);
     const endDateStr = edt.toISOString().split('.')[0];
+
     const client = await createUyumsoftClient();
-    const methodName = type === 'outbox' ? 'GetOutboxInvoiceList' : 'GetInboxInvoiceList';
-    const resultKey  = type === 'outbox' ? 'GetOutboxInvoiceListResult' : 'GetInboxInvoiceListResult';
+    const listMethod = type === 'outbox' ? 'GetOutboxInvoiceList' : 'GetInboxInvoiceList';
+    const listResKey = type === 'outbox' ? 'GetOutboxInvoiceListResult' : 'GetInboxInvoiceListResult';
+    const detailMethod = type === 'outbox' ? 'GetOutboxInvoice' : 'GetInboxInvoice';
+    const detailResKey = type === 'outbox' ? 'GetOutboxInvoiceResult' : 'GetInboxInvoiceResult';
+    const partyKey = type === 'outbox' ? 'AccountingCustomerParty' : 'AccountingSupplierParty';
 
-    // 2) Tüm sayfalarda döngü yap
+    // ── 2. Fatura listesini tüm sayfalarda çek ───────────────────────────────
     let allItems = [];
-    let pageIndex = 0;
-    let totalPages = 1; // ilk istekte gerçek deĞer gelir
-
+    let pageIndex = 0, totalPages = 1;
     do {
-      const args = {
+      const result = await callSoap(client, listMethod, {
         query: {
           attributes: { PageIndex: pageIndex, PageSize: PAGE_SIZE },
           CreateStartDate: startDateStr,
           CreateEndDate: endDateStr,
           IsArchived: false,
         },
-      };
-
-      const result     = await callSoap(client, methodName, args);
-      const resultData = result?.[resultKey];
-
-      // TotalPages bilgisi attributes içinden al
-      if (resultData?.Value?.attributes) {
-        totalPages = parseInt(resultData.Value.attributes.TotalPages || '1', 10);
+      });
+      const rd = result?.[listResKey];
+      if (rd?.Value?.attributes) {
+        totalPages = parseInt(rd.Value.attributes.TotalPages || '1', 10);
       }
-
-      // Items al
-      const raw = resultData?.Value?.Items;
-      if (Array.isArray(raw)) {
-        allItems = allItems.concat(raw);
-      } else if (raw && typeof raw === 'object') {
-        allItems.push(raw);
-      }
-
-      console.log(`[sync-invoices] ${type} - Sayfa ${pageIndex + 1}/${totalPages}, bu sayfada ${Array.isArray(raw) ? raw.length : (raw ? 1 : 0)} fatura`);
+      const raw = rd?.Value?.Items;
+      if (Array.isArray(raw)) allItems = allItems.concat(raw);
+      else if (raw && typeof raw === 'object') allItems.push(raw);
+      console.log(`[sync] ${type} sayfa ${pageIndex + 1}/${totalPages}: ${Array.isArray(raw) ? raw.length : 1} fatura`);
       pageIndex++;
     } while (pageIndex < totalPages);
 
-    console.log(`[sync-invoices] ${type} - Toplam: ${allItems.length} fatura Uyumsoft'tan alındı.`);
-
-    // 3) DEDUPLICATE: Uyumsoft aynı fatura ID'sini bazen iki kez gönderebiliyor
+    // ── 3. Deduplicate ────────────────────────────────────────────────────────
     const seen = new Set();
     const list = allItems.filter(inv => {
       const id = inv.InvoiceId || inv.DocumentId;
@@ -97,17 +159,14 @@ export default async function handler(req, res) {
       return true;
     });
 
-    console.log(`[sync-invoices] ${type} - Dedup sonrası: ${list.length} benzersiz fatura.`);
-
     if (list.length === 0) {
-      return res.json({ success: true, message: 'Yeni fatura bulunamadı.', inserted: 0 });
+      return res.json({ success: true, message: 'Yeni fatura yok.', inserted: 0, detailFetched: 0 });
     }
 
-    // 4) Tüm alanları Supabase formatına dök
-    const upsertPayload = list.map(inv => {
+    // ── 4. Temel fatura verisi upsert (adressiz, hızlı) ──────────────────────
+    const basePayload = list.map(inv => {
       const invoiceId = inv.InvoiceId || inv.DocumentId;
       if (!invoiceId) return null;
-
       return {
         type,
         invoice_id:           invoiceId,
@@ -142,93 +201,107 @@ export default async function handler(req, res) {
         order_document_id:    inv.OrderDocumentId,
         message:              inv.Message,
         raw_data:             inv,
-        updated_at:           new Date().toISOString()
+        updated_at:           new Date().toISOString(),
       };
     }).filter(Boolean);
 
-    if (upsertPayload.length === 0) {
-      return res.json({ success: true, message: 'Geçerli formatta fatura bulunamadı (ID eksik).', inserted: 0 });
-    }
-
     const { error: upsertErr } = await supabase
       .from('invoices')
-      .upsert(upsertPayload, { onConflict: 'invoice_id,type' });
+      .upsert(basePayload, { onConflict: 'invoice_id,type' });
+    if (upsertErr) throw new Error('Supabase upsert: ' + upsertErr.message);
+    console.log(`[sync] ${basePayload.length} fatura kaydedildi.`);
 
-    if (upsertErr) {
-      console.error('[sync-invoices] Supabase upsert hatası:', JSON.stringify(upsertErr));
-      throw new Error('Supabase kayıt hatası: ' + upsertErr.message + ' | Code: ' + upsertErr.code);
-    }
+    // ── 5. UBL detayı çek → adres kolonlarını doldur ─────────────────────────
+    // Sadece detail_fetched_at IS NULL olanları işle (daha önce çekilmemiş)
+    const { data: needDetail } = await supabase
+      .from('invoices')
+      .select('invoice_id, document_id')
+      .eq('type', type)
+      .is('detail_fetched_at', null)
+      .not('vkntckn', 'is', null)
+      .limit(detailLimit);
 
-    console.log(`[sync-invoices] ${upsertPayload.length} fatura Supabase'e yazıldı.`);
+    const detailItems = needDetail || [];
+    console.log(`[sync] ${detailItems.length} fatura için UBL detayı çekilecek.`);
+    let detailFetched = 0;
 
-    // ─── Contact upsert: fatura listesinden mevcut tüm alanları topla ────────
-    // GetOutboxInvoiceList / GetInboxInvoiceList bazı entegrasyonlarda
-    // ek alanlar döndürebilir. Hepsini kaydet.
-    const contactsByVkn = {};
-    list.forEach(inv => {
-      const vkn = (inv.TargetTcknVkn || '').trim();
-      if (!vkn) return;
-      if (contactsByVkn[vkn]) return; // dedup: en üstteki (en yeni) fatura kazanır
+    // Paralel işleme (3 eşzamanlı SOAP isteği)
+    await pMap(detailItems, async (row) => {
+      const now = new Date().toISOString();
+      const uyumsoftId = row.document_id || row.invoice_id;
+      try {
+        const result = await callSoap(client, detailMethod, { invoiceId: uyumsoftId });
+        const r = result?.[detailResKey];
+        const ok = String(r?.attributes?.IsSucceded ?? r?.IsSucceded ?? 'false').toLowerCase() === 'true';
+        if (!ok) {
+          // Başarısız olsa bile işaretliyoruz, sonsuz döngü olmasın
+          await supabase.from('invoices')
+            .update({ detail_fetched_at: now })
+            .eq('invoice_id', row.invoice_id).eq('type', type);
+          return;
+        }
 
-      contactsByVkn[vkn] = {
-        name:       inv.TargetTitle                   || 'Bilinmiyor',
-        vkntckn:    vkn,
-        // Adres alanları — bazı entegrasyonlar bunları doldurur
-        address:    inv.TargetAddress                 || inv.Address       || null,
-        city:       inv.TargetCity                    || inv.City          || null,
-        district:   inv.TargetDistrict                || inv.District      || null,
-        country:    inv.TargetCountry                 || inv.Country       || null,
-        tax_office: inv.TargetTaxOfficeName           || inv.TaxOfficeName || null,
-        phone:      inv.TargetPhone || inv.TargetTel  || inv.Phone         || null,
-        email:      inv.TargetEmail                   || inv.Email         || null,
-        source:     'invoice_sync',
-        updated_at: new Date().toISOString(),
-      };
-    });
+        const invoice = r?.Value?.Invoice ?? r?.Value?.invoice ?? r?.Value;
+        if (!invoice) {
+          await supabase.from('invoices')
+            .update({ detail_fetched_at: now })
+            .eq('invoice_id', row.invoice_id).eq('type', type);
+          return;
+        }
 
-    const contactList = Object.values(contactsByVkn);
-    if (contactList.length > 0) {
-      // inbox = bize gelen fatura → karşı taraf tedarikçi (suppliers)
-      // outbox = bizim kestiğimiz → karşı taraf müşteri (customers)
-      const table = type === 'inbox' ? 'suppliers' : 'customers';
-      
-      // NULL alanları upsert'e dahil etme (mevcut değerlerin üzerine NULL yazmasın)
-      const cleanedList = contactList.map(c => {
-        const cleaned = { name: c.name, vkntckn: c.vkntckn, source: c.source, updated_at: c.updated_at };
-        if (c.address)    cleaned.address    = c.address;
-        if (c.city)       cleaned.city       = c.city;
-        if (c.district)   cleaned.district   = c.district;
-        if (c.country)    cleaned.country    = c.country;
-        if (c.tax_office) cleaned.tax_office = c.tax_office;
-        if (c.phone)      cleaned.phone      = c.phone;
-        if (c.email)      cleaned.email      = c.email;
-        return cleaned;
-      });
+        // Party node'u parse et
+        const partyNode = invoice[partyKey] ?? invoice[`cac:${partyKey}`];
+        const party = partyNode?.Party ?? partyNode?.['cac:Party'] ?? partyNode;
+        const addr = parseParty(party);
 
-      const { error: contactErr } = await supabase
-        .from(table)
-        .upsert(cleanedList, { onConflict: 'vkntckn', ignoreDuplicates: false });
-      if (contactErr) {
-        console.warn(`[sync-invoices] ${table} upsert uyarısı:`, contactErr.message);
-      } else {
-        console.log(`[sync-invoices] ${cleanedList.length} ${table} kaydı güncellendi/eklendi.`);
+        // invoices tablosunu güncelle
+        await supabase.from('invoices').update({
+          raw_detail:        invoice,
+          detail_fetched_at: now,
+          cari_tax_office:   addr.taxOffice,
+          cari_address:      addr.address,
+          cari_city:         addr.city,
+          cari_district:     addr.district,
+          cari_country:      addr.country,
+          cari_postal:       addr.postal,
+          cari_phone:        addr.phone,
+          cari_email:        addr.email,
+          updated_at:        now,
+        }).eq('invoice_id', row.invoice_id).eq('type', type);
+
+        detailFetched++;
+      } catch (e) {
+        console.warn(`[sync] detay hatası ${row.invoice_id}:`, e.message?.slice(0, 60));
+        // Hata da olsa işaretliyoruz (bir sonraki çalıştırmada yeniden denemesin)
+        await supabase.from('invoices')
+          .update({ detail_fetched_at: now })
+          .eq('invoice_id', row.invoice_id).eq('type', type);
       }
-    }
+    }, 3);
 
+    console.log(`[sync] ${detailFetched} fatura için adres/iletişim çekildi.`);
+
+    // ── 6. Kalan detaysız fatura sayısı ──────────────────────────────────────
+    const { count: remaining } = await supabase
+      .from('invoices')
+      .select('id', { count: 'exact', head: true })
+      .eq('type', type)
+      .is('detail_fetched_at', null)
+      .not('vkntckn', 'is', null);
 
     res.json({
       success: true,
-      message: `${upsertPayload.length} fatura başarıyla senkronize edildi.`,
-      inserted: upsertPayload.length
+      message: `${basePayload.length} fatura kaydedildi. ${detailFetched} adres çekildi. Kalan: ${remaining ?? 0}`,
+      inserted: basePayload.length,
+      detailFetched,
+      remaining: remaining ?? 0,
     });
 
-
   } catch (err) {
-    console.error('[sync-invoices]', err.message, err.stack);
+    console.error('[sync-invoices]', err.message);
     res.status(500).json({
       success: false,
-      error: 'Senkronizasyon Başarısız',
-      detail: err.message,
+      error: err.message,
       stack: err.stack?.split('\n').slice(0, 5).join(' | ')
     });
   }
