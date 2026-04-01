@@ -97,7 +97,8 @@ body {
 
 /* ─── Input ─── */
 .input-field,
-.modal-input {
+.modal-input,
+.form-input {
   width: 100%;
   display: block;
   background: var(--input-bg);
@@ -115,12 +116,14 @@ body {
   line-height: 1.5;
 }
 .input-field:focus,
-.modal-input:focus {
+.modal-input:focus,
+.form-input:focus {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
 }
 .input-field::placeholder,
-.modal-input::placeholder {
+.modal-input::placeholder,
+.form-input::placeholder {
   color: var(--text-muted);
   opacity: 0.7;
 }

@@ -11,7 +11,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { useStock } from '../hooks/useStock';
 import { supabase } from '../lib/supabaseClient';
-import StockForm from '../components/stock/StockForm';
+import ItemDrawer from '../components/stock/ItemDrawer';
 import QuickAddModal from '../components/stock/QuickAddModal';
 
 const CURRENCY_SYM = { TRY: '₺', USD: '$', EUR: '€' };
@@ -109,25 +109,14 @@ export default function Stock() {
     return list;
   }, [baseList, search, sortKey, sortDir]);
 
-  const handleSave = async (formData, pendingBOM = []) => {
+  const handleSave = async (formData) => {
     try {
-      let itemId;
       if (editing?.id) {
         await updateItem(editing.id, formData);
-        itemId = editing.id;
       } else {
-        const { data, error: e } = await supabase.from('items').insert([formData]).select().single();
+        const { error: e } = await supabase.from('items').insert([formData]).select().single();
         if (e) throw new Error(e.message);
-        itemId = data?.id;
         refetch();
-      }
-      if (!editing?.id && pendingBOM.length > 0 && itemId) {
-        await supabase.from('bom_recipes').insert(
-          pendingBOM.map(line => ({
-            parent_id: itemId, component_id: line.component_id,
-            quantity_required: line.quantity_required, unit: line.unit,
-          }))
-        );
       }
       setView('list');
       showToast(editing?.id ? 'Kayıt güncellendi ✓' : 'Yeni kayıt eklendi ✓');
@@ -276,7 +265,7 @@ export default function Stock() {
   // ── FORM VIEW ────────────────────────────────────────────────────────────────
   if (view === 'form') {
     return (
-      <StockForm
+      <ItemDrawer
         item={editing}
         defaultType={formType}
         onBack={() => setView('list')}
