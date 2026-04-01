@@ -174,7 +174,7 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white transition-colors"
             style={{ background: saving ? '#64748b' : currentColor }}>
             {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-            {saving ? 'Kaydediliyor...' : isEdit ? 'Güncelle' : (isProduct && !savedId ? 'Kaydet & Reçete' : 'Kaydet')}
+            {saving ? 'Kaydediliyor...' : isEdit ? 'Güncelle' : 'Kaydet'}
           </button>
         </div>
       </div>
@@ -182,27 +182,40 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
       {/* ── Sekme barı ─────────────────────────────────────────────────── */}
       <div className="flex border-b overflow-x-auto" style={{ borderColor: c.border, background: c.card }}>
       {SECTIONS.map(s => {
-          // Reçete sekmesi: sadece mevcut ID yoksa engelle
           const effectiveId = savedId || item?.id || null;
-          const recipeBlocked = s === 'recipe' && !effectiveId;
           return (
             <button key={s}
-              onClick={() => {
-                if (recipeBlocked) {
-                  alert('Önce ürünü kaydedin, sonra reçete ekleyebilirsiniz.');
-                  return;
+              onClick={async () => {
+                // Reçete sekmesine tıklandı ama ürün henüz kaydedilmedi— arka planda otomatik kaydet
+                if (s === 'recipe' && !effectiveId && isProduct) {
+                  if (!form.name?.trim()) {
+                    setErrors({ name: 'Reçete eklemeden önce lütfen ürün adını girin.' });
+                    setSection('info');
+                    return;
+                  }
+                  const payload = {
+                    ...form,
+                    purchase_price: parseFloat(form.purchase_price) || 0,
+                    sale_price: parseFloat(form.sale_price) || 0,
+                    stock_count: parseFloat(form.stock_count) || 0,
+                    critical_limit: parseFloat(form.critical_limit) || 0,
+                    vat_rate: parseFloat(form.vat_rate) || 0,
+                    category_id: form.category_id || null,
+                    supplier_id: form.supplier_id || null,
+                  };
+                  const { data, error } = await supabase.from('items').insert([payload]).select().single();
+                  if (!error) setSavedId(data.id);
+                  // Hata olsa bile sekmeyi aç (kullanıcı fark etmez, sonra kaydet düzeltilebilir)
                 }
                 setSection(s);
               }}
               className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold whitespace-nowrap transition-all"
               style={{
-                color: section === s ? currentColor : recipeBlocked ? 'rgba(148,163,184,0.35)' : c.muted,
+                color: section === s ? currentColor : c.muted,
                 borderBottom: section === s ? `2px solid ${currentColor}` : '2px solid transparent',
-                cursor: recipeBlocked ? 'not-allowed' : 'pointer',
               }}>
               <span>{sectionIcon[s]}</span>
               {sectionLabel[s]}
-              {recipeBlocked && <span className="text-[9px]" style={{ color: 'rgba(148,163,184,0.4)' }}>🔒</span>}
               {s === 'recipe' && effectiveId && (
                 <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold"
                   style={{ background: `${currentColor}20`, color: currentColor }}>
