@@ -109,18 +109,10 @@ export default function Stock() {
     return list;
   }, [baseList, search, sortKey, sortDir]);
 
-  const handleSave = async (formData) => {
-    try {
-      if (editing?.id) {
-        await updateItem(editing.id, formData);
-      } else {
-        const { error: e } = await supabase.from('items').insert([formData]).select().single();
-        if (e) throw new Error(e.message);
-        refetch();
-      }
-      setView('list');
-      showToast(editing?.id ? 'Kayıt güncellendi ✓' : 'Yeni kayıt eklendi ✓');
-    } catch (e) { showToast(e.message, 'error'); }
+  const handleSave = async () => {
+    refetch();
+    setView('list');
+    showToast(editing?.id ? 'Kayıt güncellendi ✓' : 'Yeni kayıt eklendi ✓');
   };
 
   const handleDelete = async (id) => {
