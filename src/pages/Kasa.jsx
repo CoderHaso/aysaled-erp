@@ -57,7 +57,6 @@ function TxForm({ tx, onSave, onClose, color }) {
     direction:   tx?.direction   || 'out',
     amount:      tx?.amount      || '',
     category:    tx?.category    || 'diger',
-    person:      tx?.person      || '',
     description: tx?.description || '',
     tx_date:     tx?.tx_date     || new Date().toISOString().split('T')[0],
     currency:    tx?.currency    || 'TRY',
@@ -82,7 +81,6 @@ function TxForm({ tx, onSave, onClose, color }) {
         amount:      parseFloat(form.amount),
         currency:    form.currency || 'TRY',
         category:    form.category,
-        person:      form.person?.trim() || null,
         description: form.description?.trim() || null,
         tx_date:     form.tx_date,
         is_settled:  form.is_settled,
@@ -171,14 +169,7 @@ function TxForm({ tx, onSave, onClose, color }) {
             </div>
           </div>
 
-          {/* Kişi */}
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Kişi / Çalışan (opsiyonel)</p>
-            <input style={inp} placeholder="Oğuz, İsmail, Patron, ..." value={form.person}
-              onChange={e => set('person', e.target.value)} />
-          </div>
-
-          {/* Açıklama */}
+          {/* Aciklama */}
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Açıklama</p>
             <input style={inp} placeholder="Kargo ödemedi, çay aldı, Mart maaşı ..."
@@ -212,49 +203,6 @@ function TxForm({ tx, onSave, onClose, color }) {
   );
 }
 
-// ─── Kişi Özet Kartı ──────────────────────────────────────────────────────────
-function PersonSummary({ txs, color }) {
-  const people = {};
-  txs.forEach(t => {
-    if (!t.person || t.is_settled) return;
-    if (!people[t.person]) people[t.person] = { in: 0, out: 0 };
-    if (t.direction === 'in')  people[t.person].in  += t.amount;
-    if (t.direction === 'out') people[t.person].out += t.amount;
-  });
-  const entries = Object.entries(people);
-  if (entries.length === 0) return null;
-
-  return (
-    <div className="glass-card p-4">
-      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Kişi Bazlı Bakiye</p>
-      <div className="space-y-2">
-        {entries.map(([name, bal]) => {
-          const net = bal.in - bal.out;
-          return (
-            <div key={name} className="flex items-center justify-between py-1.5"
-              style={{ borderBottom: '1px solid rgba(148,163,184,0.07)' }}>
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs font-bold"
-                  style={{ background: color }}>
-                  {name.charAt(0).toUpperCase()}
-                </div>
-                <span className="text-sm font-semibold text-slate-200">{name}</span>
-              </div>
-              <div className="text-right">
-                <p className="text-sm font-bold" style={{ color: net >= 0 ? '#10b981' : '#ef4444' }}>
-                  {net >= 0 ? '+' : ''}{fmt(net)} ₺
-                </p>
-                <p className="text-[10px] text-slate-500">
-                  {net > 0 ? 'Alacaklı' : net < 0 ? 'Borçlu' : 'Dengede'}
-                </p>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 // ─── Ana Sayfa ─────────────────────────────────────────────────────────────────
 export default function Kasa() {
@@ -268,9 +216,8 @@ export default function Kasa() {
   const [search, setSearch]      = useState('');
   const [toast, setToast]        = useState(null);
   const [dialog, setDialog]      = useState({ open: false });
-  const [filterDir, setFilterDir] = useState('all');   // all | in | out
+  const [filterDir, setFilterDir] = useState('all');
   const [filterCat, setFilterCat] = useState('all');
-  const [filterPerson, setFilterPerson] = useState('all');
 
   const c = {
     card:   isDark ? 'rgba(30,41,59,0.7)' : '#ffffff',
@@ -292,18 +239,13 @@ export default function Kasa() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Benzersiz kişiler
-  const people = [...new Set(txs.filter(t => t.person).map(t => t.person))];
-
   // Filtrele
   const filtered = txs.filter(t => {
     if (filterDir !== 'all' && t.direction !== filterDir) return false;
     if (filterCat !== 'all' && t.category !== filterCat) return false;
-    if (filterPerson !== 'all' && t.person !== filterPerson) return false;
     if (search) {
       const q = search.toLowerCase();
-      return (t.description||'').toLowerCase().includes(q)
-          || (t.person||'').toLowerCase().includes(q);
+      return (t.description||'').toLowerCase().includes(q);
     }
     return true;
   });
@@ -416,40 +358,10 @@ export default function Kasa() {
                 style={{ background: c.card, borderColor: c.border }}>
                 <Search size={14} style={{ color: c.muted }} />
                 <input value={search} onChange={e => setSearch(e.target.value)}
-                  placeholder="Kişi veya açıklama ara..."
+                  placeholder="Aciklama ara..."
                   className="bg-transparent border-none outline-none text-sm flex-1"
                   style={{ color: c.text }} />
                 {search && <button onClick={() => setSearch('')}><X size={13} style={{ color: c.muted }} /></button>}
-              </div>
-
-              {/* Filtre çipleri */}
-              <div className="flex flex-wrap gap-2">
-                {/* Yön */}
-                {[
-                  { v:'all', l:'Tümü' },
-                  { v:'out', l:'Giderler' },
-                  { v:'in',  l:'Gelirler' },
-                ].map(f => (
-                  <button key={f.v} onClick={() => setFilterDir(f.v)}
-                    className="px-3 py-1 rounded-lg text-xs font-semibold transition-all"
-                    style={{ background: filterDir === f.v ? currentColor : 'rgba(255,255,255,0.06)', color: filterDir === f.v ? '#fff' : c.muted }}>
-                    {f.l}
-                  </button>
-                ))}
-                <span style={{ color: c.border }}>|</span>
-                {/* Kişi */}
-                <button onClick={() => setFilterPerson('all')}
-                  className="px-3 py-1 rounded-lg text-xs font-semibold transition-all"
-                  style={{ background: filterPerson === 'all' ? currentColor : 'rgba(255,255,255,0.06)', color: filterPerson === 'all' ? '#fff' : c.muted }}>
-                  Herkes
-                </button>
-                {people.map(p => (
-                  <button key={p} onClick={() => setFilterPerson(p === filterPerson ? 'all' : p)}
-                    className="px-3 py-1 rounded-lg text-xs font-semibold transition-all"
-                    style={{ background: filterPerson === p ? currentColor : 'rgba(255,255,255,0.06)', color: filterPerson === p ? '#fff' : c.muted }}>
-                    {p}
-                  </button>
-                ))}
               </div>
             </div>
 
@@ -507,9 +419,6 @@ export default function Kasa() {
                                 )}
                               </div>
                               <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                                {tx.person && (
-                                  <span className="text-[11px] font-semibold" style={{ color: currentColor }}>{tx.person}</span>
-                                )}
                                 <span className="text-[10px]" style={{ color: c.muted }}>{fmtD(tx.tx_date)}</span>
                               </div>
                             </div>
@@ -551,7 +460,6 @@ export default function Kasa() {
 
           {/* ── Sağ: Kişi Özeti + Kategori Dağılımı ── */}
           <div className="space-y-5">
-            <PersonSummary txs={txs} color={currentColor} />
 
             {/* Kategori Özeti */}
             <div className="glass-card p-4">
