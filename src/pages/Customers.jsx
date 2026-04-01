@@ -46,13 +46,29 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
   const isNew = !customer.id;
 
   useEffect(() => {
-    if (!customer.vkntckn || isNew) { setLoadingInv(false); return; }
+    if (isNew) { setLoadingInv(false); return; }
     setLoadingInv(true);
-    // Carilere gönderdiğimiz faturalar = outbox (giden/satış faturası)
-    supabase.from('invoices').select('*').eq('vkntckn', customer.vkntckn).eq('type', 'outbox')
-      .order('issue_date', { ascending: false })
-      .then(({ data }) => { setInvoices(data || []); setLoadingInv(false); });
-  }, [customer.vkntckn]);
+    // VKN ile ara, yoksa cari_name ile ara
+    const loadInvoices = async () => {
+      let data = [];
+      if (customer.vkntckn) {
+        const { data: d } = await supabase.from('invoices')
+          .select('*').eq('vkntckn', customer.vkntckn).eq('type', 'outbox')
+          .order('issue_date', { ascending: false });
+        data = d || [];
+      }
+      // VKN ile sonuc yoksa veya VKN yoksa, name ile de dene
+      if (data.length === 0 && customer.name) {
+        const { data: d2 } = await supabase.from('invoices')
+          .select('*').ilike('cari_name', `%${customer.name}%`).eq('type', 'outbox')
+          .order('issue_date', { ascending: false });
+        data = d2 || [];
+      }
+      setInvoices(data);
+      setLoadingInv(false);
+    };
+    loadInvoices();
+  }, [customer.vkntckn, customer.name]);
 
   // Ödemeler
   useEffect(() => {

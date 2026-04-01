@@ -52,14 +52,30 @@ function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
 
   const isNew = !supplier.id;
 
+  const [paymentPrefill, setPaymentPrefill] = useState(null);
+
   useEffect(() => {
-    if (!supplier.vkntckn || isNew) { setLoadingInv(false); return; }
+    if (isNew) { setLoadingInv(false); return; }
     setLoadingInv(true);
-    // Tedarikçilerden aldığımız faturalar = inbox (gelen/alış faturası)
-    supabase.from('invoices').select('*').eq('vkntckn', supplier.vkntckn).eq('type', 'inbox')
-      .order('issue_date', { ascending: false })
-      .then(({ data }) => { setInvoices(data || []); setLoadingInv(false); });
-  }, [supplier.vkntckn]);
+    const loadInvoices = async () => {
+      let data = [];
+      if (supplier.vkntckn) {
+        const { data: d } = await supabase.from('invoices')
+          .select('*').eq('vkntckn', supplier.vkntckn).eq('type', 'inbox')
+          .order('issue_date', { ascending: false });
+        data = d || [];
+      }
+      if (data.length === 0 && supplier.name) {
+        const { data: d2 } = await supabase.from('invoices')
+          .select('*').ilike('cari_name', `%${supplier.name}%`).eq('type', 'inbox')
+          .order('issue_date', { ascending: false });
+        data = d2 || [];
+      }
+      setInvoices(data);
+      setLoadingInv(false);
+    };
+    loadInvoices();
+  }, [supplier.vkntckn, supplier.name]);
 
   // Ödemeler
   useEffect(() => {
@@ -289,16 +305,15 @@ function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
                   <motion.div key={inv.id || i}
                     initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.04 }}
-                    onClick={() => {
-                      onClose();
-                      navigate('/outgoing-invoices', { state: { openInvoiceId: inv.invoice_id, documentId: inv.document_id } });
-                    }}
-                    className="rounded-2xl p-4 cursor-pointer group transition-all"
+                    className="rounded-2xl p-4 group transition-all"
                     style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(148,163,184,0.08)' }}
                     onMouseEnter={e => e.currentTarget.style.borderColor = `${ACCENT}40`}
                     onMouseLeave={e => e.currentTarget.style.borderColor = 'rgba(148,163,184,0.08)'}
                   >
-                    <div className="flex items-start justify-between gap-2">
+                    {/* Fatura baslik satiri */}
+                    <div className="flex items-start justify-between gap-2"
+                      onClick={() => { onClose(); navigate('/outgoing-invoices', { state: { openInvoiceId: inv.invoice_id, documentId: inv.document_id } }); }}
+                      style={{ cursor: 'pointer' }}>
                       <div className="flex-1">
                         <p className="text-xs font-mono font-bold" style={{ color: ACCENT }}>{inv.invoice_id}</p>
                         <p className="text-[10px] text-slate-500 mt-0.5">{fmtD(inv.issue_date)}</p>
@@ -311,6 +326,8 @@ function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
                         <ExternalLink size={12} className="text-slate-600 group-hover:text-orange-400 transition-colors flex-shrink-0" />
                       </div>
                     </div>
+
+                    {/* Kalemler */}
                     {inv.line_items?.length > 0 && (
                       <div className="mt-2.5 pt-2.5" style={{ borderTop: '1px solid rgba(148,163,184,0.08)' }}>
                         {inv.line_items.slice(0, 3).map((item, j) => (
@@ -326,6 +343,27 @@ function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
                         )}
                       </div>
                     )}
+
+                    {/* Odemeye Gecir Butonu */}
+                    <div className="mt-2.5 pt-2 flex justify-end"
+                      style={{ borderTop: '1px solid rgba(148,163,184,0.06)' }}>
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          setPaymentPrefill({
+                            direction: 'payable',
+                            amount: inv.amount,
+                            currency: inv.currency || 'TRY',
+                            description: `Fatura: ${inv.invoice_id}`,
+                          });
+                          setTab('payments');
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all"
+                        style={{ background: 'rgba(249,115,22,0.1)', color: '#fb923c', border: '1px solid rgba(249,115,22,0.2)' }}
+                      >
+                        <CreditCard size={11} />Ödemeye Geçir
+                      </button>
+                    </div>
                   </motion.div>
                 ))}
 
@@ -341,6 +379,8 @@ function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
                 onPaymentsChange={setPayments}
                 setDialog={setDialog}
                 invoices={invoices}
+                prefill={paymentPrefill}
+                onPrefillUsed={() => setPaymentPrefill(null)}
               />
             )}
           </div>

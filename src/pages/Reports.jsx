@@ -94,7 +94,7 @@ export default function Reports() {
       const [invR, ordR, qR, custR, suppR, cashR] = await Promise.all([
         supabase.from('invoices').select('invoice_id,issue_date,amount,currency,status,type,cari_name,vkntckn'),
         supabase.from('orders').select('id,created_at,grand_total,status,customer_name,customer_id').gte('created_at', cutoffStr + 'T00:00:00Z'),
-        supabase.from('quotes').select('id,created_at,grand_total,status,customer_name,currency'),
+        supabase.from('quotes').select('id,created_at,grand_total,status,company_name,currency'),
         supabase.from('customers').select('id,name,source,created_at'),
         supabase.from('suppliers').select('id,name,source,created_at'),
         supabase.from('cash_transactions').select('id,direction,amount,category,person,tx_date,is_settled').gte('tx_date', cutoffStr),
@@ -503,7 +503,7 @@ function TeklifTab({ currentColor, quotes, acceptedQuotes, rejectedQuotes, activ
             </div>
             <div className="glass-card p-4">
               <SectionTitle icon={Users} title="En Cok Teklif Verilen" color={currentColor} />
-              <TopList color={currentColor} items={topN(quotes, 'customer_name', 'grand_total')} unit="TL " />
+              <TopList color={currentColor} items={topN(quotes, 'company_name', 'grand_total')} unit="TL " />
             </div>
           </div>
         </div>
@@ -515,7 +515,7 @@ function TeklifTab({ currentColor, quotes, acceptedQuotes, rejectedQuotes, activ
           {rejectedQuotes.slice(0, 20).map((q, i) => (
             <div key={i} className="flex justify-between py-2" style={{ borderBottom: '1px solid rgba(148,163,184,0.06)' }}>
               <div>
-                <p className="text-xs font-semibold text-slate-300">{q.customer_name || 'Bilinmeyen'}</p>
+                <p className="text-xs font-semibold text-slate-300">{q.company_name || 'Bilinmeyen'}</p>
                 <p className="text-[10px] text-slate-500">{q.created_at?.slice(0, 10)}</p>
               </div>
               <span className="text-xs font-bold text-red-400">TL {fmtK(q.grand_total)}</span>
