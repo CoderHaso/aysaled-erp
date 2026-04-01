@@ -516,13 +516,11 @@ export default function Invoices({ type = 'inbox' }) {
   const openCreate = async (t = 'outbox') => { 
     setCreateType(t); 
     setCreateModal(true); 
-    // Her açılışta kümeı yenile (gelir vs gider ayrışmış olması için)
     const [custRes, suppRes, itemRes] = await Promise.all([
-      supabase.from('customers').select('id, name, vkntckn, phone, email'),
-      supabase.from('suppliers').select('id, name, vkntckn, phone, email'),
-      supabase.from('items').select('id, name, sku, unit, item_type, purchase_price')
+      supabase.from('customers').select('id, name, vkntckn, phone, email, city, address, tax_office, district'),
+      supabase.from('suppliers').select('id, name, vkntckn, phone, email, city, address, tax_office, district'),
+      supabase.from('items').select('id, name, sku, unit, item_type, purchase_price, sale_price')
     ]);
-    // Gelir (outbox) = müşteriler, Gider (inbox) = tedarikçiler — deduplicate by id
     const raw = t === 'inbox' ? (suppRes.data || []) : (custRes.data || []);
     const unique = Array.from(new Map(raw.map(e => [e.id, e])).values());
     setEntities(unique);
@@ -559,7 +557,23 @@ export default function Invoices({ type = 'inbox' }) {
 
   // Seçim yapıldığında formu doldur
   const selectEntity = (e) => {
-    setCreateForm(p => ({ ...p, customer_id: e.id, cari_name: e.name, vkntckn: e.vkntckn || '', city: e.city || '', district: '', address: e.address || '', tax_office: e.tax_office || '' }));
+    // Adres alanini ilce (district) + adres (address) olarak ayristir
+    let district = e.district || '';
+    let address  = e.address || '';
+    // Eski kayitlarda district adres icinde (ilce) formatinda olabilir
+    if (!district && address.startsWith('(')) {
+      const m = address.match(/^\(([^)]+)\)\s*(.*)$/);
+      if (m) { district = m[1]; address = m[2]; }
+    }
+    setCreateForm(p => ({ ...p,
+      customer_id: e.id,
+      cari_name:   e.name,
+      vkntckn:     e.vkntckn    || '',
+      city:        e.city       || '',
+      district:    district,
+      address:     address,
+      tax_office:  e.tax_office || '',
+    }));
     setEntitySearch(e.name);
     setEntityOpen(false);
     setQuickEntityForm(null);
@@ -1182,28 +1196,70 @@ export default function Invoices({ type = 'inbox' }) {
                   {createType === 'outbox' && (
                     <>
                       <div>
-                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Şehir *</label>
-                        <input value={createForm.city} onChange={e => setCreateForm(p => ({...p, city: e.target.value}))}
+                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Ulke</label>
+                        <input value={createForm.country || 'Turkiye'} onChange={e => setCreateForm(p => ({...p, country: e.target.value}))}
                           className="w-full px-3 py-2 text-sm rounded-xl border outline-none uppercase"
-                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Örn: İZMİR" />
+                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Turkiye" />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>İlçe *</label>
+                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Sehir *</label>
+                        <input value={createForm.city} onChange={e => setCreateForm(p => ({...p, city: e.target.value}))}
+                          className="w-full px-3 py-2 text-sm rounded-xl border outline-none uppercase"
+                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Ornegin: IZMIR" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Mahalle / Ilce *</label>
                         <input value={createForm.district} onChange={e => setCreateForm(p => ({...p, district: e.target.value}))}
                           className="w-full px-3 py-2 text-sm rounded-xl border outline-none uppercase"
-                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Örn: BAYRAKLI" />
+                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Ornegin: KONAK" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Kasaba / Koy</label>
+                        <input value={createForm.town || ''} onChange={e => setCreateForm(p => ({...p, town: e.target.value}))}
+                          className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
+                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Opsiyonel" />
                       </div>
                       <div className="col-span-2">
-                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Adres *</label>
+                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Cadde / Sokak / Adres *</label>
                         <input value={createForm.address} onChange={e => setCreateForm(p => ({...p, address: e.target.value}))}
                           className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
-                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Tam Adres..." />
+                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Cadde sokak bina kapi no..." />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Bina Adi</label>
+                        <input value={createForm.building_name || ''} onChange={e => setCreateForm(p => ({...p, building_name: e.target.value}))}
+                          className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
+                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Opsiyonel" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Bina / Kapi No</label>
+                        <input value={createForm.building_no || ''} onChange={e => setCreateForm(p => ({...p, building_no: e.target.value}))}
+                          className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
+                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Opsiyonel" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Posta Kodu</label>
+                        <input value={createForm.postal_code || ''} onChange={e => setCreateForm(p => ({...p, postal_code: e.target.value}))}
+                          className="w-full px-3 py-2 text-sm rounded-xl border outline-none font-mono"
+                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="35000" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Tel</label>
+                        <input value={createForm.phone || ''} onChange={e => setCreateForm(p => ({...p, phone: e.target.value}))}
+                          className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
+                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="0232 xxx xx xx" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>E-posta</label>
+                        <input value={createForm.email || ''} onChange={e => setCreateForm(p => ({...p, email: e.target.value}))}
+                          className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
+                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="info@firma.com" />
                       </div>
                       <div>
                         <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Vergi Dairesi *</label>
                         <input value={createForm.tax_office} onChange={e => setCreateForm(p => ({...p, tax_office: e.target.value}))}
                           className="w-full px-3 py-2 text-sm rounded-xl border outline-none uppercase"
-                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Örn: BORNOVA" />
+                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Ornegin: BORNOVA" />
                       </div>
                     </>
                   )}
@@ -1430,14 +1486,22 @@ export default function Invoices({ type = 'inbox' }) {
                             </div>
                           )}
 
-                          {/* Miktar, Birim fiyat, KDV satırı */}
-                          <div className="grid grid-cols-3 gap-2">
+                          {/* Miktar, Birim, Birim fiyat, KDV */}
+                          <div className="grid grid-cols-4 gap-2">
                             <div>
                               <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>Miktar</label>
                               <input type="number" value={l.quantity} onChange={e => updateLine(l.id, 'quantity', e.target.value)}
                                 className="w-full px-2.5 py-1.5 text-sm rounded-lg border outline-none text-center"
                                 style={{ background: c.card, borderColor: c.border, color: c.text }}
                                 min={1} />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>Birim</label>
+                              <select value={l.unit || 'Adet'} onChange={e => updateLine(l.id, 'unit', e.target.value)}
+                                className="w-full px-2.5 py-1.5 text-sm rounded-lg border outline-none"
+                                style={{ background: c.card, borderColor: c.border, color: c.text }}>
+                                {['Adet','Metre','Kg','Ton','m2','m3','Litre','Paket','Kutu','Takim','Set','Rulo','Saat','Gun'].map(u => <option key={u}>{u}</option>)}
+                              </select>
                             </div>
                             <div>
                               <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>Birim Fiyat</label>
@@ -1459,11 +1523,43 @@ export default function Invoices({ type = 'inbox' }) {
                       );
                     })}
                   </div>
-                  {/* Toplam */}
-                  <div className="text-right mt-2 text-sm font-bold" style={{ color: c.text }}>
-                    Toplam:{' '}
-                    {Number(createForm.lines.reduce((s,l)=>s+(+l.quantity||0)*(+l.unitPrice||0)*(1+(+l.taxRate||0)/100),0)).toLocaleString('tr-TR',{minimumFractionDigits:2})} {createForm.currency}
-                  </div>
+                  {/* Toplam + Yazıyla */}
+                  {(() => {
+                    const total = createForm.lines.reduce((s,l) => s+(+l.quantity||0)*(+l.unitPrice||0)*(1+(+l.taxRate||0)/100), 0);
+                    const currency = createForm.currency;
+                    // Turkce sayi yazimi
+                    const ONES = ['','Bir','Iki','Uc','Dort','Bes','Alti','Yedi','Sekiz','Dokuz'];
+                    const TENS = ['','On','Yirmi','Otuz','Kirk','Elli','Altmis','Yetmis','Seksen','Doksan'];
+                    const toWords = (n) => {
+                      n = Math.round(n);
+                      if (n === 0) return 'Sifir';
+                      if (n < 0) return 'Eksi ' + toWords(-n);
+                      let res = '';
+                      if (n >= 1000000) { res += toWords(Math.floor(n/1000000)) + ' Milyon '; n %= 1000000; }
+                      if (n >= 1000) { const t = Math.floor(n/1000); res += (t === 1 ? '' : toWords(t) + ' ') + 'Bin '; n %= 1000; }
+                      if (n >= 100) { res += (Math.floor(n/100) === 1 ? 'Yuz' : ONES[Math.floor(n/100)] + ' Yuz') + ' '; n %= 100; }
+                      if (n >= 10) { res += TENS[Math.floor(n/10)] + ' '; n %= 10; }
+                      if (n > 0) res += ONES[n] + ' ';
+                      return res.trim();
+                    };
+                    const intPart  = Math.floor(total);
+                    const decPart  = Math.round((total - intPart) * 100);
+                    const currName = { TRY: 'Turk Lirasi', USD: 'Amerikan Dolari', EUR: 'Euro', GBP: 'Sterlin' }[currency] || currency;
+                    const kurusName = { TRY: 'Kurus', USD: 'Sent', EUR: 'Sent', GBP: 'Peni' }[currency] || 'Kurus';
+                    let words = '#' + toWords(intPart) + ' ' + currName;
+                    if (decPart > 0) words += ' ' + toWords(decPart) + ' ' + kurusName;
+                    words += '#';
+                    return (
+                      <div className="flex items-start justify-between mt-2 flex-wrap gap-2">
+                        <div className="text-[11px] font-mono px-3 py-1.5 rounded-lg flex-1" style={{ background: 'rgba(99,102,241,0.08)', color: '#818cf8', border: '1px solid rgba(99,102,241,0.2)', wordBreak: 'break-word' }}>
+                          {words}
+                        </div>
+                        <div className="text-right text-sm font-bold flex-shrink-0" style={{ color: c.text }}>
+                          Toplam: {total.toLocaleString('tr-TR',{minimumFractionDigits:2})} {currency}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Notlar */}
