@@ -256,9 +256,9 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
   const totalItems = (recipe.recipe_items || []).length;
 
   return (
-    <div className="rounded-2xl overflow-hidden" style={{ border: `1px solid ${expanded ? currentColor + '60' : c.border}`, transition: 'border-color 0.2s' }}>
+    <div className="rounded-2xl" style={{ border: `1px solid ${expanded ? currentColor + '60' : c.border}`, transition: 'border-color 0.2s', overflow: 'visible' }}>
       {/* Header */}
-      <div className="flex items-center gap-2 px-4 py-3 cursor-pointer"
+      <div className="flex items-center gap-2 px-4 py-3 cursor-pointer rounded-t-2xl"
         style={{ background: expanded ? `${currentColor}08` : 'transparent' }}
         onClick={onToggle}>
         <div className="w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
@@ -304,7 +304,7 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
 
       {/* Expanded content */}
       {expanded && (
-        <div className="border-t px-4 py-4 space-y-4" style={{ borderColor: c.border }}>
+        <div className="border-t px-4 py-4 space-y-4 rounded-b-2xl" style={{ borderColor: c.border }}>
           {/* Etiketler */}
           <div>
             <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: c.muted }}>
@@ -385,15 +385,17 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
 
 // ═══════════════════════ RECIPE ITEM ROW ═══════════════════════
 function RecipeItemRow({ item, index, rawItems, onChange, onBlur, onDelete, c, currentColor, isDark }) {
-  const [itemSearch, setItemSearch] = useState('');
-  const [dropOpen,   setDropOpen]   = useState(false);
+  const [itemSearch, setItemSearch] = React.useState('');
+  const [dropOpen,   setDropOpen]   = React.useState(false);
+  const [dropPos,    setDropPos]    = React.useState({ top: 0, left: 0, width: 0 });
+  const btnRef = React.useRef(null);
 
   const filtered = itemSearch.trim()
     ? rawItems.filter(r =>
         r.name.toLowerCase().includes(itemSearch.toLowerCase()) ||
         (r.sku || '').toLowerCase().includes(itemSearch.toLowerCase())
-      ).slice(0, 8)
-    : rawItems.slice(0, 8);
+      ).slice(0, 10)
+    : rawItems.slice(0, 10);
 
   const selectRaw = (raw) => {
     const patch = { item_id: raw.id, item_name: raw.name, unit: raw.unit || 'Adet' };
@@ -401,6 +403,14 @@ function RecipeItemRow({ item, index, rawItems, onChange, onBlur, onDelete, c, c
     onBlur(patch);
     setDropOpen(false);
     setItemSearch('');
+  };
+
+  const openDrop = () => {
+    if (btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      setDropPos({ top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 260) });
+    }
+    setDropOpen(true);
   };
 
   return (
@@ -420,35 +430,51 @@ function RecipeItemRow({ item, index, rawItems, onChange, onBlur, onDelete, c, c
               className="w-full px-2 py-1 text-xs rounded-lg outline-none border"
               style={{ background: c.card, borderColor: currentColor, color: c.text }}
               placeholder="Ara..." />
-            {filtered.length > 0 && (
-              <div className="absolute left-0 right-0 top-7 z-50 rounded-xl overflow-hidden shadow-2xl"
-                style={{ background: isDark ? '#0f1f38' : '#fff', border: `1px solid ${c.border}` }}>
-                {filtered.map(r => (
-                  <div key={r.id}
-                    className="px-3 py-2 cursor-pointer flex items-center justify-between text-xs"
-                    onMouseDown={() => selectRaw(r)}
-                    style={{ borderBottom: `1px solid ${c.border}` }}
-                    onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.07)' : '#f1f5f9'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                    <span className="font-semibold" style={{ color: c.text }}>{r.name}</span>
-                    <span style={{ color: c.muted }}>{r.unit}</span>
-                  </div>
-                ))}
-                {itemSearch && (
-                  <div className="px-3 py-2 cursor-pointer text-xs font-semibold"
-                    style={{ color: currentColor }}
-                    onMouseDown={() => {
-                      const patch = { item_id: null, item_name: itemSearch.trim(), unit: 'Adet' };
-                      onChange(patch); onBlur(patch); setDropOpen(false); setItemSearch('');
-                    }}>
-                    "{itemSearch}" adını kullan (kayıtsız)
-                  </div>
-                )}
-              </div>
+            {/* FIXED DROPDOWN — viewport üzerinde açılır, hiçbir overflow bunu kesmez */}
+            {filtered.length > 0 && typeof document !== 'undefined' && (
+              React.createPortal(
+                <div
+                  style={{
+                    position: 'fixed',
+                    top: dropPos.top,
+                    left: dropPos.left,
+                    width: dropPos.width,
+                    zIndex: 9999,
+                    background: isDark ? '#0f1f38' : '#fff',
+                    border: `1px solid ${c.border}`,
+                    borderRadius: '0.875rem',
+                    boxShadow: '0 12px 40px rgba(0,0,0,0.22)',
+                    maxHeight: 260,
+                    overflowY: 'auto',
+                  }}>
+                  {filtered.map(r => (
+                    <div key={r.id}
+                      className="px-3 py-2 cursor-pointer flex items-center justify-between text-xs"
+                      onMouseDown={() => selectRaw(r)}
+                      style={{ borderBottom: `1px solid ${c.border}` }}
+                      onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.07)' : '#f1f5f9'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <span className="font-semibold" style={{ color: c.text }}>{r.name}</span>
+                      <span style={{ color: c.muted }}>{r.unit}</span>
+                    </div>
+                  ))}
+                  {itemSearch && (
+                    <div className="px-3 py-2 cursor-pointer text-xs font-semibold"
+                      style={{ color: currentColor }}
+                      onMouseDown={() => {
+                        const patch = { item_id: null, item_name: itemSearch.trim(), unit: 'Adet' };
+                        onChange(patch); onBlur(patch); setDropOpen(false); setItemSearch('');
+                      }}>
+                      "{itemSearch}" adını kullan (kayıtsız)
+                    </div>
+                  )}
+                </div>,
+                document.body
+              )
             )}
           </div>
         ) : (
-          <button onClick={() => setDropOpen(true)}
+          <button ref={btnRef} onClick={openDrop}
             className="w-full text-left px-2 py-1 text-xs rounded-lg border truncate"
             style={{ background: 'transparent', borderColor: c.border, color: item.item_name ? c.text : c.muted }}>
             {item.item_name || 'Malzeme seç...'}

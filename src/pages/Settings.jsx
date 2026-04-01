@@ -24,7 +24,7 @@ export default function Settings() {
   const [testResult, setTestResult] = useState(null);
 
   useEffect(() => {
-    supabase.from('app_settings').select('value').eq('id', 'uyumsoft').single()
+    supabase.from('app_settings').select('value').eq('id', 'uyumsoft').maybeSingle()
       .then(({ data }) => { if (data?.value) setForm({ username: data.value.username||'', password: data.value.password||'', isProduction: data.value.isProduction||false }); });
   }, []);
 

@@ -109,16 +109,23 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
       supplier_id:     form.supplier_id || null,
     };
 
-    // Eğer yeni ürünse önce kaydet, ID al (reçete için lazım)
-    if (!savedId && isProduct) {
+    // Düzenleme modunda normal kaydet
+    if (isEdit) {
+      await onSave(payload);
+      return;
+    }
+
+    // Yeni ÜRÜN: önce kaydet → ID al → reçete sekmesine geç
+    if (isProduct && !savedId) {
       const { data, error } = await supabase.from('items').insert([payload]).select().single();
       if (!error) {
         setSavedId(data.id);
-        setSection('recipe'); // Reçete sekmesine geç
+        setSection('recipe');
       }
       return;
     }
 
+    // Yeni hammadde: normal kaydet
     await onSave(payload);
   };
 
@@ -174,30 +181,37 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
 
       {/* ── Sekme barı ─────────────────────────────────────────────────── */}
       <div className="flex border-b overflow-x-auto" style={{ borderColor: c.border, background: c.card }}>
-        {SECTIONS.map(s => (
-          <button key={s}
-            onClick={() => {
-              if (s === 'recipe' && !savedId && !isEdit) {
-                alert('Önce kaydedin, sonra reçete ekleyebilirsiniz.');
-                return;
-              }
-              setSection(s);
-            }}
-            className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold whitespace-nowrap transition-all"
-            style={{
-              color: section === s ? currentColor : c.muted,
-              borderBottom: section === s ? `2px solid ${currentColor}` : '2px solid transparent',
-            }}>
-            <span>{sectionIcon[s]}</span>
-            {sectionLabel[s]}
-            {s === 'recipe' && savedId && (
-              <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold"
-                style={{ background: `${currentColor}20`, color: currentColor }}>
-                ✓
-              </span>
-            )}
-          </button>
-        ))}
+      {SECTIONS.map(s => {
+          // Reçete sekmesi: sadece mevcut ID yoksa engelle
+          const effectiveId = savedId || item?.id || null;
+          const recipeBlocked = s === 'recipe' && !effectiveId;
+          return (
+            <button key={s}
+              onClick={() => {
+                if (recipeBlocked) {
+                  alert('Önce ürünü kaydedin, sonra reçete ekleyebilirsiniz.');
+                  return;
+                }
+                setSection(s);
+              }}
+              className="flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold whitespace-nowrap transition-all"
+              style={{
+                color: section === s ? currentColor : recipeBlocked ? 'rgba(148,163,184,0.35)' : c.muted,
+                borderBottom: section === s ? `2px solid ${currentColor}` : '2px solid transparent',
+                cursor: recipeBlocked ? 'not-allowed' : 'pointer',
+              }}>
+              <span>{sectionIcon[s]}</span>
+              {sectionLabel[s]}
+              {recipeBlocked && <span className="text-[9px]" style={{ color: 'rgba(148,163,184,0.4)' }}>🔒</span>}
+              {s === 'recipe' && effectiveId && (
+                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold"
+                  style={{ background: `${currentColor}20`, color: currentColor }}>
+                  ✓
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* ── İçerik ─────────────────────────────────────────────────────── */}
@@ -466,20 +480,8 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
           />
         )}
 
-      </div>
+      </div>{/* /content wrapper */}
 
-      {/* Kaydet butonu (alt sticky) */}
-      {section !== 'recipe' && (
-        <div className="fixed bottom-0 left-0 right-0 px-4 pb-4 pt-3 border-t"
-          style={{ background: c.card, borderColor: c.border }}>
-          <button onClick={handleSave} disabled={saving}
-            className="w-full py-3 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2"
-            style={{ background: saving ? '#64748b' : currentColor }}>
-            {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-            {saving ? 'Kaydediliyor...' : isEdit ? 'Güncelle' : (isProduct && !savedId ? 'Kaydet & Reçete Ekle' : 'Kaydet')}
-          </button>
-        </div>
-      )}
     </motion.div>
   );
 }
