@@ -574,12 +574,21 @@ export default function Customers() {
     });
   };
 
+  const [filterSource, setFilterSource] = useState('all');
+
   const filtered = customers.filter(c => {
     const t = search.toLowerCase();
-    return (c.name||'').toLowerCase().includes(t)
+    const matchSearch = (c.name||'').toLowerCase().includes(t)
       || (c.vkntckn||'').includes(t)
       || (c.phone||'').includes(t)
       || (c.email||'').toLowerCase().includes(t);
+    const matchSource = filterSource === 'all' ? true
+      : filterSource === 'faturali'  ? (!c.is_faturasiz && c.source !== 'manual')
+      : filterSource === 'faturasiz' ? !!c.is_faturasiz
+      : filterSource === 'faturadan' ? c.source === 'invoice_sync'
+      : filterSource === 'manuel'    ? c.source === 'manual'
+      : true;
+    return matchSearch && matchSource;
   });
 
   const invoicedCount = customers.filter(c => c.vkntckn && c.source === 'invoice_sync').length;
@@ -688,7 +697,24 @@ export default function Customers() {
           {search && <button onClick={() => setSearch('')}><X size={14} style={{ color: c.muted }} /></button>}
         </div>
 
-        {/* Liste */}
+        {/* Filtre Butonlari */}
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {[
+            { id: 'all',       label: 'Tumü' },
+            { id: 'faturali',  label: 'Faturali' },
+            { id: 'faturasiz', label: 'Faturasiz' },
+            { id: 'faturadan', label: 'Faturadan' },
+            { id: 'manuel',    label: 'Manuel' },
+          ].map(f => (
+            <button key={f.id} onClick={() => setFilterSource(f.id)}
+              className="px-3 py-1 rounded-lg text-xs font-semibold transition-all"
+              style={{
+                background: filterSource === f.id ? currentColor : 'rgba(255,255,255,0.06)',
+                color: filterSource === f.id ? '#fff' : '#94a3b8',
+              }}>{f.label}</button>
+          ))}
+        </div>
+
         <div className="rounded-3xl overflow-hidden border" style={{ background: c.card, borderColor: c.border }}>
           {loading ? (
             <div className="flex items-center justify-center py-16 gap-2" style={{ color: c.muted }}>

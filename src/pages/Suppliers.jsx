@@ -466,12 +466,21 @@ export default function Suppliers() {
     });
   };
 
+  const [filterSource, setFilterSource] = useState('all');
+
   const filtered = suppliers.filter(s => {
     const t = search.toLowerCase();
-    return (s.name||'').toLowerCase().includes(t)
+    const matchSearch = (s.name||'').toLowerCase().includes(t)
       || (s.vkntckn||'').includes(t)
       || (s.phone||'').includes(t)
       || (s.email||'').toLowerCase().includes(t);
+    const matchSource = filterSource === 'all' ? true
+      : filterSource === 'faturali'  ? (!s.is_faturasiz && s.source !== 'manual')
+      : filterSource === 'faturasiz' ? !!s.is_faturasiz
+      : filterSource === 'faturadan' ? s.source === 'invoice_sync'
+      : filterSource === 'manuel'    ? s.source === 'manual'
+      : true;
+    return matchSearch && matchSource;
   });
 
   const invoicedCount = suppliers.filter(s => s.vkntckn && s.source === 'invoice_sync').length;
@@ -578,6 +587,24 @@ export default function Suppliers() {
             className="bg-transparent border-none outline-none text-sm flex-1"
             style={{ color: c.text }} />
           {search && <button onClick={() => setSearch('')}><X size={14} style={{ color: c.muted }} /></button>}
+        </div>
+
+        {/* Filtre Butonlari */}
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {[
+            { id: 'all',       label: 'Tumü' },
+            { id: 'faturali',  label: 'Faturali' },
+            { id: 'faturasiz', label: 'Faturasiz' },
+            { id: 'faturadan', label: 'Faturadan' },
+            { id: 'manuel',    label: 'Manuel' },
+          ].map(f => (
+            <button key={f.id} onClick={() => setFilterSource(f.id)}
+              className="px-3 py-1 rounded-lg text-xs font-semibold transition-all"
+              style={{
+                background: filterSource === f.id ? ACCENT : 'rgba(255,255,255,0.06)',
+                color: filterSource === f.id ? '#fff' : '#94a3b8',
+              }}>{f.label}</button>
+          ))}
         </div>
 
         {/* Liste */}
