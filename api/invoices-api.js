@@ -233,19 +233,31 @@ async function handleCreate(body, res) {
   const taxTotal = lines.reduce((s, l) => s + (l.quantity || 0) * (l.unitPrice || 0) * (l.taxRate || 0) / 100, 0);
   const grandTotal = subtotal + taxTotal;
 
-  // Otomatik fatura no: AYS + YIL + 9 hane seq
+  // Otomatik fatura no: AYS + YIL + 9 hane seq (MAX ile race-safe)
   const year = new Date().getFullYear();
   const prefix = `AYS${year}`;
-  const { data: last } = await supabase.from('invoices')
-    .select('invoice_id').ilike('invoice_id', `${prefix}%`)
-    .order('created_at', { ascending: false }).limit(1).maybeSingle();
-    
-  let seq = 1;
-  if (last?.invoice_id) {
-    const numPart = last.invoice_id.replace(prefix, '');
-    seq = (parseInt(numPart, 10) || 0) + 1;
+
+  // Eger body'den invoice_id geldiyse onu kullan; yoksa yeni uret
+  let invoice_id = body.invoice_id;
+  if (!invoice_id) {
+    // MAX ile paralel istek guvenli
+    const { data: seqRows } = await supabase.from('invoices')
+      .select('invoice_id').ilike('invoice_id', `${prefix}%`)
+      .order('invoice_id', { ascending: false }).limit(20);
+    let maxSeq = 0;
+    (seqRows || []).forEach(r => {
+      const n = parseInt((r.invoice_id || '').replace(prefix, ''), 10);
+      if (!isNaN(n) && n > maxSeq) maxSeq = n;
+    });
+    invoice_id = `${prefix}${String(maxSeq + 1).padStart(9, '0')}`;
   }
-  const invoice_id = body.invoice_id || `${prefix}${String(seq).padStart(9, '0')}`;
+
+  // Ayni invoice_id zaten varsa (ornegin sync'ten geldiyse) direkt donus
+  const { data: existing } = await supabase.from('invoices')
+    .select('invoice_id').eq('invoice_id', invoice_id).eq('type', type).maybeSingle();
+  if (existing) {
+    return res.json({ success: true, invoice_id, already_exists: true });
+  }
 
   const lineItems = lines.map((l, i) => ({
     id: String(i + 1), name: l.name, item_code: l.item_code || null,
@@ -271,7 +283,8 @@ async function handleCreate(body, res) {
   // Döviz kuru varsa ekle
   if (exchange_rate && currency !== 'TRY') row.exchange_rate = exchange_rate;
 
-  const { error } = await supabase.from('invoices').insert(row);
+  const { error } = await supabase.from('invoices')
+    .upsert(row, { onConflict: 'invoice_id,type', ignoreDuplicates: false });
   if (error) return res.status(500).json({ success: false, error: error.message });
   return res.json({ success: true, invoice_id });
 }
