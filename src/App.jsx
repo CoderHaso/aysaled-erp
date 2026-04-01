@@ -112,6 +112,8 @@ function AppShell() {
     const routes = {
       dashboard: '/', stock: '/stock', suppliers: '/suppliers',
       contacts: '/contacts',
+      kasa: '/kasa',
+      notifications: '/notifications',
       'incoming-invoices': '/incoming-invoices',
       'outgoing-invoices': '/outgoing-invoices',
       sales: '/sales', quotes: '/quotes', media: '/media',
