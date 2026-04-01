@@ -511,59 +511,97 @@ export default function Customers() {
 
   useEffect(() => { loadCustomers(); }, [loadCustomers]);
 
-  // Faturalardan otomatik cari oluştur (manuel tetikleme)
-  const syncFromInvoices = async () => {
+  // Faturalardan tam detaylarıyla cari çek (tek işlem, iki kez çalıştırmaya gerek yok)
+  const syncAll = async () => {
     setSyncingInv(true);
     try {
-      const { data: invs } = await supabase
-        .from('invoices').select('cari_name, vkntckn').eq('type', 'outbox').not('vkntckn', 'is', null);
-      const uniq = {};
-      (invs || []).forEach(r => { if (r.vkntckn) uniq[r.vkntckn] = r.cari_name; });
-      const rows = Object.entries(uniq).map(([vkntckn, name]) => ({ name, vkntckn, source: 'invoice_sync' }));
-      if (rows.length > 0) {
-        await supabase.from('customers').upsert(rows, { onConflict: 'vkntckn', ignoreDuplicates: true });
+      // outbox faturalarından benzersiz VKN bazlı cari listesi oluştur
+      const { data: invs, error } = await supabase
+        .from('invoices')
+        .select('cari_name, vkntckn, tax_office, address, cari_address, city, cari_city, district, cari_district, country, cari_country, phone, cari_phone, email, cari_email, issue_date')
+        .eq('type', 'outbox')
+        .not('cari_name', 'is', null)
+        .order('issue_date', { ascending: false });
+
+      if (error) throw error;
+
+      // VKN bazlı unique — önce gelen satır en son fatura (order desc sayesinde)
+      const byVkn  = {};
+      const byName = {};
+
+      (invs || []).forEach(inv => {
+        const vkn  = (inv.vkntckn || '').trim();
+        const name = (inv.cari_name || '').trim();
+        if (!name) return;
+
+        const row = {
+          name,
+          vkntckn:    vkn || null,
+          tax_office: inv.tax_office   || null,
+          address:    inv.address      || inv.cari_address  || null,
+          city:       inv.city         || inv.cari_city     || null,
+          district:   inv.district     || inv.cari_district || null,
+          country:    inv.country      || inv.cari_country  || 'Türkiye',
+          phone:      inv.phone        || inv.cari_phone    || null,
+          email:      inv.email        || inv.cari_email    || null,
+          source:     'invoice_sync',
+          is_active:  true,
+        };
+
+        if (vkn) {
+          if (!byVkn[vkn])   byVkn[vkn]   = row;
+          else {
+            // Boş alanları sonraki faturalarla doldur
+            const e = byVkn[vkn];
+            if (!e.address  && row.address)  e.address  = row.address;
+            if (!e.city     && row.city)     e.city     = row.city;
+            if (!e.district && row.district) e.district = row.district;
+            if (!e.phone    && row.phone)    e.phone    = row.phone;
+            if (!e.email    && row.email)    e.email    = row.email;
+          }
+        } else {
+          if (!byName[name.toLowerCase()]) byName[name.toLowerCase()] = row;
+        }
+      });
+
+      const rows = [...Object.values(byVkn), ...Object.values(byName)];
+      if (rows.length === 0) { showToast('Senkronize edilecek fatura bulunamadı'); return; }
+
+      // VKN'li olanlar: VKN bazlı upsert
+      const vknRows  = rows.filter(r => r.vkntckn);
+      const nameRows = rows.filter(r => !r.vkntckn);
+
+      if (vknRows.length > 0) {
+        const { error: e1 } = await supabase.from('customers')
+          .upsert(vknRows, { onConflict: 'vkntckn' });
+        if (e1) throw e1;
       }
+
+      // VKN'siz olanlar: name bazlı ekleme (var olanı atla)
+      for (const r of nameRows) {
+        const { data: existing } = await supabase.from('customers')
+          .select('id').ilike('name', r.name).maybeSingle();
+        if (!existing) {
+          await supabase.from('customers').insert(r);
+        } else {
+          // Sadece boş alanları güncelle
+          await supabase.from('customers').update({
+            ...(r.address  ? { address:  r.address  } : {}),
+            ...(r.city     ? { city:     r.city     } : {}),
+            ...(r.district ? { district: r.district } : {}),
+            ...(r.phone    ? { phone:    r.phone    } : {}),
+            ...(r.email    ? { email:    r.email    } : {}),
+            updated_at: new Date().toISOString(),
+          }).eq('id', existing.id);
+        }
+      }
+
       await loadCustomers(true);
-      showToast(`${rows.length} cari senkronize edildi ✓`);
+      showToast(`${rows.length} cari faturalardan çekildi ✓`);
     } catch (e) {
       showToast(e.message, 'error');
-    } finally { setSyncingInv(false); }
-  };
-
-  // Uyumsoft'tan tam UBL çekerek MEVCUT carilerin boş alanlarını doldur
-  // ÖNEMLİ: Yeni cari oluşturmaz, sadece mevcut VKN'leri günceller
-  const enrichContacts = async () => {
-    setEnriching(true);
-    const totals = { processed: 0, enriched: 0, errors: [], skipped: 0 };
-    setEnrichLog({ ...totals, running: true, remaining: '?' });
-
-    try {
-      let keepGoing = true;
-      while (keepGoing) {
-        const r = await fetch('/api/enrich-contacts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'customers', limit: 10 }),
-        });
-        const data = await r.json();
-        const res  = data.results || {};
-
-        totals.processed += res.processed || 0;
-        totals.enriched  += res.enriched  || 0;
-        totals.skipped   += res.skipped   || 0;
-        totals.errors     = [...totals.errors, ...(res.errors || [])];
-
-        setEnrichLog({ ...totals, running: true, remaining: data.remaining ?? '?' });
-
-        if (!data.success || data.remaining === 0 || (res.processed || 0) === 0) keepGoing = false;
-      }
-    } catch (e) {
-      totals.errors.push(e.message);
     } finally {
-      setEnriching(false);
-      setEnrichLog(prev => ({ ...prev, running: false }));
-      await loadCustomers(true);
-      showToast(`${totals.enriched} cari zenginleştirildi ✓`);
+      setSyncingInv(false);
     }
   };
 
@@ -629,17 +667,11 @@ export default function Customers() {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={syncFromInvoices} disabled={syncingInv}
+            <button onClick={syncAll} disabled={syncingInv}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
               style={{ background: 'rgba(59,130,246,0.1)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.2)' }}>
               {syncingInv ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-              Faturalardan Senkronize Et
-            </button>
-            <button onClick={enrichContacts} disabled={enriching}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
-              style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981', border: '1px solid rgba(16,185,129,0.2)' }}>
-              {enriching ? <Loader2 size={14} className="animate-spin" /> : <Building2 size={14} />}
-              {enriching ? 'Zenginleştiriliyor...' : 'Adres/İletişim Çek'}
+              {syncingInv ? 'Çekiliyor...' : 'Faturalardan Çek'}
             </button>
             <button onClick={() => setShowNew(true)}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-bold"
@@ -649,37 +681,6 @@ export default function Customers() {
           </div>
         </div>
 
-        {/* Zenginleştirme log paneli */}
-        {enrichLog && (
-          <div className="mb-4 p-4 rounded-2xl text-xs" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)' }}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                {enrichLog.running && <Loader2 size={12} className="animate-spin text-emerald-400" />}
-                <p className="font-bold text-emerald-400">
-                  {enrichLog.running
-                    ? `Çalışıyor... (kalan: ${enrichLog.remaining ?? '?'})`
-                    : 'Zenginleştirme Tamamlandı'}
-                </p>
-              </div>
-              {!enrichLog.running && (
-                <button onClick={() => setEnrichLog(null)} className="text-slate-500 hover:text-white"><X size={13} /></button>
-              )}
-            </div>
-            <div className="flex gap-4 text-slate-300 mb-2">
-              <span>✅ Zenginleştirilen: <strong className="text-emerald-400">{enrichLog.enriched}</strong></span>
-              <span>🔄 İşlenen: <strong>{enrichLog.processed}</strong></span>
-              <span>⏩ Atlanan: <strong>{enrichLog.skipped}</strong></span>
-            </div>
-            {enrichLog.errors?.length > 0 && (
-              <div className="mt-2">
-                <p className="text-amber-400 font-semibold mb-1">Hatalar ({enrichLog.errors.length}):</p>
-                {enrichLog.errors.slice(0, 3).map((e, i) => (
-                  <p key={i} className="text-red-400 font-mono truncate">{typeof e === 'string' ? e.slice(0, 80) : e}</p>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">

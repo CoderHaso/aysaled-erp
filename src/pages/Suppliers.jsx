@@ -431,56 +431,90 @@ export default function Suppliers() {
 
   useEffect(() => { loadSuppliers(); }, [loadSuppliers]);
 
-  const syncFromInvoices = async () => {
+  // Faturalardan tam detaylarıyla tedarikçi çek (INBOX = gelen faturalar, tek işlem)
+  const syncAll = async () => {
     setSyncing(true);
     try {
-      const { data: invs } = await supabase
-        .from('invoices').select('cari_name, vkntckn').eq('type', 'outbox').not('vkntckn', 'is', null);
-      const uniq = {};
-      (invs || []).forEach(r => { if (r.vkntckn) uniq[r.vkntckn] = r.cari_name; });
-      const rows = Object.entries(uniq).map(([vkntckn, name]) => ({ name, vkntckn, source: 'invoice_sync' }));
-      if (rows.length > 0) {
-        await supabase.from('suppliers').upsert(rows, { onConflict: 'vkntckn', ignoreDuplicates: false });
+      const { data: invs, error } = await supabase
+        .from('invoices')
+        .select('cari_name, vkntckn, tax_office, address, cari_address, city, cari_city, district, cari_district, country, cari_country, phone, cari_phone, email, cari_email, issue_date')
+        .eq('type', 'inbox')   // TEDArİKÇİ = inbox!
+        .not('cari_name', 'is', null)
+        .order('issue_date', { ascending: false });
+
+      if (error) throw error;
+
+      const byVkn  = {};
+      const byName = {};
+
+      (invs || []).forEach(inv => {
+        const vkn  = (inv.vkntckn || '').trim();
+        const name = (inv.cari_name || '').trim();
+        if (!name) return;
+
+        const row = {
+          name,
+          vkntckn:  vkn || null,
+          tax_id:   inv.tax_office   || null,
+          address:  inv.address      || inv.cari_address  || null,
+          city:     inv.city         || inv.cari_city     || null,
+          district: inv.district     || inv.cari_district || null,
+          country:  inv.country      || inv.cari_country  || 'Türkiye',
+          phone:    inv.phone        || inv.cari_phone    || null,
+          email:    inv.email        || inv.cari_email    || null,
+          source:   'invoice_sync',
+          is_active: true,
+        };
+
+        if (vkn) {
+          if (!byVkn[vkn]) byVkn[vkn] = row;
+          else {
+            const e = byVkn[vkn];
+            if (!e.address  && row.address)  e.address  = row.address;
+            if (!e.city     && row.city)     e.city     = row.city;
+            if (!e.district && row.district) e.district = row.district;
+            if (!e.phone    && row.phone)    e.phone    = row.phone;
+            if (!e.email    && row.email)    e.email    = row.email;
+          }
+        } else {
+          if (!byName[name.toLowerCase()]) byName[name.toLowerCase()] = row;
+        }
+      });
+
+      const rows = [...Object.values(byVkn), ...Object.values(byName)];
+      if (rows.length === 0) { showToast('Senkronize edilecek gelen fatura bulunamadı'); return; }
+
+      const vknRows  = rows.filter(r => r.vkntckn);
+      const nameRows = rows.filter(r => !r.vkntckn);
+
+      if (vknRows.length > 0) {
+        const { error: e1 } = await supabase.from('suppliers').upsert(vknRows, { onConflict: 'vkntckn' });
+        if (e1) throw e1;
       }
+
+      for (const r of nameRows) {
+        const { data: existing } = await supabase.from('suppliers')
+          .select('id').ilike('name', r.name).maybeSingle();
+        if (!existing) {
+          await supabase.from('suppliers').insert(r);
+        } else {
+          await supabase.from('suppliers').update({
+            ...(r.address  ? { address:  r.address  } : {}),
+            ...(r.city     ? { city:     r.city     } : {}),
+            ...(r.district ? { district: r.district } : {}),
+            ...(r.phone    ? { phone:    r.phone    } : {}),
+            ...(r.email    ? { email:    r.email    } : {}),
+            updated_at: new Date().toISOString(),
+          }).eq('id', existing.id);
+        }
+      }
+
       await loadSuppliers(true);
-      showToast(`${rows.length} tedarikçi senkronize edildi ✓`);
-    } catch (e) { showToast(e.message, 'error'); }
-    finally { setSyncing(false); }
-  };
-
-  // Uyumsoft'tan tam UBL çekerek adres/telefon/e-posta zenginleştir (auto-batch)
-  const enrichContacts = async () => {
-    setEnriching(true);
-    const totals = { processed: 0, enriched: 0, errors: [], skipped: 0 };
-    setEnrichLog({ ...totals, running: true });
-
-    try {
-      let keepGoing = true;
-      while (keepGoing) {
-        const r = await fetch('/api/enrich-contacts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'suppliers', limit: 10 }),
-        });
-        const data = await r.json();
-        const res  = data.results || {};
-
-        totals.processed += res.processed || 0;
-        totals.enriched  += res.enriched  || 0;
-        totals.skipped   += res.skipped   || 0;
-        totals.errors     = [...totals.errors, ...(res.errors || [])];
-
-        setEnrichLog({ ...totals, running: true, remaining: data.remaining ?? '?' });
-
-        if (!data.success || data.remaining === 0 || (res.processed || 0) === 0) keepGoing = false;
-      }
+      showToast(`${rows.length} tedarikçi faturalardan çekildi ✓`);
     } catch (e) {
-      totals.errors.push(e.message);
+      showToast(e.message, 'error');
     } finally {
-      setEnriching(false);
-      setEnrichLog(prev => ({ ...prev, running: false }));
-      await loadSuppliers(true);
-      showToast(`${totals.enriched} tedarikçi zenginleştirildi ✓`);
+      setSyncing(false);
     }
   };
 
@@ -545,17 +579,11 @@ export default function Suppliers() {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={syncFromInvoices} disabled={syncing}
+            <button onClick={syncAll} disabled={syncing}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
               style={{ background: 'rgba(249,115,22,0.1)', color: ACCENT, border: `1px solid rgba(249,115,22,0.2)` }}>
               {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-              Faturalardan Senkronize Et
-            </button>
-            <button onClick={enrichContacts} disabled={enriching}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
-              style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981', border: '1px solid rgba(16,185,129,0.2)' }}>
-              {enriching ? <Loader2 size={14} className="animate-spin" /> : <Truck size={14} />}
-              {enriching ? 'Zenginleştiriliyor...' : 'Adres/İletişim Çek'}
+              {syncing ? 'Çekiliyor...' : 'Faturalardan Çek'}
             </button>
             <button onClick={() => setShowNew(true)}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-bold"
@@ -565,37 +593,6 @@ export default function Suppliers() {
           </div>
         </div>
 
-        {/* Zenginleştirme log paneli */}
-        {enrichLog && (
-          <div className="mb-4 p-4 rounded-2xl text-xs" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)' }}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                {enrichLog.running && <Loader2 size={12} className="animate-spin text-emerald-400" />}
-                <p className="font-bold text-emerald-400">
-                  {enrichLog.running
-                    ? `Çalışıyor... (kalan: ${enrichLog.remaining ?? '?'})`
-                    : 'Zenginleştirme Tamamlandı'}
-                </p>
-              </div>
-              {!enrichLog.running && (
-                <button onClick={() => setEnrichLog(null)} className="text-slate-500 hover:text-white"><X size={13} /></button>
-              )}
-            </div>
-            <div className="flex gap-4 text-slate-300 mb-2">
-              <span>✅ Zenginleştirilen: <strong className="text-emerald-400">{enrichLog.enriched}</strong></span>
-              <span>🔄 İşlenen: <strong>{enrichLog.processed}</strong></span>
-              <span>⏩ Atlanan: <strong>{enrichLog.skipped}</strong></span>
-            </div>
-            {enrichLog.errors?.length > 0 && (
-              <div className="mt-2">
-                <p className="text-amber-400 font-semibold mb-1">Hatalar ({enrichLog.errors.length}):</p>
-                {enrichLog.errors.slice(0, 3).map((e, i) => (
-                  <p key={i} className="text-red-400 font-mono truncate">{typeof e === 'string' ? e.slice(0, 80) : e}</p>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
