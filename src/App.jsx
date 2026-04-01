@@ -15,6 +15,7 @@ import Quotes         from './pages/Quotes';
 import Media          from './pages/Media';
 import Notifications  from './pages/Notifications';
 import Kasa           from './pages/Kasa';
+import Reports        from './pages/Reports';
 import { supabase }   from './lib/supabaseClient';
 
 const PAGES = {
@@ -203,7 +204,7 @@ function AppShell() {
             <Route path="/media"      element={<Media />} />
             <Route path="/notifications" element={<Notifications />} />
             <Route path="/kasa"          element={<Kasa />} />
-            <Route path="/reports"    element={<ComingSoon title="Raporlar"   icon="📊" />} />
+            <Route path="/reports"    element={<Reports />} />
           </Routes>
         </main>
       </div>

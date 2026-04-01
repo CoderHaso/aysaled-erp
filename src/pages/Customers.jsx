@@ -218,6 +218,28 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
                   </div>
                 ))}
 
+                {/* Faturasız Toggle */}
+                {(editing || isNew) && (
+                  <label className="flex items-center gap-3 cursor-pointer p-3 rounded-xl transition-colors"
+                    style={{ background: 'rgba(245,158,11,0.06)', border: `1px solid ${form.is_faturasiz ? 'rgba(245,158,11,0.3)' : 'rgba(148,163,184,0.1)'}` }}>
+                    <div onClick={() => setForm(f => ({ ...f, is_faturasiz: !f.is_faturasiz }))}
+                      className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 transition-all cursor-pointer"
+                      style={{ background: form.is_faturasiz ? '#f59e0b' : 'rgba(255,255,255,0.08)', border: `1px solid ${form.is_faturasiz ? '#f59e0b' : 'rgba(148,163,184,0.2)'}` }}>
+                      {form.is_faturasiz && <CheckCircle2 size={11} color="white" />}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-xs font-bold" style={{ color: form.is_faturasiz ? '#f59e0b' : '#94a3b8' }}>Faturasız Cari</p>
+                      <p className="text-[10px] text-slate-500">E-fatura dışında, nakit / kayıt dışı işlemler için</p>
+                    </div>
+                  </label>
+                )}
+                {!editing && !isNew && customer.is_faturasiz && (
+                  <div className="flex items-center gap-2 p-2.5 rounded-xl"
+                    style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
+                    <span className="text-[11px] font-bold text-amber-400">⚠ Faturasız Cari — e-fatura dışında işlemler</span>
+                  </div>
+                )}
+
                 {/* Kaydet butonu */}
                 {(editing || isNew) && (
                   <div className="flex gap-2 pt-2">
@@ -685,7 +707,7 @@ export default function Customers() {
         )}
         {showNew && (
           <CustomerDrawer
-            customer={{ name: '', vkntckn: '', phone: '', email: '', address: '', city: '', notes: '', tax_office: '', is_active: true }}
+            customer={{ name: '', vkntckn: '', phone: '', email: '', address: '', city: '', notes: '', tax_office: '', is_active: true, is_faturasiz: false }}
             onClose={() => setShowNew(false)}
             onSaved={() => { loadCustomers(); setShowNew(false); showToast('Yeni cari eklendi ✓'); }}
             setDialog={setDialog}
