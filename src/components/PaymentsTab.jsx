@@ -526,12 +526,29 @@ function MarkPaidModal({ payment, onConfirm, onClose, color }) {
 }
 
 // ─── Ana PaymentsTab ──────────────────────────────────────────────────────────
-export default function PaymentsTab({ entityId, entityName, entityType, payments, onPaymentsChange, setDialog, invoices }) {
+export default function PaymentsTab({ entityId, entityName, entityType, payments, onPaymentsChange, setDialog, invoices, prefill, onPrefillUsed }) {
   const { currentColor } = useTheme();
   const [showForm,     setShowForm]     = useState(false);
   const [editing,      setEditing]      = useState(null);
   const [markingPaid,  setMarkingPaid]  = useState(null);
-  const [filterStatus, setFilterStatus] = useState('all'); // 'all'|'pending'|'paid'|'overdue'
+  const [filterStatus, setFilterStatus] = useState('all');
+
+  // Fatura / Sipariş'ten "Ödemeye Geçir" ile gelince formu önceden doldur
+  useEffect(() => {
+    if (prefill) {
+      setEditing({
+        direction:   prefill.direction || (entityType === 'customer' ? 'receivable' : 'payable'),
+        amount:      prefill.amount || '',
+        currency:    prefill.currency || 'TRY',
+        description: prefill.description || '',
+        due_date:    '',
+        invoice_ref: '',
+        reminder_settings: { enabled: false, preset: null, schedule: [] },
+      });
+      setShowForm(true);
+      onPrefillUsed?.();
+    }
+  }, [prefill]);
 
   // Toplam hesapla (TL bazında)
   const stats = payments.reduce((acc, p) => {

@@ -5,7 +5,7 @@ import {
   Receipt, TrendingUp, Users, ChevronRight, Edit3, Trash2,
   AlertCircle, FileText, Package, CheckCircle2, Info, ExternalLink,
   CreditCard, CalendarClock, AlertTriangle, ArrowDownLeft, ArrowUpRight,
-  Bell, Clock,
+  Bell, Clock, ShoppingCart,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
@@ -65,6 +65,21 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
       .then(({ data }) => setPayments(data || []));
   }, [customer.id]);
 
+  // Faturasız müşteri için siparisler
+  const [orders, setOrders] = useState([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+  useEffect(() => {
+    if (!customer.id || isNew || !customer.is_faturasiz) return;
+    setLoadingOrders(true);
+    supabase.from('orders').select('id,order_number,created_at,grand_total,status,customer_name')
+      .eq('customer_id', customer.id)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => { setOrders(data || []); setLoadingOrders(false); });
+  }, [customer.id, customer.is_faturasiz]);
+
+  // Ödemeye geçir ön-doldurma state
+  const [paymentPrefill, setPaymentPrefill] = useState(null);
+
   // Toplam bakiye (TL cinsinden)
   const balance = payments.reduce((s, p) => {
     const amt = p.amount_try || p.amount || 0;
@@ -99,7 +114,10 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
 
   const TABS = [
     { id: 'info',     label: 'Bilgiler',                       icon: Info },
-    { id: 'invoices', label: `Faturalar (${invoices.length})`, icon: Receipt },
+    ...(customer.is_faturasiz
+      ? [{ id: 'orders',  label: `Siparisler (${orders.length})`,    icon: ShoppingCart }]
+      : [{ id: 'invoices',label: `Faturalar (${invoices.length})`,   icon: Receipt }]
+    ),
     { id: 'payments', label: `Ödemeler (${payments.length})`,  icon: CreditCard },
   ];
 
@@ -285,50 +303,124 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
                     <p className="text-sm text-slate-500">Bu cariye ait fatura bulunamadı.</p>
                   </div>
                 )}
-                {!loadingInv && invoices.map((inv, i) => (
-                  <motion.div key={inv.id || i}
-                    initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.04 }}
-                    onClick={() => {
-                      onClose();
-                      navigate('/incoming-invoices', { state: { openInvoiceId: inv.invoice_id, documentId: inv.document_id } });
-                    }}
-                    className="rounded-2xl p-4 cursor-pointer group transition-all"
-                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(148,163,184,0.08)' }}
-                    onMouseEnter={e => e.currentTarget.style.borderColor = `${currentColor}40`}
-                    onMouseLeave={e => e.currentTarget.style.borderColor = 'rgba(148,163,184,0.08)'}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1">
-                        <p className="text-xs font-mono text-blue-400 font-bold">{inv.invoice_id}</p>
-                        <p className="text-[10px] text-slate-500 mt-0.5">{fmtD(inv.issue_date)}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="text-right">
-                          <p className="text-sm font-bold text-slate-100">{fmt(inv.amount)} <span className="text-[10px] text-slate-500">{inv.currency}</span></p>
-                          <StatusDot status={inv.status} />
+                  {!loadingInv && invoices.map((inv, i) => (
+                    <motion.div key={inv.id || i}
+                      initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.04 }}
+                      className="rounded-2xl p-4 group transition-all"
+                      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(148,163,184,0.08)' }}
+                      onMouseEnter={e => e.currentTarget.style.borderColor = `${currentColor}40`}
+                      onMouseLeave={e => e.currentTarget.style.borderColor = 'rgba(148,163,184,0.08)'}
+                    >
+                      {/* Fatura başlık satırı */}
+                      <div className="flex items-start justify-between gap-2" onClick={() => {
+                        onClose();
+                        navigate('/incoming-invoices', { state: { openInvoiceId: inv.invoice_id, documentId: inv.document_id } });
+                      }} style={{ cursor: 'pointer' }}>
+                        <div className="flex-1">
+                          <p className="text-xs font-mono text-blue-400 font-bold">{inv.invoice_id}</p>
+                          <p className="text-[10px] text-slate-500 mt-0.5">{fmtD(inv.issue_date)}</p>
                         </div>
-                        <ExternalLink size={12} className="text-slate-600 group-hover:text-blue-400 transition-colors flex-shrink-0" />
+                        <div className="flex items-center gap-2">
+                          <div className="text-right">
+                            <p className="text-sm font-bold text-slate-100">{fmt(inv.amount)} <span className="text-[10px] text-slate-500">{inv.currency}</span></p>
+                            <StatusDot status={inv.status} />
+                          </div>
+                          <ExternalLink size={12} className="text-slate-600 group-hover:text-blue-400 transition-colors flex-shrink-0" />
+                        </div>
+                      </div>
+
+                      {/* Kalemler */}
+                      {inv.line_items?.length > 0 && (
+                        <div className="mt-2.5 pt-2.5" style={{ borderTop: '1px solid rgba(148,163,184,0.08)' }}>
+                          {inv.line_items.slice(0, 3).map((item, j) => (
+                            <div key={j} className="flex justify-between items-center py-0.5">
+                              <span className="text-[10px] text-slate-400 flex-1 truncate">{item.name}</span>
+                              <span className="text-[10px] font-semibold text-slate-300 ml-2 whitespace-nowrap">
+                                {item.quantity ? `${item.quantity} ${item.unit}` : ''} — {fmt(item.line_total)}
+                              </span>
+                            </div>
+                          ))}
+                          {inv.line_items.length > 3 && (
+                            <p className="text-[10px] text-slate-600 mt-1">+{inv.line_items.length - 3} kalem daha</p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Ödemeye Geçir Butonu */}
+                      <div className="mt-2.5 pt-2 flex justify-end"
+                        style={{ borderTop: '1px solid rgba(148,163,184,0.06)' }}>
+                        <button
+                          onClick={e => {
+                            e.stopPropagation();
+                            setPaymentPrefill({
+                              direction: 'receivable',
+                              amount: inv.amount,
+                              currency: inv.currency || 'TRY',
+                              description: `Fatura: ${inv.invoice_id}`,
+                            });
+                            setTab('payments');
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all"
+                          style={{ background: 'rgba(59,130,246,0.1)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.2)' }}
+                        >
+                          <CreditCard size={11} />Ödemeye Geçir
+                        </button>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+            )}
+
+            {/* ── Siparisler Tab (Faturasız musteriler için) ── */}
+            {tab === 'orders' && !isNew && (
+              <div className="space-y-3">
+                {loadingOrders && (
+                  <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin text-blue-400" /></div>
+                )}
+                {!loadingOrders && orders.length === 0 && (
+                  <div className="text-center py-10">
+                    <ShoppingCart size={36} className="mx-auto mb-2 opacity-20 text-slate-400" />
+                    <p className="text-sm text-slate-500">Bu cariye ait siparis bulunamadı.</p>
+                  </div>
+                )}
+                {!loadingOrders && orders.map((ord, i) => {
+                  const statusColors = { completed: '#10b981', pending: '#f59e0b', cancelled: '#ef4444' };
+                  const statusLabels = { completed: 'Tamamlandı', pending: 'Bekliyor', cancelled: 'İptal' };
+                  const sc = statusColors[ord.status] || '#94a3b8';
+                  return (
+                    <div key={ord.id} className="rounded-2xl p-4 transition-all"
+                      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(148,163,184,0.08)' }}>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-mono font-bold" style={{ color: currentColor }}>{ord.order_number || ord.id.slice(0,8)}</p>
+                          <p className="text-[10px] text-slate-500 mt-0.5">{fmtD(ord.created_at?.split('T')[0])}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-bold text-slate-100">{fmt(ord.grand_total)} ₺</p>
+                          <span className="text-[10px] font-bold" style={{ color: sc }}>{statusLabels[ord.status] || ord.status}</span>
+                        </div>
+                      </div>
+                      <div className="flex justify-end mt-2 pt-2" style={{ borderTop: '1px solid rgba(148,163,184,0.06)' }}>
+                        <button
+                          onClick={() => {
+                            setPaymentPrefill({
+                              direction: 'receivable',
+                              amount: ord.grand_total,
+                              currency: 'TRY',
+                              description: `Siparis: ${ord.order_number || ord.id.slice(0,8)}`,
+                            });
+                            setTab('payments');
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all"
+                          style={{ background: 'rgba(59,130,246,0.1)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.2)' }}
+                        >
+                          <CreditCard size={11} />Ödemeye Geçir
+                        </button>
                       </div>
                     </div>
-                    {/* Ürün kalemleri özeti */}
-                    {inv.line_items?.length > 0 && (
-                      <div className="mt-2.5 pt-2.5" style={{ borderTop: '1px solid rgba(148,163,184,0.08)' }}>
-                        {inv.line_items.slice(0, 3).map((item, j) => (
-                          <div key={j} className="flex justify-between items-center py-0.5">
-                            <span className="text-[10px] text-slate-400 flex-1 truncate">{item.name}</span>
-                            <span className="text-[10px] font-semibold text-slate-300 ml-2 whitespace-nowrap">
-                              {item.quantity ? `${item.quantity} ${item.unit}` : ''} — {fmt(item.line_total)}
-                            </span>
-                          </div>
-                        ))}
-                        {inv.line_items.length > 3 && (
-                          <p className="text-[10px] text-slate-600 mt-1">+{inv.line_items.length - 3} kalem daha</p>
-                        )}
-                      </div>
-                    )}
-                  </motion.div>
-                ))}
+                  );
+                })}
               </div>
             )}
             {/* ── Ödemeler Tab ── */}
@@ -341,6 +433,8 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
                 onPaymentsChange={setPayments}
                 setDialog={setDialog}
                 invoices={invoices}
+                prefill={paymentPrefill}
+                onPrefillUsed={() => setPaymentPrefill(null)}
               />
             )}
           </div>
