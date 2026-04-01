@@ -48,7 +48,8 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
   useEffect(() => {
     if (!customer.vkntckn || isNew) { setLoadingInv(false); return; }
     setLoadingInv(true);
-    supabase.from('invoices').select('*').eq('vkntckn', customer.vkntckn).eq('type', 'inbox')
+    // Carilere gönderdiğimiz faturalar = outbox (giden/satış faturası)
+    supabase.from('invoices').select('*').eq('vkntckn', customer.vkntckn).eq('type', 'outbox')
       .order('issue_date', { ascending: false })
       .then(({ data }) => { setInvoices(data || []); setLoadingInv(false); });
   }, [customer.vkntckn]);

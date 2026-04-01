@@ -25,31 +25,28 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // Supabase ve API çağrılarını ASLA cache'leme — auth header'ları değişir
+        // ve CORS hatası gibi görünen "no-response" hatasına neden olur
         runtimeCaching: [
           {
-            // Supabase API çağrıları
+            // Supabase API çağrıları — sadece network, hiç cache'leme
             urlPattern: /^https:\/\/.*\.supabase\.co\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'supabase-cache',
-              expiration: { maxEntries: 100, maxAgeSeconds: 300 },
-              networkTimeoutSeconds: 5
-            }
+            handler: 'NetworkOnly',
           },
           {
-            // Vercel API fonksiyonları
+            // Vercel API fonksiyonları — NetworkFirst, uzun timeout
             urlPattern: /\/api\/.*/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',
               expiration: { maxEntries: 50, maxAgeSeconds: 60 },
-              networkTimeoutSeconds: 10
+              networkTimeoutSeconds: 20
             }
           }
         ]
       },
       devOptions: {
-        enabled: true // dev modda da SW test edilebilsin
+        enabled: false // dev modda SW devre dışı — yerel geliştirmeyi karmaik etmesin
       }
     })
   ],

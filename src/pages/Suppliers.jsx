@@ -55,7 +55,8 @@ function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
   useEffect(() => {
     if (!supplier.vkntckn || isNew) { setLoadingInv(false); return; }
     setLoadingInv(true);
-    supabase.from('invoices').select('*').eq('vkntckn', supplier.vkntckn).eq('type', 'outbox')
+    // Tedarikçilerden aldığımız faturalar = inbox (gelen/alış faturası)
+    supabase.from('invoices').select('*').eq('vkntckn', supplier.vkntckn).eq('type', 'inbox')
       .order('issue_date', { ascending: false })
       .then(({ data }) => { setInvoices(data || []); setLoadingInv(false); });
   }, [supplier.vkntckn]);
