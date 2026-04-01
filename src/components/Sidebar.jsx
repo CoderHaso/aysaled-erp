@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   LayoutDashboard, Package, Users, FileDown, FileUp,
   ShoppingCart, TrendingUp, Settings, Palette, Building2,
-  FileText, Image
+  FileText, Image, Wallet
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { AnimatePresence } from 'framer-motion';
@@ -13,6 +13,7 @@ const MENU = [
   { name: 'Stok',         icon: Package,         id: 'stock'     },
   { name: 'Tedarikçiler', icon: Building2,       id: 'suppliers' },
   { name: 'Cariler',      icon: Users,           id: 'contacts'  },
+  { name: 'Kasa',         icon: Wallet,          id: 'kasa'      },
   { name: 'Giden Fat.',   icon: FileUp,          id: 'incoming-invoices' },
   { name: 'Gelen Fat.',   icon: FileDown,        id: 'outgoing-invoices' },
   { name: 'Satış',        icon: ShoppingCart,    id: 'sales'     },

@@ -14,6 +14,7 @@ import Invoices       from './pages/Invoices';
 import Quotes         from './pages/Quotes';
 import Media          from './pages/Media';
 import Notifications  from './pages/Notifications';
+import Kasa           from './pages/Kasa';
 import { supabase }   from './lib/supabaseClient';
 
 const PAGES = {
@@ -21,6 +22,7 @@ const PAGES = {
   '/stock':      { title: 'Stok Merkezi',   sub: 'Hammadde & Mamül' },
   '/suppliers':  { title: 'Tedarikçiler',   sub: 'Tedarikçi Yönetimi' },
   '/contacts':   { title: 'Cari Takip',     sub: 'Müşteri & Tedarikçi' },
+  '/kasa':       { title: 'Kasa',           sub: 'Nakit Gider & Gelir Takibi' },
   '/incoming-invoices': { title: 'Giden (Satış) Faturaları', sub: 'Uyumsoft Giden Faturalar' },
   '/outgoing-invoices': { title: 'Gelen (Alış) Faturaları', sub: 'Uyumsoft Gelen Faturalar' },
   '/sales':      { title: 'Satış',          sub: 'Sipariş & Satış' },
@@ -36,6 +38,7 @@ const ROUTE_TO_ID = {
   '/stock':     'stock',
   '/suppliers': 'suppliers',
   '/contacts':  'contacts',
+  '/kasa':      'kasa',
   '/incoming-invoices': 'incoming-invoices',
   '/outgoing-invoices': 'outgoing-invoices',
   '/sales':     'sales',
@@ -197,6 +200,7 @@ function AppShell() {
             <Route path="/quotes"     element={<Quotes />} />
             <Route path="/media"      element={<Media />} />
             <Route path="/notifications" element={<Notifications />} />
+            <Route path="/kasa"          element={<Kasa />} />
             <Route path="/reports"    element={<ComingSoon title="Raporlar"   icon="📊" />} />
           </Routes>
         </main>
