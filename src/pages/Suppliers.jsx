@@ -3,13 +3,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Building2, Phone, Mail, X, Loader2, RefreshCw,
   Receipt, TrendingDown, Truck, ChevronRight, Edit3, Trash2,
-  CheckCircle2, Info, ExternalLink
+  CheckCircle2, Info, ExternalLink, CreditCard, AlertTriangle,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import { useNavigate } from 'react-router-dom';
 import { pageCache } from '../lib/pageCache';
 import CustomDialog from '../components/CustomDialog';
+import PaymentsTab from '../components/PaymentsTab';
 
 const fmt = (n) => n != null ? Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2 }) : '0,00';
 const fmtD = (d) => d ? new Date(d).toLocaleDateString('tr-TR') : '-';
@@ -47,6 +48,8 @@ function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
   const [form, setForm]             = useState({ ...supplier });
   const [saving, setSaving]         = useState(false);
 
+  const [payments, setPayments] = useState([]);
+
   const isNew = !supplier.id;
 
   useEffect(() => {
@@ -56,6 +59,25 @@ function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
       .order('issue_date', { ascending: false })
       .then(({ data }) => { setInvoices(data || []); setLoadingInv(false); });
   }, [supplier.vkntckn]);
+
+  // Ödemeler
+  useEffect(() => {
+    if (!supplier.id || isNew) return;
+    supabase.from('payments')
+      .select('*')
+      .eq('entity_type', 'supplier')
+      .eq('entity_id', supplier.id)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => setPayments(data || []));
+  }, [supplier.id]);
+
+  const balance = payments.reduce((s, p) => {
+    const amt = p.amount_try || p.amount || 0;
+    return p.direction === 'receivable' ? s + amt : s - amt;
+  }, 0);
+  const hasOverdue = payments.some(p => p.status === 'overdue');
+
+  const fmtBalance = (n) => Math.abs(n).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const totalAmount = invoices.reduce((s, i) => s + Number(i.amount || 0), 0);
   const lastInvoice = invoices[0];
@@ -77,10 +99,11 @@ function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
     finally { setSaving(false); }
   };
 
-  const ACCENT = '#f97316'; // Tedarikçi için turuncu ton
+  const ACCENT = '#f97316';
   const TABS = [
-    { id: 'info',    label: 'Bilgiler',    icon: Info },
-    { id: 'invoices',label: `Faturalar (${invoices.length})`, icon: Receipt },
+    { id: 'info',     label: 'Bilgiler',                         icon: Info },
+    { id: 'invoices', label: `Faturalar (${invoices.length})`,   icon: Receipt },
+    { id: 'payments', label: `Ödemeler (${payments.length})`,    icon: CreditCard },
   ];
 
   return (
@@ -127,13 +150,20 @@ function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
               <div className="grid grid-cols-3 gap-2 mt-4">
                 {[
                   { label: 'Gider Faturası', value: invoices.length, color: ACCENT },
-                  { label: 'Toplam Gider', value: `₺${(totalAmount/1000).toFixed(1)}K`, color: '#ef4444' },
-                  { label: 'Son Fatura', value: fmtD(lastInvoice?.issue_date), color: '#f59e0b' },
+                  {
+                    label: 'Bakiye (TL)',
+                    value: balance === 0 ? '₺0' : `${balance > 0 ? '+' : '-'}₺${fmtBalance(balance)}`,
+                    color: balance > 0 ? '#10b981' : balance < 0 ? '#ef4444' : '#94a3b8'
+                  },
+                  { label: 'Son Fatura',  value: fmtD(lastInvoice?.issue_date), color: '#f59e0b' },
                 ].map((s, i) => (
                   <div key={i} className="rounded-xl p-2.5 text-center"
-                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(148,163,184,0.08)' }}>
+                    style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${hasOverdue && i===1 ? 'rgba(239,68,68,0.3)' : 'rgba(148,163,184,0.08)'}` }}>
                     <p className="text-sm font-bold" style={{ color: s.color }}>{s.value}</p>
                     <p className="text-[10px] text-slate-500 mt-0.5">{s.label}</p>
+                    {hasOverdue && i === 1 && (
+                      <p className="text-[9px] text-red-400 font-bold mt-0.5">⚠ Vadesi geçmiş!</p>
+                    )}
                   </div>
                 ))}
               </div>
@@ -277,6 +307,18 @@ function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
                 ))}
 
               </div>
+            )}
+            {/* ── Ödemeler Tab ── */}
+            {tab === 'payments' && !isNew && (
+              <PaymentsTab
+                entityId={supplier.id}
+                entityName={supplier.name}
+                entityType="supplier"
+                payments={payments}
+                onPaymentsChange={setPayments}
+                setDialog={setDialog}
+                invoices={invoices}
+              />
             )}
           </div>
         </motion.div>

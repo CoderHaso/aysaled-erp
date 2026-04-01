@@ -1,18 +1,20 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from './contexts/ThemeContext';
 import Sidebar from './components/Sidebar';
 import { Menu, Bell, Search } from 'lucide-react';
-import Dashboard  from './pages/Dashboard';
-import Stock      from './pages/Stock';
-import Suppliers  from './pages/Suppliers';
-import Customers  from './pages/Customers';
-import Sales      from './pages/Sales';
-import Settings   from './pages/Settings';
-import QRDetail   from './pages/QRDetail';
-import Invoices   from './pages/Invoices';
-import Quotes     from './pages/Quotes';
-import Media      from './pages/Media';
+import Dashboard      from './pages/Dashboard';
+import Stock          from './pages/Stock';
+import Suppliers      from './pages/Suppliers';
+import Customers      from './pages/Customers';
+import Sales          from './pages/Sales';
+import Settings       from './pages/Settings';
+import QRDetail       from './pages/QRDetail';
+import Invoices       from './pages/Invoices';
+import Quotes         from './pages/Quotes';
+import Media          from './pages/Media';
+import Notifications  from './pages/Notifications';
+import { supabase }   from './lib/supabaseClient';
 
 const PAGES = {
   '/':           { title: 'Dashboard',      sub: 'Genel Bakış' },
@@ -26,6 +28,7 @@ const PAGES = {
   '/media':      { title: 'Medya',          sub: 'Görsel Kütüphanesi · Backblaze B2' },
   '/reports':    { title: 'Raporlar',       sub: 'Finans & Analiz' },
   '/settings':   { title: 'Ayarlar',        sub: 'Sistem Yapılandırması' },
+  '/notifications': { title: 'Bildirimler', sub: 'Ödeme Hatırlatmaları & Sistem Bildirimleri' },
 };
 
 const ROUTE_TO_ID = {
@@ -40,7 +43,45 @@ const ROUTE_TO_ID = {
   '/media':     'media',
   '/reports':   'reports',
   '/settings':  'settings',
+  '/notifications': 'notifications',
 };
+
+// ─── Bell Butonu (okunmamış sayısını gösterir) ────────────────────────────────
+function BellButton({ navigate }) {
+  const { effectiveMode, currentColor } = useTheme();
+  const isDark = effectiveMode === 'dark';
+  const [unread, setUnread] = useState(0);
+
+  useEffect(() => {
+    const load = async () => {
+      const { count } = await supabase
+        .from('notifications').select('id', { count: 'exact', head: true }).eq('is_read', false);
+      setUnread(count || 0);
+    };
+    load();
+    // 60 saniyede bir kontrol
+    const t = setInterval(load, 60000);
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <button
+      onClick={() => navigate('/notifications')}
+      className="relative p-2 rounded-xl transition-colors flex-shrink-0"
+      style={{ color: isDark ? '#94a3b8' : '#64748b' }}
+      onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'}
+      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+      <Bell size={18} />
+      {unread > 0 && (
+        <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full text-[9px] font-bold
+          flex items-center justify-center text-white"
+          style={{ background: '#ef4444', border: '2px solid var(--bg-header)' }}>
+          {unread > 9 ? '9+' : unread}
+        </span>
+      )}
+    </button>
+  );
+}
 
 function AppShell() {
   const { effectiveMode, currentColor } = useTheme();
@@ -133,14 +174,8 @@ function AppShell() {
                 className="bg-transparent border-none outline-none text-sm w-36 lg:w-44"
                 style={{ color: c.text }} />
             </div>
-            <button className="relative p-2 rounded-xl transition-colors flex-shrink-0"
-              style={{ color: c.muted }}
-              onMouseEnter={e => e.currentTarget.style.background = c.hoverBg}
-              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-              <Bell size={18} />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-red-500 border-2"
-                style={{ borderColor: c.header }} />
-            </button>
+            <BellButton navigate={navigate} />
+
           </div>
         </header>
 
@@ -161,6 +196,7 @@ function AppShell() {
             <Route path="/sales"      element={<Sales />} />
             <Route path="/quotes"     element={<Quotes />} />
             <Route path="/media"      element={<Media />} />
+            <Route path="/notifications" element={<Notifications />} />
             <Route path="/reports"    element={<ComingSoon title="Raporlar"   icon="📊" />} />
           </Routes>
         </main>

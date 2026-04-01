@@ -3,13 +3,16 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, Building2, Phone, Mail, X, Loader2, RefreshCw,
   Receipt, TrendingUp, Users, ChevronRight, Edit3, Trash2,
-  AlertCircle, FileText, Package, CheckCircle2, Info, ExternalLink
+  AlertCircle, FileText, Package, CheckCircle2, Info, ExternalLink,
+  CreditCard, CalendarClock, AlertTriangle, ArrowDownLeft, ArrowUpRight,
+  Bell, Clock,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import { useNavigate } from 'react-router-dom';
 import { pageCache } from '../lib/pageCache';
 import CustomDialog from '../components/CustomDialog';
+import PaymentsTab from '../components/PaymentsTab';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n) => n != null ? Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2 }) : '0,00';
@@ -38,6 +41,8 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
   const [form, setForm]               = useState({ ...customer });
   const [saving, setSaving]           = useState(false);
 
+  const [payments, setPayments]       = useState([]);
+
   const isNew = !customer.id;
 
   useEffect(() => {
@@ -47,6 +52,24 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
       .order('issue_date', { ascending: false })
       .then(({ data }) => { setInvoices(data || []); setLoadingInv(false); });
   }, [customer.vkntckn]);
+
+  // Ödemeler
+  useEffect(() => {
+    if (!customer.id || isNew) return;
+    supabase.from('payments')
+      .select('*')
+      .eq('entity_type', 'customer')
+      .eq('entity_id', customer.id)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => setPayments(data || []));
+  }, [customer.id]);
+
+  // Toplam bakiye (TL cinsinden)
+  const balance = payments.reduce((s, p) => {
+    const amt = p.amount_try || p.amount || 0;
+    return p.direction === 'receivable' ? s + amt : s - amt;
+  }, 0);
+  const hasOverdue = payments.some(p => p.status === 'overdue');
 
   const totalAmount = invoices.reduce((s, i) => s + Number(i.amount || 0), 0);
   const lastInvoice = invoices[0];
@@ -68,9 +91,15 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
     finally { setSaving(false); }
   };
 
+  const fmtBalance = (n) => {
+    const abs = Math.abs(n);
+    return abs.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
   const TABS = [
-    { id: 'info',    label: 'Bilgiler',    icon: Info },
-    { id: 'invoices',label: `Faturalar (${invoices.length})`, icon: Receipt },
+    { id: 'info',     label: 'Bilgiler',                       icon: Info },
+    { id: 'invoices', label: `Faturalar (${invoices.length})`, icon: Receipt },
+    { id: 'payments', label: `Ödemeler (${payments.length})`,  icon: CreditCard },
   ];
 
   return (
@@ -118,13 +147,20 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
               <div className="grid grid-cols-3 gap-2 mt-4">
                 {[
                   { label: 'Fatura', value: invoices.length, color: currentColor },
-                  { label: 'Toplam', value: `₺${(totalAmount/1000).toFixed(1)}K`, color: '#10b981' },
+                  {
+                    label: 'Bakiye (TL)',
+                    value: balance === 0 ? '₺0' : `${balance > 0 ? '+' : '-'}₺${fmtBalance(balance)}`,
+                    color: balance > 0 ? '#10b981' : balance < 0 ? '#ef4444' : '#94a3b8'
+                  },
                   { label: 'Son Fatura', value: fmtD(lastInvoice?.issue_date), color: '#f59e0b' },
                 ].map((s, i) => (
                   <div key={i} className="rounded-xl p-2.5 text-center"
-                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(148,163,184,0.08)' }}>
+                    style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${hasOverdue && i===1 ? 'rgba(239,68,68,0.3)' : 'rgba(148,163,184,0.08)'}` }}>
                     <p className="text-sm font-bold" style={{ color: s.color }}>{s.value}</p>
                     <p className="text-[10px] text-slate-500 mt-0.5">{s.label}</p>
+                    {hasOverdue && i === 1 && (
+                      <p className="text-[9px] text-red-400 font-bold mt-0.5">⚠ Vadesi geçmiş!</p>
+                    )}
                   </div>
                 ))}
               </div>
@@ -271,6 +307,18 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
                   </motion.div>
                 ))}
               </div>
+            )}
+            {/* ── Ödemeler Tab ── */}
+            {tab === 'payments' && !isNew && (
+              <PaymentsTab
+                entityId={customer.id}
+                entityName={customer.name}
+                entityType="customer"
+                payments={payments}
+                onPaymentsChange={setPayments}
+                setDialog={setDialog}
+                invoices={invoices}
+              />
             )}
           </div>
         </motion.div>
