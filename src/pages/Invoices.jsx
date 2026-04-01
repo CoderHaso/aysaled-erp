@@ -676,8 +676,8 @@ export default function Invoices({ type = 'inbox' }) {
 
   const queryCustomerInfo = async () => {
     const vkn = createForm.vkntckn?.trim();
-    if (!vkn) return alert('Lütfen sorgulamak için bir VKN/TCKN girin.');
-    if (vkn.length < 10) return alert('Geçerli bir VKN (10) veya TCKN (11) giriniz.');
+    if (!vkn) return alert('Lutfen sorgulamak icin bir VKN/TCKN girin.');
+    if (vkn.length < 10) return alert('Gecerli bir VKN (10) veya TCKN (11) giriniz.');
     
     setQueryingVkn(true);
     try {
@@ -688,19 +688,27 @@ export default function Invoices({ type = 'inbox' }) {
       const data = await r.json();
       if (!data.success) throw new Error(data.error);
 
-      const { unvan, sehir, ilce, adres, vergiDairesi } = data.data;
+      const { unvan, sehir, ilce, adres, vergiDairesi, binAdi, binaNo, postaKodu, ulke, telefon, eposta } = data.data;
       setCreateForm(p => ({
         ...p,
-        cari_name: unvan || p.cari_name,
-        city: sehir || p.city,
-        district: ilce || p.district,
-        address: adres || p.address,
-        tax_office: vergiDairesi || p.tax_office
+        cari_name:     unvan        || p.cari_name,
+        city:          sehir        || p.city,
+        district:      ilce         || p.district,
+        address:       adres        || p.address,
+        tax_office:    vergiDairesi || p.tax_office,
+        building_name: binAdi       || p.building_name || '',
+        building_no:   binaNo       || p.building_no   || '',
+        postal_code:   postaKodu    || p.postal_code   || '',
+        country:       ulke         || p.country       || 'Turkiye',
+        phone:         telefon      || p.phone         || '',
+        email:         eposta       || p.email         || '',
       }));
-      // Optional: Inform user
-      // alert('Firma bilgileri başarıyla getirildi!');
+      if (data.source) {
+        const srcLabel = { db: 'Veritabanı', invoice_xml: 'Fatura XML', uyumsoft: 'Uyumsoft' }[data.source] || data.source;
+        console.log(`[queryCustomerInfo] Kaynak: ${srcLabel}`);
+      }
     } catch (err) {
-      alert('Sorgulama başarısız: ' + err.message);
+      alert('Sorgulama basarisiz: ' + err.message);
     } finally {
       setQueryingVkn(false);
     }

@@ -275,23 +275,27 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor,
   });
 
   const [form, setForm] = useState({
-    customer_id:         order?.customer_id || '',
-    customer_name:       order?.customer_name || '',
-    customer_vkntckn:    order?.customer_vkntckn || '',
-    customer_tax_office: order?.customer_tax_office || '',
-    customer_address:    order?.customer_address || '',
-    customer_district:   order?.customer_district || '',
-    customer_city:       order?.customer_city || '',
-    customer_phone:      order?.customer_phone || '',
-    customer_email:      order?.customer_email || '',
-    order_number:        order?.order_number || '',
-    status:              order?.status || 'pending',
-    currency:            order?.currency || 'TRY',
-    due_date:            order?.due_date ? order.due_date.slice(0, 10) : addDays(new Date(), 7).toISOString().slice(0, 10),
-    delivery_address:    order?.delivery_address || '',
-    billing_address:     order?.billing_address || '',
-    notes:               order?.notes || '',
-    quote_id:            order?.quote_id || null,
+    customer_id:          order?.customer_id || '',
+    customer_name:        order?.customer_name || '',
+    customer_vkntckn:     order?.customer_vkntckn || '',
+    customer_tax_office:  order?.customer_tax_office || '',
+    customer_address:     order?.customer_address || '',
+    customer_district:    order?.customer_district || '',
+    customer_city:        order?.customer_city || '',
+    customer_phone:       order?.customer_phone || '',
+    customer_email:       order?.customer_email || '',
+    customer_country:     order?.customer_country || 'Turkiye',
+    customer_building_name: order?.customer_building_name || '',
+    customer_building_no:   order?.customer_building_no || '',
+    customer_postal_code:   order?.customer_postal_code || '',
+    order_number:         order?.order_number || '',
+    status:               order?.status || 'pending',
+    currency:             order?.currency || 'TRY',
+    due_date:             order?.due_date ? order.due_date.slice(0, 10) : addDays(new Date(), 7).toISOString().slice(0, 10),
+    delivery_address:     order?.delivery_address || '',
+    billing_address:      order?.billing_address || '',
+    notes:                order?.notes || '',
+    quote_id:             order?.quote_id || null,
   });
   const [lines, setLines]   = useState(order?.items?.length ? order.items.map(i => ({ ...i, _key: Math.random() })) : [blankLine()]);
   const [saving, setSaving] = useState(false);
@@ -327,19 +331,30 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor,
   const selectCustomer = async (cust) => {
     const num = await generateOrderNumber(cust.name);
     const parsed = parseTurkishAddress(cust.address);
+    // Adres icinde (Ilce) Adres formatini coz
+    let district = cust.district || parsed.district || '';
+    let addr     = cust.address  || '';
+    if (!district && addr.startsWith('(')) {
+      const m = addr.match(/^\(([^)]+)\)\s*(.*)$/);
+      if (m) { district = m[1]; addr = m[2]; }
+    }
     setForm(f => ({
       ...f,
-      customer_id:         cust.id,
-      customer_name:       cust.name,
-      customer_vkntckn:    cust.vkntckn    || '',
-      customer_tax_office: cust.tax_office || '',
-      customer_address:    parsed.address  || cust.address || '',
-      customer_district:   parsed.district || cust.district || '',
-      customer_city:       parsed.city     || cust.city || '',
-      customer_phone:      cust.phone      || '',
-      customer_email:      cust.email      || '',
-      delivery_address: f.delivery_address || cust.address || '',
-      billing_address:  f.billing_address  || cust.address || '',
+      customer_id:          cust.id,
+      customer_name:        cust.name,
+      customer_vkntckn:     cust.vkntckn    || '',
+      customer_tax_office:  cust.tax_office || '',
+      customer_address:     addr            || parsed.address || '',
+      customer_district:    district,
+      customer_city:        parsed.city     || cust.city || '',
+      customer_phone:       cust.phone      || '',
+      customer_email:       cust.email      || '',
+      customer_country:     cust.country    || 'Turkiye',
+      customer_building_name: cust.building_name || '',
+      customer_building_no:   cust.building_no   || '',
+      customer_postal_code:   cust.postal_code   || '',
+      delivery_address: f.delivery_address || addr || cust.address || '',
+      billing_address:  f.billing_address  || addr || cust.address || '',
       order_number: isEdit ? f.order_number : num,
     }));
     setCustOpen(false); setCustQ('');
@@ -746,13 +761,13 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor,
                     Siparişi kaydettiğinizde Uyumsoft'ta Giden Taslak Fatura olarak da gönderilecektir. Uyumsoft portalı üzerinden daha sonra resmileştirebilmeniz için lütfen zorunlu alanları eksiksiz girin:
                   </p>
                   
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2 p-4 rounded-xl" style={{ border: '1px solid rgba(139,92,246,0.25)', background: 'rgba(139,92,246,0.05)' }}>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2 p-4 rounded-xl" style={{ border: '1px solid rgba(139,92,246,0.25)', background: 'rgba(139,92,246,0.05)' }}>
                       <div className="relative">
                         <Field label="VKN / TCKN *" value={form.customer_vkntckn} onChange={v => setForm(f => ({ ...f, customer_vkntckn: v }))} placeholder="10 veya 11 hane" />
                         <button onClick={async () => {
                           const vkn = form.customer_vkntckn?.trim();
                           if (!vkn || vkn.length < 10) {
-                              setDialog({ open: true, title: 'Geçersiz Giriş', message: 'Lütfen geçerli bir VKN (10 hane) veya TCKN (11 hane) girin.', type: 'alert' });
+                              setDialog({ open: true, title: 'Gecersiz Giris', message: 'Lutfen gecerli bir VKN (10 hane) veya TCKN (11 hane) girin.', type: 'alert' });
                               return;
                           }
                           setDraftLoading(true);
@@ -762,29 +777,45 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor,
                             if (d.success) {
                               setForm(f => ({
                                 ...f,
-                                customer_name: d.data.unvan || f.customer_name,
-                                customer_city: d.data.sehir || f.customer_city,
-                                customer_district: d.data.ilce || f.customer_district,
-                                customer_address: d.data.adres || f.customer_address,
-                                customer_tax_office: d.data.vergiDairesi || f.customer_tax_office
+                                customer_name:          d.data.unvan        || f.customer_name,
+                                customer_city:          d.data.sehir        || f.customer_city,
+                                customer_district:      d.data.ilce         || f.customer_district,
+                                customer_address:       d.data.adres        || f.customer_address,
+                                customer_tax_office:    d.data.vergiDairesi || f.customer_tax_office,
+                                customer_country:       d.data.ulke         || f.customer_country || 'Turkiye',
+                                customer_building_name: d.data.binAdi       || f.customer_building_name || '',
+                                customer_building_no:   d.data.binaNo       || f.customer_building_no  || '',
+                                customer_postal_code:   d.data.postaKodu    || f.customer_postal_code  || '',
+                                customer_phone:         d.data.telefon      || f.customer_phone || '',
+                                customer_email:         d.data.eposta       || f.customer_email || '',
                               }));
                             } else throw new Error(d.error);
                           } catch (e) { 
-                              setDialog({ open: true, title: 'Sorgu Hatası', message: e.message, type: 'alert' }); 
+                              setDialog({ open: true, title: 'Sorgu Hatasi', message: e.message, type: 'alert' }); 
                           }
                           finally { setDraftLoading(false); }
                         }}
                           disabled={draftLoading || saving}
                           className="absolute right-0 top-6 px-3 py-1 rounded-lg text-[10px] font-bold bg-violet-600 text-white hover:bg-violet-700 transition-colors disabled:opacity-50">
-                          {draftLoading ? 'Sorgulanıyor...' : 'Ücretsiz Sorgula'}
+                          {draftLoading ? 'Sorgulanıyor...' : 'DB / XML Sorgula'}
                         </button>
                       </div>
-                      <Field label="Vergi Dairesi *" value={form.customer_tax_office} onChange={v => setForm(f => ({ ...f, customer_tax_office: v }))} placeholder="Örn: BORNOVA" />
-                      <Field label="Şehir *" value={form.customer_city} onChange={v => setForm(f => ({ ...f, customer_city: v }))} placeholder="Örn: İZMİR" />
-                      <Field label="İlçe (Opsiyonel)" value={form.customer_district} onChange={v => setForm(f => ({ ...f, customer_district: v }))} placeholder="Örn: BAYRAKLI" />
-                      <div className="sm:col-span-2">
-                        <Field label="Açık Adres *" value={form.customer_address} onChange={v => setForm(f => ({ ...f, customer_address: v }))} placeholder="Tam Adres..." />
+                      <Field label="Vergi Dairesi *" value={form.customer_tax_office} onChange={v => setForm(f => ({ ...f, customer_tax_office: v }))} placeholder="Ornegin: BORNOVA" />
+                      <div>
+                        <label className="text-xs font-semibold block mb-1" style={{ color: 'rgba(148,163,184,0.7)' }}>Ulke</label>
+                        <input value={form.customer_country} onChange={e => setForm(f => ({ ...f, customer_country: e.target.value }))}
+                          className="w-full px-3 py-2 text-sm rounded-xl outline-none border font-mono uppercase"
+                          style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'rgba(148,163,184,0.12)', color: '#e2e8f0' }} />
                       </div>
+                      <Field label="Sehir *" value={form.customer_city} onChange={v => setForm(f => ({ ...f, customer_city: v }))} placeholder="Ornegin: IZMIR" />
+                      <Field label="Mahalle / Ilce *" value={form.customer_district} onChange={v => setForm(f => ({ ...f, customer_district: v }))} placeholder="Ornegin: KONAK" />
+                      <div className="sm:col-span-2">
+                        <Field label="Cadde / Sokak / Acik Adres *" value={form.customer_address} onChange={v => setForm(f => ({ ...f, customer_address: v }))} placeholder="Cadde, sokak, bina kapi no..." />
+                      </div>
+                      <Field label="Bina Adi" value={form.customer_building_name} onChange={v => setForm(f => ({ ...f, customer_building_name: v }))} placeholder="Opsiyonel" />
+                      <Field label="Bina / Kapi No" value={form.customer_building_no} onChange={v => setForm(f => ({ ...f, customer_building_no: v }))} placeholder="Opsiyonel" />
+                      <Field label="Posta Kodu" value={form.customer_postal_code} onChange={v => setForm(f => ({ ...f, customer_postal_code: v }))} placeholder="35000" />
+                      <Field label="Tel" value={form.customer_phone} onChange={v => setForm(f => ({ ...f, customer_phone: v }))} placeholder="0232 xxx xx xx" />
                   </div>
                   
                 </div>

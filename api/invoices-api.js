@@ -586,41 +586,127 @@ async function handleDelete(body, res) {
 }
 
 /**
- * fetchCustomerInfo — VKN/TCKN ile Uyumsoft üzerinden ücretsiz adres, vergi dairesi sorgulama
- * Body: { vkn }
+ * fetchCustomerInfo — VKN/TCKN ile musteri bilgisi sorgula
+ * Oncelik sirasi (Uyumsoft kredisi harcamamak icin):
+ *   1. Kendi DB'mizden (customers / suppliers tablosu)
+ *   2. Senkronize edilmis fatura XML'inden (raw_detail)
+ *   3. Son care: TryToGetAddressFromVknTckn (Uyumsoft kredi harcatir)
+ * Body: { vkn, forceUyumsoft? }
  */
 async function handleFetchCustomerInfo(body, res) {
-  const { vkn } = body;
+  const { vkn, forceUyumsoft = false } = body;
   if (!vkn) return res.status(400).json({ success: false, error: 'VKN/TCKN zorunludur' });
 
+  // ─ Yardimci: UBL adres parse ─────────────────────────────────────────────────
+  const v = (node) => {
+    if (!node) return '';
+    if (typeof node === 'string') return node;
+    if (node._) return node._;
+    if (node.$value) return node.$value;
+    return '';
+  };
+
+  const buildFromUblAddr = (addrNode) => {
+    if (!addrNode) return null;
+    const street   = v(addrNode?.StreetName     ?? addrNode?.['cbc:StreetName'])     || '';
+    const street2  = v(addrNode?.AdditionalStreetName ?? addrNode?.['cbc:AdditionalStreetName']) || '';
+    const city     = v(addrNode?.CityName        ?? addrNode?.['cbc:CityName'])       || '';
+    const district = v(addrNode?.CitySubdivisionName ?? addrNode?.['cbc:CitySubdivisionName']) || '';
+    const postal   = v(addrNode?.PostalZone      ?? addrNode?.['cbc:PostalZone'])     || '';
+    const country  = v(addrNode?.Country?.IdentificationCode ?? addrNode?.['cac:Country']?.['cbc:IdentificationCode']) || 'TR';
+    const buildingNo = v(addrNode?.BuildingNumber ?? addrNode?.['cbc:BuildingNumber']) || '';
+    const buildingName = v(addrNode?.BuildingName ?? addrNode?.['cbc:BuildingName'])   || '';
+    if (!city && !street) return null;
+    return { street, street2, city, district, postal, country, buildingNo, buildingName };
+  };
+
   try {
+    // ─ 1. Supabase DB kontrolu ───────────────────────────────────────────────
+    if (!forceUyumsoft) {
+      const [custRes, suppRes] = await Promise.all([
+        supabase.from('customers').select('name,city,address,tax_office,district,phone,email,postal_code').eq('vkntckn', vkn).maybeSingle(),
+        supabase.from('suppliers').select('name,city,address,tax_office,district,phone,email,postal_code').eq('vkntckn', vkn).maybeSingle(),
+      ]);
+      const dbRow = custRes.data || suppRes.data;
+      if (dbRow && (dbRow.city || dbRow.address)) {
+        return res.json({ success: true, source: 'db', data: {
+          unvan:        dbRow.name         || '',
+          vergiDairesi: dbRow.tax_office   || '',
+          sehir:        dbRow.city         || '',
+          ilce:         dbRow.district     || '',
+          adres:        dbRow.address      || '',
+          telefon:      dbRow.phone        || '',
+          eposta:       dbRow.email        || '',
+          postaKodu:    dbRow.postal_code  || '',
+          ulke:         'TR',
+        }});
+      }
+
+      // ─ 2. Senkronize edilmis fatura raw_detail'den ─────────────────────────
+      const { data: invRow } = await supabase.from('invoices')
+        .select('raw_detail,cari_name')
+        .eq('vkntckn', vkn)
+        .not('raw_detail', 'is', null)
+        .limit(1).maybeSingle();
+
+      if (invRow?.raw_detail) {
+        const inv = invRow.raw_detail;
+        // Fatura tipine gore dogru taraf (outbox = alici musteri, inbox = gonderen tedarikci)
+        const partyNode = inv.AccountingCustomerParty || inv['cac:AccountingCustomerParty']
+          || inv.AccountingSupplierParty || inv['cac:AccountingSupplierParty'];
+        const party  = partyNode?.Party || partyNode?.['cac:Party'] || partyNode;
+        const addrNode = party?.PostalAddress || party?.['cac:PostalAddress'];
+        const taxScheme = party?.PartyTaxScheme || party?.['cac:PartyTaxScheme'];
+        const contactNode = party?.Contact || party?.['cac:Contact'];
+        const built = buildFromUblAddr(addrNode);
+
+        if (built && (built.city || built.street)) {
+          return res.json({ success: true, source: 'invoice_xml', data: {
+            unvan:        invRow.cari_name || '',
+            vergiDairesi: v(taxScheme?.RegistrationName ?? taxScheme?.['cbc:RegistrationName']) || '',
+            sehir:        built.city,
+            ilce:         built.district,
+            adres:        [built.street, built.street2].filter(Boolean).join(' '),
+            binAdi:       built.buildingName,
+            binaNo:       built.buildingNo,
+            postaKodu:    built.postal,
+            ulke:         built.country,
+            telefon:      v(contactNode?.Telephone ?? contactNode?.['cbc:Telephone']) || '',
+            eposta:       v(contactNode?.ElectronicMail ?? contactNode?.['cbc:ElectronicMail']) || '',
+          }});
+        }
+      }
+    }
+
+    // ─ 3. Son care: TryToGetAddressFromVknTckn (Uyumsoft kredi harcatir) ────
     const client = await createUyumsoftClient();
-    const result = await callSoap(client, 'TryToGetAddressFromVknTckn', { vknTckn: vkn, queryType: 'Normal' });
+    const result = await callSoap(client, 'TryToGetAddressFromVknTckn', { vknTckn: vkn, queryType: 'OnlyDb' }); // OnlyDb: kredi harcanmaz
     const r = result?.TryToGetAddressFromVknTcknResult;
     const ok = String(r?.attributes?.IsSucceded).toLowerCase() === 'true';
 
-    if (!ok) return res.status(400).json({ success: false, error: r?.attributes?.Message || 'Uyumsoft: Kayıt bulunamadı veya sorgu başarısız.' });
+    if (!ok) return res.status(400).json({ success: false, error: r?.attributes?.Message || 'Kayit bulunamadi.' });
 
-    const val = r?.Value || {};
-    // İş adresi veya İkametgah adresi
-    const addressData = val.IsAdresi?.IlAdi ? val.IsAdresi : val.IkametgahAdresi;
+    const val2 = r?.Value || {};
+    const addrData = val2.IsAdresi?.IlAdi ? val2.IsAdresi : val2.IkametgahAdresi;
 
     let fullAddress = '';
-    if (addressData?.MahalleSemt) fullAddress += addressData.MahalleSemt + ' Mah. ';
-    if (addressData?.CaddeSokak) fullAddress += addressData.CaddeSokak;
+    if (addrData?.MahalleSemt) fullAddress += addrData.MahalleSemt + ' Mah. ';
+    if (addrData?.CaddeSokak)  fullAddress += addrData.CaddeSokak;
+    if (addrData?.KapiNO)      fullAddress += ' No:' + addrData.KapiNO;
 
-    const parsed = {
-      unvan: val.Unvan || (val.Adi ? `${val.Adi} ${val.Soyadi}`.trim() : ''),
-      vergiDairesi: val.VergiDairesiAdi || '',
-      sehir: addressData?.IlAdi || '',
-      ilce: addressData?.IlceAdi || '',
-      adres: fullAddress.trim(),
-    };
-
-    return res.json({ success: true, data: parsed });
+    return res.json({ success: true, source: 'uyumsoft', data: {
+      unvan:        val2.Unvan || (val2.Adi ? `${val2.Adi} ${val2.Soyadi}`.trim() : ''),
+      vergiDairesi: val2.VergiDairesiAdi || '',
+      sehir:        addrData?.IlAdi     || '',
+      ilce:         addrData?.IlceAdi   || '',
+      adres:        fullAddress.trim(),
+      mahalle:      addrData?.MahalleSemt || '',
+      binaNo:       addrData?.KapiNO     || '',
+      ulke:         'TR',
+    }});
   } catch (err) {
     console.error('[invoices-api][fetchCustomerInfo]', err.message);
-    return res.status(500).json({ success: false, error: 'Uyumsoft sorgusu hatası: ' + err.message });
+    return res.status(500).json({ success: false, error: 'Sorgu hatasi: ' + err.message });
   }
 }
 
