@@ -5,13 +5,13 @@
 -- ═══════════════════════════════════════════════════════════════════
 
 INSERT INTO suppliers (
-  name, vkntckn, tax_id,
+  name, vkntckn, tax_office,
   address, city, district, country, postal_code,
   phone, email,
   source, is_active, created_at, updated_at
 )
 SELECT
-  name, vkntckn, tax_id,
+  name, vkntckn, tax_office,
   address, city, district, country, postal_code,
   phone, email,
   source, is_active, NOW(), NOW()
@@ -19,7 +19,7 @@ FROM (
   SELECT DISTINCT ON (grp_key)
     TRIM(cari_name)              AS name,
     NULLIF(TRIM(vkntckn), '')    AS vkntckn,
-    MAX(cari_tax_office) OVER w  AS tax_id,
+    MAX(cari_tax_office) OVER w  AS tax_office,
     MAX(cari_address)    OVER w  AS address,
     MAX(cari_city)       OVER w  AS city,
     MAX(cari_district)   OVER w  AS district,
@@ -45,7 +45,7 @@ FROM (
 ON CONFLICT (vkntckn)
 DO UPDATE SET
   name        = EXCLUDED.name,
-  tax_id      = COALESCE(EXCLUDED.tax_id,      suppliers.tax_id),
+  tax_office  = COALESCE(EXCLUDED.tax_office,  suppliers.tax_office),
   address     = COALESCE(EXCLUDED.address,     suppliers.address),
   city        = COALESCE(EXCLUDED.city,        suppliers.city),
   district    = COALESCE(EXCLUDED.district,    suppliers.district),
@@ -57,7 +57,7 @@ DO UPDATE SET
   updated_at  = NOW();
 
 -- VKN'siz (name bazlı) kayıtlar
-INSERT INTO suppliers (name, vkntckn, tax_id, address, city, district, country, postal_code, phone, email, source, is_active, created_at, updated_at)
+INSERT INTO suppliers (name, vkntckn, tax_office, address, city, district, country, postal_code, phone, email, source, is_active, created_at, updated_at)
 SELECT DISTINCT ON (LOWER(TRIM(cari_name)))
   TRIM(cari_name), NULL,
   MAX(cari_tax_office) OVER (PARTITION BY LOWER(TRIM(cari_name))),
