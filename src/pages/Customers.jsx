@@ -483,9 +483,7 @@ export default function Customers() {
   const [selected, setSelected]   = useState(null);
   const [showNew, setShowNew]     = useState(false);
   const [toast, setToast]         = useState(null);
-  const [syncingInv, setSyncingInv] = useState(false);
-  const [enriching,  setEnriching]  = useState(false);
-  const [enrichLog,  setEnrichLog]  = useState(null);  // { enriched, processed, errors[]}
+
   const [dialog,     setDialog]     = useState({ open: false, title: '', message: '', type: 'confirm', onConfirm: null, loading: false });
 
   const c = {
@@ -510,95 +508,6 @@ export default function Customers() {
   }, []);
 
   useEffect(() => { loadCustomers(); }, [loadCustomers]);
-
-  // Faturalardan carileri çek:
-  // 1. /api/sync-invoices ?type=outbox çağırır (liste + her faturanın UBL detayı)
-  // 2. Kalan > 0 ise tekrar çağırır (Vercel timeout koruması)
-  // 3. SQL 3_cek_cariler.sql'i Supabase'de çalıştırın (veya arayüz otomatik)
-  const syncAll = async () => {
-    setSyncingInv(true);
-    let total = 0, details = 0;
-    try {
-      // Önce fatura listesini + UBL detaylarını çek
-      let remaining = 1;
-      while (remaining > 0) {
-        const r = await fetch('/api/sync-invoices', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'outbox', detailLimit: 50 }),
-        });
-        const data = await r.json();
-        if (!data.success) throw new Error(data.error || 'Sync hatası');
-        total   += data.inserted   || 0;
-        details += data.detailFetched || 0;
-        remaining = data.remaining ?? 0;
-      }
-
-      // Sonra invoices'dan customers'a aktar (faturalardan çek)
-      const { data: invs } = await supabase
-        .from('invoices')
-        .select('cari_name, vkntckn, cari_tax_office, cari_address, cari_city, cari_district, cari_country, cari_postal, cari_phone, cari_email, issue_date')
-        .eq('type', 'outbox')
-        .not('cari_name', 'is', null)
-        .order('issue_date', { ascending: false });
-
-      const byVkn = {}, byName = {};
-      (invs || []).forEach(inv => {
-        const vkn  = (inv.vkntckn || '').trim();
-        const name = (inv.cari_name || '').trim();
-        if (!name) return;
-        const row = {
-          name, vkntckn: vkn || null,
-          tax_office: inv.cari_tax_office || null,
-          address:    inv.cari_address    || null,
-          city:       inv.cari_city       || null,
-          district:   inv.cari_district   || null,
-          country:    inv.cari_country    || null,
-          postal_code:inv.cari_postal     || null,
-          phone:      inv.cari_phone      || null,
-          email:      inv.cari_email      || null,
-          source: 'invoice_sync', is_active: true,
-        };
-        if (vkn) {
-          if (!byVkn[vkn]) byVkn[vkn] = row;
-          else {
-            const e = byVkn[vkn];
-            ['address','city','district','phone','email','tax_office','postal_code'].forEach(k => {
-              if (!e[k] && row[k]) e[k] = row[k];
-            });
-          }
-        } else {
-          if (!byName[name.toLowerCase()]) byName[name.toLowerCase()] = row;
-        }
-      });
-
-      const rows = [...Object.values(byVkn), ...Object.values(byName)];
-      if (rows.length > 0) {
-        const vknRows = rows.filter(r => r.vkntckn);
-        if (vknRows.length > 0) {
-          await supabase.from('customers').upsert(vknRows, { onConflict: 'vkntckn' });
-        }
-        for (const r of rows.filter(x => !x.vkntckn)) {
-          const { data: ex } = await supabase.from('customers').select('id').ilike('name', r.name).maybeSingle();
-          if (!ex) await supabase.from('customers').insert(r);
-          else {
-            const patch = {};
-            ['address','city','district','phone','email','tax_office','postal_code'].forEach(k => {
-              if (r[k] && !ex[k]) patch[k] = r[k];
-            });
-            if (Object.keys(patch).length) await supabase.from('customers').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', ex.id);
-          }
-        }
-      }
-
-      await loadCustomers(true);
-      showToast(`${rows.length} cari çekildi (${details} adres) ✓`);
-    } catch (e) {
-      showToast(e.message, 'error');
-    } finally {
-      setSyncingInv(false);
-    }
-  };
 
 
   const deleteCustomer = async (id, name) => {
@@ -662,12 +571,7 @@ export default function Customers() {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={syncAll} disabled={syncingInv}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
-              style={{ background: 'rgba(59,130,246,0.1)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.2)' }}>
-              {syncingInv ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-              {syncingInv ? 'Çekiliyor...' : 'Faturalardan Çek'}
-            </button>
+
             <button onClick={() => setShowNew(true)}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-bold"
               style={{ background: currentColor }}>

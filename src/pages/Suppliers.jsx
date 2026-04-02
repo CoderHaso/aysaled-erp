@@ -431,92 +431,7 @@ export default function Suppliers() {
 
   useEffect(() => { loadSuppliers(); }, [loadSuppliers]);
 
-  // Faturalardan tedarikçileri çek (INBOX):
-  // 1. /api/sync-invoices?type=inbox çağırır (liste + UBL detayı)
-  // 2. Kalan > 0 ise devam eder
-  const syncAll = async () => {
-    setSyncing(true);
-    let total = 0, details = 0;
-    try {
-      let remaining = 1;
-      while (remaining > 0) {
-        const r = await fetch('/api/sync-invoices', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: 'inbox', detailLimit: 50 }),
-        });
-        const data = await r.json();
-        if (!data.success) throw new Error(data.error || 'Sync hatası');
-        total   += data.inserted      || 0;
-        details += data.detailFetched || 0;
-        remaining = data.remaining    ?? 0;
-      }
 
-      // invoices'dan suppliers'a aktar
-      const { data: invs } = await supabase
-        .from('invoices')
-        .select('cari_name, vkntckn, cari_tax_office, cari_address, cari_city, cari_district, cari_country, cari_postal, cari_phone, cari_email, issue_date')
-        .eq('type', 'inbox')
-        .not('cari_name', 'is', null)
-        .order('issue_date', { ascending: false });
-
-      const byVkn = {}, byName = {};
-      (invs || []).forEach(inv => {
-        const vkn  = (inv.vkntckn || '').trim();
-        const name = (inv.cari_name || '').trim();
-        if (!name) return;
-        const row = {
-          name, vkntckn: vkn || null,
-          tax_id:     inv.cari_tax_office || null,
-          address:    inv.cari_address    || null,
-          city:       inv.cari_city       || null,
-          district:   inv.cari_district   || null,
-          country:    inv.cari_country    || null,
-          postal_code:inv.cari_postal     || null,
-          phone:      inv.cari_phone      || null,
-          email:      inv.cari_email      || null,
-          source: 'invoice_sync', is_active: true,
-        };
-        if (vkn) {
-          if (!byVkn[vkn]) byVkn[vkn] = row;
-          else {
-            const e = byVkn[vkn];
-            ['address','city','district','phone','email','tax_id','postal_code'].forEach(k => {
-              if (!e[k] && row[k]) e[k] = row[k];
-            });
-          }
-        } else {
-          if (!byName[name.toLowerCase()]) byName[name.toLowerCase()] = row;
-        }
-      });
-
-      const rows = [...Object.values(byVkn), ...Object.values(byName)];
-      if (rows.length > 0) {
-        const vknRows = rows.filter(r => r.vkntckn);
-        if (vknRows.length > 0) {
-          await supabase.from('suppliers').upsert(vknRows, { onConflict: 'vkntckn' });
-        }
-        for (const r of rows.filter(x => !x.vkntckn)) {
-          const { data: ex } = await supabase.from('suppliers').select('id').ilike('name', r.name).maybeSingle();
-          if (!ex) await supabase.from('suppliers').insert(r);
-          else {
-            const patch = {};
-            ['address','city','district','phone','email','tax_id','postal_code'].forEach(k => {
-              if (r[k] && !ex[k]) patch[k] = r[k];
-            });
-            if (Object.keys(patch).length) await supabase.from('suppliers').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', ex.id);
-          }
-        }
-      }
-
-      await loadSuppliers(true);
-      showToast(`${rows.length} tedarikçi faturalardan çekildi ✓`);
-    } catch (e) {
-      showToast(e.message, 'error');
-    } finally {
-      setSyncing(false);
-    }
-  };
 
   const deleteSupplier = async (id, name) => {
     setDialog({
@@ -579,12 +494,7 @@ export default function Suppliers() {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={syncAll} disabled={syncing}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
-              style={{ background: 'rgba(249,115,22,0.1)', color: ACCENT, border: `1px solid rgba(249,115,22,0.2)` }}>
-              {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-              {syncing ? 'Çekiliyor...' : 'Faturalardan Çek'}
-            </button>
+
             <button onClick={() => setShowNew(true)}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-bold"
               style={{ background: ACCENT }}>

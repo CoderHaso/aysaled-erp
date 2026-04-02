@@ -496,21 +496,38 @@ export default function Invoices({ type = 'inbox' }) {
   const syncInvoices = async () => {
     setSyncing(true); setError(null);
     try {
-      const res  = await fetch('/api/sync-invoices', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type })
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.detail || data.error);
+      // Mevcut sekmenin türünü çek (inbox veya outbox)
+      let remaining = 1;
+      let totalInserted = 0;
+      let totalDetails = 0;
+
+      while (remaining > 0) {
+        const res = await fetch('/api/sync-invoices', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type, detailLimit: 50 }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.detail || data.error || 'Bilinmeyen hata');
+        totalInserted += data.inserted      || 0;
+        totalDetails  += data.detailFetched || 0;
+        remaining      = data.remaining     ?? 0;
+      }
+
       invoiceCache.delete(type);
       pageCache.invalidate(`invoices_${type}`);
       await fetchInvoices(true);
-      setDialog({ open: true, title: 'Başarılı', message: data.message, type: 'alert' });
-    } catch (err) { 
+      setDialog({
+        open: true, title: 'Senkronizasyon Tamamlandı', type: 'alert',
+        message: `${totalInserted} fatura güncellendi, ${totalDetails} faturanın adres/iletişim bilgisi çekildi.`
+      });
+    } catch (err) {
       setDialog({ open: true, title: 'Hata', message: 'Eşitleme başarısız: ' + err.message, type: 'alert' });
+    } finally {
+      setSyncing(false);
     }
-    finally { setSyncing(false); }
   };
+
 
   // Manuel fatura oluşturma
   const openCreate = async (t = 'outbox') => { 
