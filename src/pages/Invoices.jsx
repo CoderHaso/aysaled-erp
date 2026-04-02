@@ -29,6 +29,29 @@ const STATUS_MAP = {
 const fmt  = (n) => n != null ? Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
 const fmtD = (d) => d ? new Date(d).toLocaleDateString('tr-TR', { year:'numeric', month:'long', day:'numeric' }) : '-';
 
+// Fatura tipi → Türkçe + renk
+const INVOICE_TYPE_MAP = {
+  SATIS:           { label: 'Satış',       color: '#10b981' },
+  IADE:            { label: 'İade',        color: '#f97316' },
+  TEVKIFAT:        { label: 'Tevkifat',    color: '#3b82f6' },
+  ISTISNA:         { label: 'İstisna',     color: '#8b5cf6' },
+  OZELMATRAH:      { label: 'Özel Matrah', color: '#f59e0b' },
+  IHRACKAYITLI:    { label: 'İhraç Kayıt',color: '#06b6d4' },
+  TICARIFATURA:    { label: 'Ticari',      color: '#64748b' },
+};
+function InvoiceTypeBadge({ typeCode }) {
+  if (!typeCode) return null;
+  const key = typeCode.toUpperCase();
+  const t = INVOICE_TYPE_MAP[key] || { label: typeCode, color: '#94a3b8' };
+  const isIade = key.includes('IADE');
+  return (
+    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold mt-1"
+      style={{ background: `${t.color}20`, color: t.color, border: isIade ? `1px solid ${t.color}60` : 'none' }}>
+      {isIade ? '↩ ' : ''}{t.label}
+    </span>
+  );
+}
+
 // UBL birim kodu → Türkçe karşılık (UN/ECE Rec 20 + yaygın kullanımlar)
 const UBL_UNITS = {
   NIU: 'Adet',   // Number of Items/Units
@@ -464,7 +487,7 @@ export default function Invoices({ type = 'inbox' }) {
       // Detay açılınca get-invoice-detail endpoint'i ayrıca çeker.
       const { data, error: dbErr } = await supabase
         .from('invoices')
-        .select('id, invoice_id, document_id, type, cari_name, vkntckn, amount, currency, issue_date, status, line_items')
+        .select('id, invoice_id, document_id, type, cari_name, vkntckn, amount, currency, issue_date, status, line_items, invoice_type, invoice_tip_type')
         .eq('type', type)
         .order('issue_date', { ascending: false })
         .limit(500);
@@ -955,6 +978,7 @@ export default function Invoices({ type = 'inbox' }) {
                       <td className="px-4 py-3.5 text-sm font-medium" style={{ color: c.text }}>
                         <p className="truncate max-w-[200px]">{inv.cari_name || '-'}</p>
                         <p className="text-xs font-mono mt-0.5" style={{ color: c.muted }}>{inv.vkntckn}</p>
+                        <InvoiceTypeBadge typeCode={inv.invoice_type} />
                       </td>
                       <td className="px-4 py-3.5 whitespace-nowrap"><StatusBadge status={inv.status} /></td>
                       <td className="px-4 py-3.5 whitespace-nowrap text-sm font-bold text-right" style={{ color: c.text }}>

@@ -33,6 +33,8 @@ FROM (
   FROM invoices
   WHERE type = 'outbox'
     AND TRIM(COALESCE(cari_name,'')) <> ''
+    -- İade faturaları cari oluşturmaz / güncellemez
+    AND UPPER(COALESCE(invoice_type,'')) NOT LIKE '%IADE%'
   WINDOW w AS (PARTITION BY COALESCE(NULLIF(TRIM(vkntckn),''), LOWER(TRIM(cari_name))))
   ORDER BY grp_key, issue_date DESC NULLS LAST
 ) src
