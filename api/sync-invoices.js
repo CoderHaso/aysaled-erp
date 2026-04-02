@@ -205,11 +205,18 @@ export default async function handler(req, res) {
       };
     }).filter(Boolean);
 
-    const { error: upsertErr } = await supabase
-      .from('invoices')
-      .upsert(basePayload, { onConflict: 'invoice_id,type' });
-    if (upsertErr) throw new Error('Supabase upsert: ' + upsertErr.message);
+    // Batch upsert: 20'şerlik gruplar halinde — raw_data büyük olduğu için
+    // tek seferde 100+ kayıt göndermek Supabase statement timeout'a yol açıyor
+    const BATCH = 20;
+    for (let b = 0; b < basePayload.length; b += BATCH) {
+      const chunk = basePayload.slice(b, b + BATCH);
+      const { error: upsertErr } = await supabase
+        .from('invoices')
+        .upsert(chunk, { onConflict: 'invoice_id,type' });
+      if (upsertErr) throw new Error('Supabase upsert: ' + upsertErr.message);
+    }
     console.log(`[sync] ${basePayload.length} fatura kaydedildi.`);
+
 
     // ── 5. UBL detayı çek → adres kolonlarını doldur ─────────────────────────
     // Sadece detail_fetched_at IS NULL olanları işle (daha önce çekilmemiş)
