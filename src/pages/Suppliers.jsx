@@ -103,10 +103,12 @@ function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
     setSaving(true);
     pageCache.invalidate('suppliers');
     try {
+      // Boş VKN unique constraint'ini aşmak için null gönder
+      const payload = { ...form, vkntckn: form.vkntckn?.trim() || null };
       if (isNew) {
-        await supabase.from('suppliers').insert({ ...form, source: 'manual' });
+        await supabase.from('suppliers').insert({ ...payload, source: 'manual' });
       } else {
-        await supabase.from('suppliers').update({ ...form, updated_at: new Date().toISOString() }).eq('id', supplier.id);
+        await supabase.from('suppliers').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', supplier.id);
       }
       onSaved?.();
       onClose();
@@ -261,7 +263,7 @@ function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
                       </p>
                     </div>
                     {[
-                      { k: 'tax_id',         l: 'Vergi Dairesi',  ph: 'Kadıköy VD' },
+                      { k: 'tax_office',     l: 'Vergi Dairesi',  ph: 'Kadıköy VD' },
                       { k: 'district',       l: 'İlçe',           ph: 'Kadıköy' },
                       { k: 'address',        l: 'Mahalle / Sokak',ph: 'Moda Cad. No:12' },
                       { k: 'building_number',l: 'Bina No / Daire', ph: '12/3' },

@@ -491,10 +491,11 @@ export default function Invoices({ type = 'inbox' }) {
   const [quickEntitySaving, setQuickEntitySaving] = useState(false);
   const [quickSaving, setQuickSaving] = useState(false); // keep for compat
   // İtem (kalem) autocomplete per-line state
-  const [itemOpenId,    setItemOpenId]    = useState(null); // line.id of the open dropdown
-  const [itemSearch,    setItemSearch]    = useState({});   // { [lineId]: searchStr }
-  const [quickItemForm, setQuickItemForm] = useState(null); // null | { lineId, name }
+  const [itemOpenId,    setItemOpenId]    = useState(null);
+  const [itemSearch,    setItemSearch]    = useState({});
+  const [quickItemForm, setQuickItemForm] = useState(null);
   const [quickItemSaving, setQuickItemSaving] = useState(false);
+  const [adresOpen, setAdresOpen] = useState(false); // Fatura adres bölümü aç/kapat
   const location = useLocation();
   const [toast, setToast]       = useState(null);
   const [dialog, setDialog]     = useState({ open: false, title: '', message: '', type: 'confirm', onConfirm: null, loading: false });
@@ -1319,71 +1320,97 @@ export default function Invoices({ type = 'inbox' }) {
                   </div>
                   {createType === 'outbox' && (
                     <>
-                      <div>
-                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Ulke</label>
-                        <input value={createForm.country || 'Turkiye'} onChange={e => setCreateForm(p => ({...p, country: e.target.value}))}
-                          className="w-full px-3 py-2 text-sm rounded-xl border outline-none uppercase"
-                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Turkiye" />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Sehir *</label>
-                        <input value={createForm.city} onChange={e => setCreateForm(p => ({...p, city: e.target.value}))}
-                          className="w-full px-3 py-2 text-sm rounded-xl border outline-none uppercase"
-                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Ornegin: IZMIR" />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Mahalle / Ilce *</label>
-                        <input value={createForm.district} onChange={e => setCreateForm(p => ({...p, district: e.target.value}))}
-                          className="w-full px-3 py-2 text-sm rounded-xl border outline-none uppercase"
-                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Ornegin: KONAK" />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Kasaba / Koy</label>
-                        <input value={createForm.town || ''} onChange={e => setCreateForm(p => ({...p, town: e.target.value}))}
-                          className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
-                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Opsiyonel" />
-                      </div>
+                      {/* ── Açılır/Kapanır Adres Bölümü ── */}
                       <div className="col-span-2">
-                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Cadde / Sokak / Adres *</label>
-                        <input value={createForm.address} onChange={e => setCreateForm(p => ({...p, address: e.target.value}))}
-                          className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
-                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Cadde sokak bina kapi no..." />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Bina Adi</label>
-                        <input value={createForm.building_name || ''} onChange={e => setCreateForm(p => ({...p, building_name: e.target.value}))}
-                          className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
-                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Opsiyonel" />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Bina / Kapi No</label>
-                        <input value={createForm.building_no || ''} onChange={e => setCreateForm(p => ({...p, building_no: e.target.value}))}
-                          className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
-                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Opsiyonel" />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Posta Kodu</label>
-                        <input value={createForm.postal_code || ''} onChange={e => setCreateForm(p => ({...p, postal_code: e.target.value}))}
-                          className="w-full px-3 py-2 text-sm rounded-xl border outline-none font-mono"
-                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="35000" />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Tel</label>
-                        <input value={createForm.phone || ''} onChange={e => setCreateForm(p => ({...p, phone: e.target.value}))}
-                          className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
-                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="0232 xxx xx xx" />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>E-posta</label>
-                        <input value={createForm.email || ''} onChange={e => setCreateForm(p => ({...p, email: e.target.value}))}
-                          className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
-                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="info@firma.com" />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Vergi Dairesi *</label>
-                        <input value={createForm.tax_office} onChange={e => setCreateForm(p => ({...p, tax_office: e.target.value}))}
-                          className="w-full px-3 py-2 text-sm rounded-xl border outline-none uppercase"
-                          style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Ornegin: BORNOVA" />
+                        <button
+                          type="button"
+                          onClick={() => setAdresOpen(v => !v)}
+                          className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all"
+                          style={{
+                            background: adresOpen ? 'rgba(56,189,248,0.10)' : 'rgba(255,255,255,0.04)',
+                            border: `1px solid ${adresOpen ? 'rgba(56,189,248,0.3)' : 'rgba(148,163,184,0.12)'}`,
+                            color: adresOpen ? '#38bdf8' : '#94a3b8'
+                          }}>
+                          <span className="flex items-center gap-2">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                            Fatura Adres Bilgileri {!adresOpen && <span style={{color:'#64748b',fontWeight:400}}>(tıkla düzenle)</span>}
+                          </span>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                            style={{ transform: adresOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>
+                            <polyline points="6 9 12 15 18 9"/>
+                          </svg>
+                        </button>
+
+                        {adresOpen && (
+                          <div className="grid grid-cols-2 gap-3 mt-3 p-3 rounded-xl" style={{ background: 'rgba(56,189,248,0.04)', border: '1px solid rgba(56,189,248,0.1)' }}>
+                            <div>
+                              <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>Ulke</label>
+                              <input value={createForm.country || 'Turkiye'} onChange={e => setCreateForm(p => ({...p, country: e.target.value}))}
+                                className="w-full px-3 py-2 text-sm rounded-xl border outline-none uppercase"
+                                style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Turkiye" />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>Sehir *</label>
+                              <input value={createForm.city} onChange={e => setCreateForm(p => ({...p, city: e.target.value}))}
+                                className="w-full px-3 py-2 text-sm rounded-xl border outline-none uppercase"
+                                style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Ornegin: IZMIR" />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>Mahalle / Ilce *</label>
+                              <input value={createForm.district} onChange={e => setCreateForm(p => ({...p, district: e.target.value}))}
+                                className="w-full px-3 py-2 text-sm rounded-xl border outline-none uppercase"
+                                style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Ornegin: KONAK" />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>Kasaba / Koy</label>
+                              <input value={createForm.town || ''} onChange={e => setCreateForm(p => ({...p, town: e.target.value}))}
+                                className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
+                                style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Opsiyonel" />
+                            </div>
+                            <div className="col-span-2">
+                              <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>Cadde / Sokak / Adres *</label>
+                              <input value={createForm.address} onChange={e => setCreateForm(p => ({...p, address: e.target.value}))}
+                                className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
+                                style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Cadde sokak bina kapi no..." />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>Bina Adi</label>
+                              <input value={createForm.building_name || ''} onChange={e => setCreateForm(p => ({...p, building_name: e.target.value}))}
+                                className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
+                                style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Opsiyonel" />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>Bina / Kapi No</label>
+                              <input value={createForm.building_no || ''} onChange={e => setCreateForm(p => ({...p, building_no: e.target.value}))}
+                                className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
+                                style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Opsiyonel" />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>Posta Kodu</label>
+                              <input value={createForm.postal_code || ''} onChange={e => setCreateForm(p => ({...p, postal_code: e.target.value}))}
+                                className="w-full px-3 py-2 text-sm rounded-xl border outline-none font-mono"
+                                style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="35000" />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>Tel</label>
+                              <input value={createForm.phone || ''} onChange={e => setCreateForm(p => ({...p, phone: e.target.value}))}
+                                className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
+                                style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="0232 xxx xx xx" />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>E-posta</label>
+                              <input value={createForm.email || ''} onChange={e => setCreateForm(p => ({...p, email: e.target.value}))}
+                                className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
+                                style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="info@firma.com" />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-semibold mb-0.5 block" style={{ color: c.muted }}>Vergi Dairesi *</label>
+                              <input value={createForm.tax_office} onChange={e => setCreateForm(p => ({...p, tax_office: e.target.value}))}
+                                className="w-full px-3 py-2 text-sm rounded-xl border outline-none uppercase"
+                                style={{ background: c.card, borderColor: c.border, color: c.text }} placeholder="Ornegin: BORNOVA" />
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </>
                   )}

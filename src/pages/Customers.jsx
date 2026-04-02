@@ -110,10 +110,12 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
     setSaving(true);
     pageCache.invalidate('customers');
     try {
+      // Boş VKN unique constraint'ini aşmak için null gönder
+      const payload = { ...form, vkntckn: form.vkntckn?.trim() || null };
       if (isNew) {
-        await supabase.from('customers').insert({ ...form, source: 'manual' });
+        await supabase.from('customers').insert({ ...payload, source: 'manual' });
       } else {
-        await supabase.from('customers').update({ ...form, updated_at: new Date().toISOString() }).eq('id', customer.id);
+        await supabase.from('customers').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', customer.id);
       }
       onSaved?.();
       onClose();
@@ -300,6 +302,24 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
                       </div>
                     ))}
                   </>
+                )}
+
+                {/* ── Faturasız için serbest adres ── */}
+                {form.is_faturasiz && (
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Adres / Konum</p>
+                    {(editing || isNew) ? (
+                      <textarea className="w-full rounded-xl px-3 py-2 text-sm outline-none resize-none"
+                        style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)', color: '#f1f5f9' }}
+                        rows={2} placeholder="Mahalle, semt, şehir... (serbest format)"
+                        value={form.address || ''} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} />
+                    ) : (
+                      <p className="text-sm px-3 py-2 rounded-xl"
+                        style={{ background: 'rgba(255,255,255,0.03)', color: form.address ? '#f1f5f9' : '#475569' }}>
+                        {form.address || <span className="text-slate-600 italic">—</span>}
+                      </p>
+                    )}
+                  </div>
                 )}
 
                 {/* ── Notlar ── */}
