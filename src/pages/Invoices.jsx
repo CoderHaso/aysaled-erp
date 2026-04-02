@@ -127,15 +127,6 @@ const UBL_UNITS = {
 const unitLabel = (code) => UBL_UNITS[code?.toUpperCase?.()] || code || '';
 const currSymbol = (c) => ({ USD:'$', EUR:'€', GBP:'£', TRY:'₺' }[c] || c || '₺');
 
-function StatusBadge({ status }) {
-  const s = STATUS_MAP[status] || { label: status || '-', color: '#94a3b8' };
-  return (
-    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold"
-      style={{ background: `${s.color}18`, color: s.color }}>
-      {s.label}
-    </span>
-  );
-}
 
 // ─── Gerçek Fatura Tablosu ────────────────────────────────────────────────────
 function InvoiceTable({ items, currency = 'TRY' }) {
