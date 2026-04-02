@@ -305,7 +305,7 @@ function InvoiceDetailDrawer({ invoice, isInbox, onClose, onLineItemsLoaded }) {
               <h2 className="text-base font-bold text-slate-100 font-mono">{invoice.invoice_id}</h2>
             </div>
             <div className="flex items-center gap-3">
-              <StatusBadge status={invoice.status} />
+              <StatusBadge status={invoice.status} inv={invoice} />
               <button onClick={onClose}
                 className="p-2 rounded-xl text-slate-500 hover:text-white transition-colors">
                 <X size={18} />
@@ -342,8 +342,8 @@ function InvoiceDetailDrawer({ invoice, isInbox, onClose, onLineItemsLoaded }) {
                 <DR label="ETTN (UUID)" value={invoice.document_id} mono small />
                 <DR label="Düzenleme Tarihi" value={fmtD(invoice.issue_date)} />
                 <DR label="Sisteme Giriş" value={fmtD(invoice.create_date_utc)} />
-                <DR label="Fatura Türü" value={invoice.invoice_type} />
-                <DR label="Senaryo" value={invoice.invoice_tip_type} />
+                <DR label="F. Türü" value={typeToTR(invoice.invoice_type)} />
+                <DR label="Profil" value={typeToTR(invoice.invoice_tip_type)} />
                 {invoice.order_document_id && <DR label="Sipariş Ref." value={invoice.order_document_id} mono />}
               </InfoCard>
             </div>
@@ -522,7 +522,7 @@ export default function Invoices({ type = 'inbox' }) {
       // Detay açılınca get-invoice-detail endpoint'i ayrıca çeker.
       const { data, error: dbErr } = await supabase
         .from('invoices')
-        .select('id, invoice_id, document_id, type, cari_name, vkntckn, amount, currency, issue_date, status, line_items, invoice_type, invoice_tip_type')
+        .select('id, invoice_id, document_id, type, cari_name, vkntckn, amount, currency, issue_date, status, line_items, invoice_type, invoice_tip_type, is_iade, envelope_identifier, tax_exclusive_amount, tax_total, exchange_rate, envelope_status, is_seen, order_document_id, message, create_date_utc')
         .eq('type', type)
         .order('issue_date', { ascending: false })
         .limit(500);
@@ -898,8 +898,8 @@ export default function Invoices({ type = 'inbox' }) {
   };
 
   const filtered = invoices.filter(inv => {
-    // İptal edilmiş taslak faturaları gizle (Canceled + zarf/belge yoksa gerçek fatura değil)
-    if (inv.status === 'Canceled' && !inv.envelope_identifier && !inv.document_id?.match(/^[0-9a-f]{8}-/)) return false;
+    // İptal + zarf ID'si olmayan = iptal edilmiş taslak, gizle
+    if (inv.status === 'Canceled' && !inv.envelope_identifier) return false;
     const t = search.toLowerCase();
     return (inv.invoice_id||'').toLowerCase().includes(t)
       || (inv.cari_name||'').toLowerCase().includes(t)
