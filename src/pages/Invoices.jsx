@@ -14,6 +14,7 @@ import CustomDialog from '../components/CustomDialog';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const STATUS_MAP = {
+  // Uyumsoft API'den İNGİLİZCE gelir
   Approved:              { label: 'Onaylandı',          color: '#10b981' },
   SentToGib:             { label: "GİB'e Gönderildi",  color: '#3b82f6' },
   Processing:            { label: 'İşleniyor',           color: '#f59e0b' },
@@ -24,7 +25,10 @@ const STATUS_MAP = {
   Error:                 { label: 'Hata',                color: '#ef4444' },
   WaitingForAprovement:  { label: 'Onay Bekliyor',      color: '#f59e0b' },
   Return:                { label: 'İade',                color: '#f97316' },
-  // Ek durumlar
+  NotPrepared:           { label: 'Hazırlanmadı',       color: '#94a3b8' },
+  NotSend:               { label: 'Gönderilmedi',        color: '#94a3b8' },
+  EArchivedCanceled:     { label: 'e-Arşiv İptal',      color: '#ef4444' },
+  // Ek önlemler
   Waiting:               { label: 'Bekliyor',            color: '#f59e0b' },
   Failed:                { label: 'Başarısız',           color: '#ef4444' },
   Revoked:               { label: 'İptal Edildi',        color: '#ef4444' },
@@ -40,33 +44,64 @@ const STATUS_MAP = {
 const fmt  = (n) => n != null ? Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
 const fmtD = (d) => d ? new Date(d).toLocaleDateString('tr-TR', { year:'numeric', month:'long', day:'numeric' }) : '-';
 
-// Fatura tipi/profil → Türkçe
+// Fatura profili (Type) ve işlem tipi (InvoiceTipType) → Türkçe
+// API'den İNGİLİZCE geliyor!
 const INV_TYPE_TR = {
-  // Gerçek işlem tipleri (InvoiceTipType)
-  SATIS:             'Satış',
-  IADE:              'İade',
-  TEVKIFAT:          'Tevkifat',
-  ISTISNA:           'İstisna',
-  OZELMATRAH:        'Özel Matrah',
-  IHRACKAYITLI:      'İhraç Kayıt',
-  // UBL profil tipleri (Type)
-  TICARIFATURA:      'Ticari Fatura',
-  TEMELIFATURA:      'Temel Fatura',
-  COMMERCIALINVOICE: 'Ticari Fatura',
-  BASEINVOICE:       'Temel Fatura',
-  EARSIVFATURA:      'e-Arşiv Fatura',
-  EARSIV:            'e-Arşiv',
+  // InvoiceTipType değerleri (işlem tipi)
+  Sales:                         'Satış',
+  Return:                        'İade',
+  Tax:                           'Tevkifat',
+  Exception:                     'İstisna',
+  TaxBase:                       'Özel Matrah',
+  ExportSaved:                   'İhraç Kayıtlı',
+  Sgk:                           'SGK',
+  Broker:                        'Broker',
+  HksSales:                      'HKS Satış',
+  HksBroker:                     'HKS Broker',
+  WithholdingReturn:             'Tevkifat İadesi',
+  Accomodation:                  'Konaklama',
+  Charge:                        'Ücret',
+  ChargeInstant:                 'Anlık Ücret',
+  TechSupport:                   'Teknik Destek',
+  InvestmentIncentiveSales:      'Yatırım Teşvik Satış',
+  InvestmentIncentiveException:  'Yatırım Teşvik İstisna',
+  InvestmentIncentiveReturn:     'Yatırım Teşvik İadesi',
+  // Type değerleri (UBL profil/senaryo)
+  BaseInvoice:                   'Temel Fatura',
+  ComercialInvoice:              'Ticari Fatura',
+  InvoiceWithPassanger:          'Yolcu Beraberinde',
+  Export:                        'İhracat',
+  eArchive:                      'e-Arşiv',
+  Hks:                           'HKS',
+  PublicAdministration:          'Kamu',
+  Energy:                        'Enerji',
+  // Scenario değerleri
+  eInvoice:                      'e-Fatura',
+  // Türkçe fallback (eski kayıtlar için)
+  SATIS:                         'Satış',
+  IADE:                          'İade',
+  TEVKIFAT:                      'Tevkifat',
+  TICARIFATURA:                  'Ticari Fatura',
+  TEMELIFATURA:                  'Temel Fatura',
+  COMMERCIALINVOICE:             'Ticari Fatura',
+  BASEINVOICE:                   'Temel Fatura',
+  EARSIVFATURA:                  'e-Arşiv Fatura',
 };
 
 function typeToTR(code) {
   if (!code) return null;
-  return INV_TYPE_TR[code.toUpperCase()] || code;
+  // Önce tam eşleşme (Sales, Return, BaseInvoice...)
+  return INV_TYPE_TR[code] || INV_TYPE_TR[code.toUpperCase()] || code;
 }
 
-// İade kontrolü (herhangi bir field'da)
+// İade kontrolü — API'den 'Return' geliyor (InvoiceTipType veya Status)
 function isIadeInvoice(inv) {
-  const fields = [inv.invoice_type, inv.invoice_tip_type, inv.status];
-  return fields.some(f => f && (f.toUpperCase().includes('IADE') || f.toUpperCase() === 'RETURN'));
+  // İngilizce değerler: InvoiceTipType=Return, Status=Return
+  if (inv.is_iade === true) return true;
+  const tip    = (inv.invoice_type    || '').toLowerCase();
+  const status = (inv.status          || '').toLowerCase();
+  return tip === 'return' || status === 'return'
+      || tip.includes('iade') || tip.includes('return');
 }
 
 // Durum + tip birleşik badge

@@ -176,14 +176,14 @@ export default async function handler(req, res) {
       const invoiceId = inv.InvoiceId || inv.DocumentId;
       if (!invoiceId) return null;
 
-      // InvoiceTipType → Türk e-Fatura tipi: SATIS, IADE, TEVKIFAT, ISTISNA vb.
-      // Type → UBL profil: BaseInvoice, CommercialInvoice (senaryo bilgisi)
-      const tipType    = (inv.InvoiceTipType || '').toUpperCase();
-      const profileType= (inv.Type || '').toUpperCase();
-
-      // İade tespiti: InvoiceTipType veya Type içinde IADE geçiyorsa
-      const isIade = tipType.includes('IADE') || profileType.includes('IADE')
-                  || (inv.Status || '').toUpperCase() === 'RETURN';
+      // API gerçek değerler:
+      // InvoiceTipType = "Sales", "Return", "Tax", "Exception", "TaxBase"... (işlem tipi)
+      // Type           = "BaseInvoice", "ComercialInvoice"... (UBL profil)
+      // Status         = "Return" veya "Approved" vb.
+      const tipType = inv.InvoiceTipType || '';
+      const isIade  = tipType === 'Return'
+                   || (inv.Status || '') === 'Return'
+                   || tipType.toLowerCase().includes('return');
 
       return {
         type,
@@ -191,10 +191,9 @@ export default async function handler(req, res) {
         document_id:          inv.DocumentId,
         vkntckn:              inv.TargetTcknVkn,
         cari_name:            inv.TargetTitle,
-        // invoice_type = gerçek işlem tipi (SATIS/IADE/TEVKIFAT...)
-        invoice_type:         inv.InvoiceTipType || inv.Type || null,
-        // invoice_tip_type = UBL profil (BaseInvoice/CommercialInvoice)
-        invoice_tip_type:     inv.Type || null,
+        invoice_type:         inv.InvoiceTipType || null,   // Sales/Return/Tax...
+        invoice_tip_type:     inv.Type           || null,   // BaseInvoice/ComercialInvoice...
+        invoice_scenario:     inv.Scenario       || null,   // eInvoice/eArchive
         is_iade:              isIade,
         status:               inv.Status,
         envelope_status:      inv.EnvelopeStatus,

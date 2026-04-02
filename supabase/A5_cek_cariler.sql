@@ -33,10 +33,11 @@ FROM (
   FROM invoices
   WHERE type = 'outbox'
     AND TRIM(COALESCE(cari_name,'')) <> ''
-    -- İade faturaları cari oluşturmaz / güncellemez
+    -- İade faturaları cari oluşturmaz
+    -- API'den İNGİLİZCE gelir: InvoiceTipType = 'Return'
     AND COALESCE(is_iade, false) = false
-    AND UPPER(COALESCE(invoice_type,''))     NOT LIKE '%IADE%'
-    AND UPPER(COALESCE(invoice_tip_type,'')) NOT LIKE '%IADE%'
+    AND COALESCE(invoice_type, '') <> 'Return'
+    AND COALESCE(status, '')       <> 'Return'
   WINDOW w AS (PARTITION BY COALESCE(NULLIF(TRIM(vkntckn),''), LOWER(TRIM(cari_name))))
   ORDER BY grp_key, issue_date DESC NULLS LAST
 ) src
