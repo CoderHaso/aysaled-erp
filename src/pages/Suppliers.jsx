@@ -705,7 +705,7 @@ export default function Suppliers() {
         )}
         {showNew && (
           <SupplierDrawer
-            supplier={{ name: '', vkntckn: '', phone: '', email: '', address: '', city: '', notes: '', tax_id: '', is_active: true, is_faturasiz: false }}
+            supplier={{ name: '', vkntckn: '', phone: '', email: '', address: '', city: '', district: '', tax_office: '', building_number: '', postal_code: '', country: '', notes: '', is_active: true, is_faturasiz: false }}
             onClose={() => setShowNew(false)}
             onSaved={() => { loadSuppliers(); setShowNew(false); showToast('Yeni tedarikçi eklendi ✓'); }}
             setDialog={setDialog}

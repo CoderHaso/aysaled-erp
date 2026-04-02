@@ -807,7 +807,7 @@ export default function Customers() {
         )}
         {showNew && (
           <CustomerDrawer
-            customer={{ name: '', vkntckn: '', phone: '', email: '', address: '', city: '', notes: '', tax_office: '', is_active: true, is_faturasiz: false }}
+            customer={{ name: '', vkntckn: '', phone: '', email: '', address: '', city: '', district: '', tax_office: '', building_number: '', postal_code: '', country: '', notes: '', is_active: true, is_faturasiz: false }}
             onClose={() => setShowNew(false)}
             onSaved={() => { loadCustomers(); setShowNew(false); showToast('Yeni cari eklendi ✓'); }}
             setDialog={setDialog}
