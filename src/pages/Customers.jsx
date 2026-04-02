@@ -219,43 +219,11 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
             {/* ── Bilgiler Tab ── */}
             {(tab === 'info' || isNew) && (
               <div className="space-y-3">
-                {[
-                  { k: 'name',        l: 'Cari Adı / Unvan *',  ph: 'Ahmet Demir veya Firma A.Ş.' },
-                  { k: 'vkntckn',     l: 'VKN / TCKN',          ph: '1234567890' },
-                  { k: 'tax_office',  l: 'Vergi Dairesi',        ph: 'Kadıköy VD' },
-                  { k: 'phone',       l: 'Telefon',              ph: '0212 000 00 00' },
-                  { k: 'email',       l: 'E-posta',              ph: 'info@ornek.com' },
-                  { k: 'address',     l: 'Adres',                ph: 'Mahalle, Cadde...' },
-                  { k: 'city',        l: 'Şehir',                ph: 'İstanbul' },
-                  { k: 'notes',       l: 'Notlar',               ph: 'Ek bilgiler...' },
-                ].map(({ k, l, ph }) => (
-                  <div key={k}>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">{l}</p>
-                    {(editing || isNew) ? (
-                      k === 'notes' ? (
-                        <textarea className="w-full rounded-xl px-3 py-2 text-sm outline-none resize-none"
-                          style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)', color: '#f1f5f9' }}
-                          rows={2} placeholder={ph}
-                          value={form[k] || ''} onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} />
-                      ) : (
-                        <input className="w-full rounded-xl px-3 py-2 text-sm outline-none"
-                          style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)', color: '#f1f5f9' }}
-                          placeholder={ph} value={form[k] || ''}
-                          onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} />
-                      )
-                    ) : (
-                      <p className={`text-sm px-3 py-2 rounded-xl ${k==='vkntckn' ? 'font-mono' : ''}`}
-                        style={{ background: 'rgba(255,255,255,0.03)', color: form[k] ? '#f1f5f9' : '#475569' }}>
-                        {form[k] || <span className="text-slate-600 italic">—</span>}
-                      </p>
-                    )}
-                  </div>
-                ))}
 
-                {/* Faturasız Toggle */}
+                {/* ── Faturasız Toggle — EN ÜSTE ── */}
                 {(editing || isNew) && (
-                  <label className="flex items-center gap-3 cursor-pointer p-3 rounded-xl transition-colors"
-                    style={{ background: 'rgba(245,158,11,0.06)', border: `1px solid ${form.is_faturasiz ? 'rgba(245,158,11,0.3)' : 'rgba(148,163,184,0.1)'}` }}>
+                  <label className="flex items-center gap-3 cursor-pointer p-3 rounded-xl transition-all"
+                    style={{ background: form.is_faturasiz ? 'rgba(245,158,11,0.10)' : 'rgba(255,255,255,0.03)', border: `1px solid ${form.is_faturasiz ? 'rgba(245,158,11,0.4)' : 'rgba(148,163,184,0.12)'}` }}>
                     <div onClick={() => setForm(f => ({ ...f, is_faturasiz: !f.is_faturasiz }))}
                       className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 transition-all cursor-pointer"
                       style={{ background: form.is_faturasiz ? '#f59e0b' : 'rgba(255,255,255,0.08)', border: `1px solid ${form.is_faturasiz ? '#f59e0b' : 'rgba(148,163,184,0.2)'}` }}>
@@ -263,7 +231,7 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
                     </div>
                     <div className="flex-1">
                       <p className="text-xs font-bold" style={{ color: form.is_faturasiz ? '#f59e0b' : '#94a3b8' }}>Faturasız Cari</p>
-                      <p className="text-[10px] text-slate-500">E-fatura dışında, nakit / kayıt dışı işlemler için</p>
+                      <p className="text-[10px] text-slate-500">{form.is_faturasiz ? 'Sadece temel bilgiler gerekli, adres/VD zorunlu değil' : 'E-fatura için tam adres bilgisi gerekli'}</p>
                     </div>
                   </label>
                 )}
@@ -274,7 +242,83 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
                   </div>
                 )}
 
-                {/* Kaydet butonu */}
+                {/* ── Temel Alanlar ── */}
+                {[
+                  { k: 'name',     l: 'Cari Adı / Unvan *',  ph: 'Ahmet Demir veya Firma A.Ş.' },
+                  { k: 'vkntckn',  l: 'VKN / TCKN',          ph: '1234567890' },
+                  { k: 'phone',    l: 'Telefon',              ph: '0212 000 00 00' },
+                  { k: 'email',    l: 'E-posta',              ph: 'info@ornek.com' },
+                  { k: 'city',     l: 'Şehir',                ph: 'İstanbul' },
+                ].map(({ k, l, ph }) => (
+                  <div key={k}>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">{l}</p>
+                    {(editing || isNew) ? (
+                      <input className="w-full rounded-xl px-3 py-2 text-sm outline-none"
+                        style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)', color: '#f1f5f9' }}
+                        placeholder={ph} value={form[k] || ''}
+                        onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} />
+                    ) : (
+                      <p className={`text-sm px-3 py-2 rounded-xl ${k === 'vkntckn' ? 'font-mono' : ''}`}
+                        style={{ background: 'rgba(255,255,255,0.03)', color: form[k] ? '#f1f5f9' : '#475569' }}>
+                        {form[k] || <span className="text-slate-600 italic">—</span>}
+                      </p>
+                    )}
+                  </div>
+                ))}
+
+                {/* ── Fatura Adresi (faturasız değilse göster) ── */}
+                {!form.is_faturasiz && (
+                  <>
+                    <div className="pt-1">
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-slate-600 mb-2 flex items-center gap-1.5">
+                        <span className="flex-1 border-t border-slate-700/50"></span>
+                        E-FATURA ADRES BİLGİLERİ
+                        <span className="flex-1 border-t border-slate-700/50"></span>
+                      </p>
+                    </div>
+                    {[
+                      { k: 'tax_office',     l: 'Vergi Dairesi',  ph: 'Kadıköy VD' },
+                      { k: 'district',       l: 'İlçe',           ph: 'Kadıköy' },
+                      { k: 'address',        l: 'Mahalle / Sokak',ph: 'Moda Cad. No:12' },
+                      { k: 'building_number',l: 'Bina No / Daire', ph: '12/3' },
+                      { k: 'postal_code',    l: 'Posta Kodu',     ph: '34710' },
+                      { k: 'country',        l: 'Ülke',           ph: 'Türkiye' },
+                    ].map(({ k, l, ph }) => (
+                      <div key={k}>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">{l}</p>
+                        {(editing || isNew) ? (
+                          <input className="w-full rounded-xl px-3 py-2 text-sm outline-none"
+                            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)', color: '#f1f5f9' }}
+                            placeholder={ph} value={form[k] || ''}
+                            onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} />
+                        ) : (
+                          <p className="text-sm px-3 py-2 rounded-xl"
+                            style={{ background: 'rgba(255,255,255,0.03)', color: form[k] ? '#f1f5f9' : '#475569' }}>
+                            {form[k] || <span className="text-slate-600 italic">—</span>}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                {/* ── Notlar ── */}
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Notlar</p>
+                  {(editing || isNew) ? (
+                    <textarea className="w-full rounded-xl px-3 py-2 text-sm outline-none resize-none"
+                      style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)', color: '#f1f5f9' }}
+                      rows={2} placeholder="Ek bilgiler..."
+                      value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+                  ) : (
+                    <p className="text-sm px-3 py-2 rounded-xl"
+                      style={{ background: 'rgba(255,255,255,0.03)', color: form.notes ? '#f1f5f9' : '#475569' }}>
+                      {form.notes || <span className="text-slate-600 italic">—</span>}
+                    </p>
+                  )}
+                </div>
+
+                {/* Kaydet */}
                 {(editing || isNew) && (
                   <div className="flex gap-2 pt-2">
                     {!isNew && (
