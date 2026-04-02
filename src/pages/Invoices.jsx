@@ -14,44 +14,88 @@ import CustomDialog from '../components/CustomDialog';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const STATUS_MAP = {
-  Approved:             { label: 'Onaylandı',         color: '#10b981' },
-  SentToGib:            { label: "GİB'e Gönderildi", color: '#3b82f6' },
-  Processing:           { label: 'İşleniyor',         color: '#f59e0b' },
-  Queued:               { label: 'Sırada',             color: '#8b5cf6' },
-  Draft:                { label: 'Taslak',             color: '#94a3b8' },
-  Canceled:             { label: 'İptal',              color: '#ef4444' },
-  Declined:             { label: 'Reddedildi',         color: '#ef4444' },
-  Error:                { label: 'Hata',               color: '#ef4444' },
-  WaitingForAprovement: { label: 'Onay Bekliyor',     color: '#f59e0b' },
-  Return:               { label: 'İade',               color: '#f97316' },
+  Approved:              { label: 'Onaylandı',          color: '#10b981' },
+  SentToGib:             { label: "GİB'e Gönderildi",  color: '#3b82f6' },
+  Processing:            { label: 'İşleniyor',           color: '#f59e0b' },
+  Queued:                { label: 'Sırada',              color: '#8b5cf6' },
+  Draft:                 { label: 'Taslak',              color: '#94a3b8' },
+  Canceled:              { label: 'İptal',               color: '#ef4444' },
+  Declined:              { label: 'Reddedildi',          color: '#ef4444' },
+  Error:                 { label: 'Hata',                color: '#ef4444' },
+  WaitingForAprovement:  { label: 'Onay Bekliyor',      color: '#f59e0b' },
+  Return:                { label: 'İade',                color: '#f97316' },
+  // Ek durumlar
+  Waiting:               { label: 'Bekliyor',            color: '#f59e0b' },
+  Failed:                { label: 'Başarısız',           color: '#ef4444' },
+  Revoked:               { label: 'İptal Edildi',        color: '#ef4444' },
+  Pending:               { label: 'Beklemede',           color: '#f59e0b' },
+  Rejected:              { label: 'Reddedildi',          color: '#ef4444' },
+  GibError:              { label: 'GİB Hatası',          color: '#ef4444' },
+  InProgress:            { label: 'İşlemde',             color: '#f59e0b' },
+  Signed:                { label: 'İmzalandı',           color: '#10b981' },
+  WaitingForSign:        { label: 'İmza Bekliyor',       color: '#f59e0b' },
+  WaitingResponse:       { label: 'Yanıt Bekliyor',      color: '#8b5cf6' },
 };
 
 const fmt  = (n) => n != null ? Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
 const fmtD = (d) => d ? new Date(d).toLocaleDateString('tr-TR', { year:'numeric', month:'long', day:'numeric' }) : '-';
 
-// Fatura tipi → Türkçe + renk
-const INVOICE_TYPE_MAP = {
-  SATIS:           { label: 'Satış',       color: '#10b981' },
-  IADE:            { label: 'İade',        color: '#f97316' },
-  TEVKIFAT:        { label: 'Tevkifat',    color: '#3b82f6' },
-  ISTISNA:         { label: 'İstisna',     color: '#8b5cf6' },
-  OZELMATRAH:      { label: 'Özel Matrah', color: '#f59e0b' },
-  IHRACKAYITLI:    { label: 'İhraç Kayıt',color: '#06b6d4' },
-  TICARIFATURA:    { label: 'Ticari',      color: '#64748b' },
+// Fatura tipi/profil → Türkçe
+const INV_TYPE_TR = {
+  // Gerçek işlem tipleri (InvoiceTipType)
+  SATIS:             'Satış',
+  IADE:              'İade',
+  TEVKIFAT:          'Tevkifat',
+  ISTISNA:           'İstisna',
+  OZELMATRAH:        'Özel Matrah',
+  IHRACKAYITLI:      'İhraç Kayıt',
+  // UBL profil tipleri (Type)
+  TICARIFATURA:      'Ticari Fatura',
+  TEMELIFATURA:      'Temel Fatura',
+  COMMERCIALINVOICE: 'Ticari Fatura',
+  BASEINVOICE:       'Temel Fatura',
+  EARSIVFATURA:      'e-Arşiv Fatura',
+  EARSIV:            'e-Arşiv',
 };
-function InvoiceTypeBadge({ typeCode }) {
-  if (!typeCode) return null;
-  const key = typeCode.toUpperCase();
-  const t = INVOICE_TYPE_MAP[key] || { label: typeCode, color: '#94a3b8' };
-  const isIade = key.includes('IADE');
+
+function typeToTR(code) {
+  if (!code) return null;
+  return INV_TYPE_TR[code.toUpperCase()] || code;
+}
+
+// İade kontrolü (herhangi bir field'da)
+function isIadeInvoice(inv) {
+  const fields = [inv.invoice_type, inv.invoice_tip_type, inv.status];
+  return fields.some(f => f && (f.toUpperCase().includes('IADE') || f.toUpperCase() === 'RETURN'));
+}
+
+// Durum + tip birleşik badge
+function StatusBadge({ status, inv }) {
+  const s = STATUS_MAP[status] || { label: status || '-', color: '#94a3b8' };
+  const iade = inv ? isIadeInvoice(inv) : false;
+  const label = iade ? `${s.label} · İade` : s.label;
+  const color = iade ? '#f97316' : s.color;
   return (
-    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold mt-1"
-      style={{ background: `${t.color}20`, color: t.color, border: isIade ? `1px solid ${t.color}60` : 'none' }}>
-      {isIade ? '↩ ' : ''}{t.label}
+    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold"
+      style={{ background: `${color}18`, color }}>
+      {iade && '↩ '}{label}
     </span>
   );
 }
 
+// Tür badge (küçük — cari adı altında)
+function InvoiceTypeBadge({ typeCode }) {
+  const label = typeToTR(typeCode);
+  if (!label || label === typeToTR('SATIS')) return null; // Satış zaten default, göstermeye gerek yok
+  const isIade = typeCode && typeCode.toUpperCase().includes('IADE');
+  const color = isIade ? '#f97316' : '#64748b';
+  return (
+    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold mt-1"
+      style={{ background: `${color}15`, color }}>
+      {label}
+    </span>
+  );
+}
 // UBL birim kodu → Türkçe karşılık (UN/ECE Rec 20 + yaygın kullanımlar)
 const UBL_UNITS = {
   NIU: 'Adet',   // Number of Items/Units
@@ -532,7 +576,7 @@ export default function Invoices({ type = 'inbox' }) {
         });
         const data = await res.json();
         if (!res.ok || !data.success) throw new Error(data.detail || data.error || 'Bilinmeyen hata');
-        totalInserted += data.inserted      || 0;
+        totalInserted += data.newCount      || 0;
         totalDetails  += data.detailFetched || 0;
         remaining      = data.remaining     ?? 0;
       }
@@ -542,7 +586,9 @@ export default function Invoices({ type = 'inbox' }) {
       await fetchInvoices(true);
       setDialog({
         open: true, title: 'Senkronizasyon Tamamlandı', type: 'alert',
-        message: `${totalInserted} fatura güncellendi, ${totalDetails} faturanın adres/iletişim bilgisi çekildi.`
+        message: totalInserted > 0
+          ? `${totalInserted} yeni fatura eklendi${totalDetails > 0 ? `, ${totalDetails} adres bilgisi çekildi` : ''}.`
+          : `Güncel, yeni fatura yok.${totalDetails > 0 ? ` ${totalDetails} adres tamamlandı.` : ''}`,
       });
     } catch (err) {
       setDialog({ open: true, title: 'Hata', message: 'Eşitleme başarısız: ' + err.message, type: 'alert' });
@@ -861,6 +907,8 @@ export default function Invoices({ type = 'inbox' }) {
   };
 
   const filtered = invoices.filter(inv => {
+    // İptal edilmiş taslak faturaları gizle (Canceled + zarf/belge yoksa gerçek fatura değil)
+    if (inv.status === 'Canceled' && !inv.envelope_identifier && !inv.document_id?.match(/^[0-9a-f]{8}-/)) return false;
     const t = search.toLowerCase();
     return (inv.invoice_id||'').toLowerCase().includes(t)
       || (inv.cari_name||'').toLowerCase().includes(t)
@@ -978,9 +1026,10 @@ export default function Invoices({ type = 'inbox' }) {
                       <td className="px-4 py-3.5 text-sm font-medium" style={{ color: c.text }}>
                         <p className="truncate max-w-[200px]">{inv.cari_name || '-'}</p>
                         <p className="text-xs font-mono mt-0.5" style={{ color: c.muted }}>{inv.vkntckn}</p>
-                        <InvoiceTypeBadge typeCode={inv.invoice_type} />
                       </td>
-                      <td className="px-4 py-3.5 whitespace-nowrap"><StatusBadge status={inv.status} /></td>
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        <StatusBadge status={inv.status} tipType={inv.invoice_tip_type} />
+                      </td>
                       <td className="px-4 py-3.5 whitespace-nowrap text-sm font-bold text-right" style={{ color: c.text }}>
                         {Number(inv.amount).toLocaleString('tr-TR', { minimumFractionDigits:2 })}
                         <span className="text-xs font-normal ml-1" style={{ color: c.muted }}>{inv.currency}</span>

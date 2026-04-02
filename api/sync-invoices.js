@@ -163,18 +163,39 @@ export default async function handler(req, res) {
       return res.json({ success: true, message: 'Yeni fatura yok.', inserted: 0, detailFetched: 0 });
     }
 
-    // ── 4. Temel fatura verisi upsert (adressiz, hızlı) ──────────────────────
+    // ── 4. Mevcut invoice_id'leri yükle (gerçek yeni kayıt sayısı için) ──────
+    const { data: existingRows } = await supabase
+      .from('invoices')
+      .select('invoice_id')
+      .eq('type', type)
+      .in('invoice_id', list.map(i => i.InvoiceId || i.DocumentId).filter(Boolean));
+    const existingSet = new Set((existingRows || []).map(r => r.invoice_id));
+
+    // ── 5. Temel fatura verisi upsert (adressiz, hızlı) ──────────────────────
     const basePayload = list.map(inv => {
       const invoiceId = inv.InvoiceId || inv.DocumentId;
       if (!invoiceId) return null;
+
+      // InvoiceTipType → Türk e-Fatura tipi: SATIS, IADE, TEVKIFAT, ISTISNA vb.
+      // Type → UBL profil: BaseInvoice, CommercialInvoice (senaryo bilgisi)
+      const tipType    = (inv.InvoiceTipType || '').toUpperCase();
+      const profileType= (inv.Type || '').toUpperCase();
+
+      // İade tespiti: InvoiceTipType veya Type içinde IADE geçiyorsa
+      const isIade = tipType.includes('IADE') || profileType.includes('IADE')
+                  || (inv.Status || '').toUpperCase() === 'RETURN';
+
       return {
         type,
         invoice_id:           invoiceId,
         document_id:          inv.DocumentId,
         vkntckn:              inv.TargetTcknVkn,
         cari_name:            inv.TargetTitle,
-        invoice_type:         inv.Type,
-        invoice_tip_type:     inv.InvoiceTipType,
+        // invoice_type = gerçek işlem tipi (SATIS/IADE/TEVKIFAT...)
+        invoice_type:         inv.InvoiceTipType || inv.Type || null,
+        // invoice_tip_type = UBL profil (BaseInvoice/CommercialInvoice)
+        invoice_tip_type:     inv.Type || null,
+        is_iade:              isIade,
         status:               inv.Status,
         envelope_status:      inv.EnvelopeStatus,
         issue_date:           inv.ExecutionDate || inv.CreateDateUtc,
@@ -204,6 +225,8 @@ export default async function handler(req, res) {
         updated_at:           new Date().toISOString(),
       };
     }).filter(Boolean);
+
+    const newCount = basePayload.filter(r => !existingSet.has(r.invoice_id)).length;
 
     // Batch upsert: 20'şerlik gruplar halinde — raw_data büyük olduğu için
     // tek seferde 100+ kayıt göndermek Supabase statement timeout'a yol açıyor
@@ -298,8 +321,9 @@ export default async function handler(req, res) {
 
     res.json({
       success: true,
-      message: `${basePayload.length} fatura kaydedildi. ${detailFetched} adres çekildi. Kalan: ${remaining ?? 0}`,
+      message: `${newCount} yeni fatura eklendi. ${detailFetched} adres çekildi. Kalan: ${remaining ?? 0}`,
       inserted: basePayload.length,
+      newCount,
       detailFetched,
       remaining: remaining ?? 0,
     });
