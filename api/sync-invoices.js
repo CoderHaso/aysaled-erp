@@ -222,6 +222,9 @@ export default async function handler(req, res) {
         message:              inv.Message,
         raw_data:             inv,
         updated_at:           new Date().toISOString(),
+        // Yeni faturalar is_islendi=false olarak gelir
+        // Mevcut faturaların is_islendi değeri korunur (aşağıda ON CONFLICT için ayrı batch)
+        ...(existingSet.has(invoiceId) ? {} : { is_islendi: false, islendi_at: null }),
       };
     }).filter(Boolean);
 

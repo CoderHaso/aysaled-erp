@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Loader2, AlertCircle, FileDown, FileUp, Eye, RefreshCw,
   X, Building2, Tag, Package, BarChart2, CheckCircle2, Receipt, Info, ScanEye,
-  FilePlus2, Plus, Trash2, CheckCheck
+  FilePlus2, Plus, Trash2, CheckCheck, Check
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
@@ -162,6 +162,147 @@ const UBL_UNITS = {
 const unitLabel = (code) => UBL_UNITS[code?.toUpperCase?.()] || code || '';
 const currSymbol = (c) => ({ USD:'$', EUR:'€', GBP:'£', TRY:'₺' }[c] || c || '₺');
 
+// ── İşle Wizard: Adım adım fatura işleme ──────────────────────────────────────
+function IsleWizard({ inv, supabase, onClose, onDone }) {
+  const fmtN = (n) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 });
+  // inv.type: 'outbox' = giden (biz kestik = alacak), 'inbox' = gelen (biz aldık = borç)
+  const isOutbox = inv.type === 'outbox';
+  const defaultBorc   = isOutbox ? 0 : (inv.amount || 0);
+  const defaultAlacak = isOutbox ? (inv.amount || 0) : 0;
+
+  const [step, setStep]     = useState(0); // 0=cari hesap, 1=bitti
+  const [ekle, setEkle]     = useState(true);
+  const [borc, setBorc]     = useState(String(defaultBorc));
+  const [alacak, setAlacak] = useState(String(defaultAlacak));
+  const [saving, setSaving] = useState(false);
+  const [err, setErr]       = useState('');
+
+  // Faturanın cari/tedarikçi ID'sini bul
+  const [contactId, setContactId] = useState(null);
+  useEffect(() => {
+    if (!inv.vkntckn) return;
+    const table = isOutbox ? 'customers' : 'suppliers';
+    supabase.from(table).select('id').eq('vkntckn', inv.vkntckn).single()
+      .then(({ data }) => setContactId(data?.id || null));
+  }, [inv.vkntckn, isOutbox]);
+
+  const handleTamam = async () => {
+    setSaving(true); setErr('');
+    try {
+      if (ekle) {
+        if (!contactId) throw new Error(`${isOutbox ? 'Müşteri' : 'Tedarikçi'} bulunamadı (VKN: ${inv.vkntckn}). Önce cariler/tedarikçiler listesine ekleyin.`);
+        const payload = {
+          tarih:        inv.issue_date?.slice(0, 10) || new Date().toISOString().slice(0, 10),
+          baslik:       inv.invoice_id || 'Fatura',
+          aciklama:     `${inv.cari_name || ''} — ${inv.invoice_type || ''}`.trim().replace(/—\s*$/, ''),
+          borc:         parseFloat(borc) || 0,
+          alacak:       parseFloat(alacak) || 0,
+          currency:     inv.currency || 'TRY',
+          invoice_id:   inv.invoice_id,
+          invoice_db_id: inv.id,
+          kaynak:       'invoice',
+        };
+        if (isOutbox) payload.musteri_id    = contactId;
+        else           payload.tedarikci_id  = contactId;
+        const { error: hErr } = await supabase.from('cari_hareketler').insert(payload);
+        if (hErr) throw hErr;
+      }
+      // Faturayı işlendi olarak işaretle
+      const { error: iErr } = await supabase.from('invoices')
+        .update({ is_islendi: true, islendi_at: new Date().toISOString() })
+        .eq('invoice_id', inv.invoice_id);
+      if (iErr) throw iErr;
+      onDone(inv.invoice_id);
+    } catch (e) { setErr(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const inp = 'w-full px-3 py-2 text-sm rounded-xl outline-none';
+  const inpStyle = { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(148,163,184,0.18)', color: '#f1f5f9' };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose}/>
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+        className="relative w-full max-w-sm rounded-2xl p-5 space-y-4"
+        style={{ background: '#0d1b2e', border: '1px solid rgba(245,158,11,0.25)' }}>
+
+        {/* Başlık */}
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Fatura İşle</p>
+            <h3 className="text-sm font-bold text-white mt-0.5 truncate">{inv.cari_name || inv.invoice_id}</h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {fmtN(inv.amount)} {inv.currency} · {inv.issue_date?.slice(0,10)}
+            </p>
+          </div>
+          <button onClick={onClose}><X size={15} className="text-slate-500"/></button>
+        </div>
+
+        {/* Adım: Cari Hesaba Ekle? */}
+        <div className="space-y-3">
+          <label className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all"
+            style={{ background: ekle ? 'rgba(245,158,11,0.08)' : 'rgba(255,255,255,0.03)', border: `1px solid ${ekle ? 'rgba(245,158,11,0.3)' : 'rgba(148,163,184,0.1)'}` }}
+            onClick={() => setEkle(v => !v)}>
+            <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0"
+              style={{ background: ekle ? '#f59e0b' : 'rgba(255,255,255,0.08)', border: `1px solid ${ekle ? '#f59e0b' : 'rgba(148,163,184,0.2)'}` }}>
+              {ekle && <Check size={11} color="white"/>}
+            </div>
+            <div>
+              <p className="text-xs font-bold" style={{ color: ekle ? '#f59e0b' : '#94a3b8' }}>
+                Hesap Defteri'ne İşle
+              </p>
+              <p className="text-[10px] text-slate-500">
+                {isOutbox ? `${inv.cari_name || 'Müşteri'} alacağı olarak ekle` : `${inv.cari_name || 'Tedarikçi'} borcunuz olarak ekle`}
+              </p>
+            </div>
+          </label>
+
+          {ekle && (
+            <div className="grid grid-cols-2 gap-3 pl-1">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-1 text-red-400">Borç (Alacağımız)</p>
+                <input type="number" className={inp} style={inpStyle} step="0.01" min="0"
+                  value={borc} onChange={e => setBorc(e.target.value)} placeholder="0.00"/>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-1 text-emerald-400">Alacak (Ödeme)</p>
+                <input type="number" className={inp} style={inpStyle} step="0.01" min="0"
+                  value={alacak} onChange={e => setAlacak(e.target.value)} placeholder="0.00"/>
+              </div>
+              {!contactId && inv.vkntckn && (
+                <p className="col-span-2 text-[11px] text-amber-400 flex items-center gap-1">
+                  <AlertCircle size={11}/> {isOutbox ? 'Müşteri' : 'Tedarikçi'} kaydı bulunamadı — hareket yine de not olarak kaydedilebilir.
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className="p-2.5 rounded-xl text-[11px] text-slate-500"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(148,163,184,0.07)' }}>
+            ✓ Fatura <strong className="text-slate-300">"İşlendi"</strong> olarak işaretlenecek ve tekrar sorulmayacak.
+          </div>
+        </div>
+
+        {err && <p className="text-xs text-red-400 flex items-center gap-1"><AlertCircle size={11}/>{err}</p>}
+
+        <div className="flex gap-2 pt-1">
+          <button onClick={onClose} className="flex-1 py-2 rounded-xl text-sm text-slate-400"
+            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)' }}>
+            Atla
+          </button>
+          <button onClick={handleTamam} disabled={saving}
+            className="flex-1 py-2 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
+            style={{ background: '#f59e0b', opacity: saving ? 0.7 : 1 }}>
+            {saving ? <Loader2 size={14} className="animate-spin"/> : <CheckCheck size={14}/>}
+            {saving ? 'Kaydediliyor...' : 'Tamamla'}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
 
 // ─── Gerçek Fatura Tablosu ────────────────────────────────────────────────────
 function InvoiceTable({ items, currency = 'TRY' }) {
@@ -496,6 +637,7 @@ export default function Invoices({ type = 'inbox' }) {
   const [quickItemForm, setQuickItemForm] = useState(null);
   const [quickItemSaving, setQuickItemSaving] = useState(false);
   const [adresOpen, setAdresOpen] = useState(false); // Fatura adres bölümü aç/kapat
+  const [isleModal, setIsleModal]  = useState(null);  // işleme modalı açık fatura
   const location = useLocation();
   const [toast, setToast]       = useState(null);
   const [dialog, setDialog]     = useState({ open: false, title: '', message: '', type: 'confirm', onConfirm: null, loading: false });
@@ -558,7 +700,7 @@ export default function Invoices({ type = 'inbox' }) {
       // Detay açılınca get-invoice-detail endpoint'i ayrıca çeker.
       const { data, error: dbErr } = await supabase
         .from('invoices')
-        .select('id, invoice_id, document_id, type, cari_name, vkntckn, amount, currency, issue_date, status, line_items, invoice_type, invoice_tip_type, is_iade, envelope_identifier, tax_exclusive_amount, tax_total, exchange_rate, envelope_status, is_seen, order_document_id, message, create_date_utc')
+        .select('id, invoice_id, document_id, type, cari_name, vkntckn, amount, currency, issue_date, status, line_items, invoice_type, invoice_tip_type, is_iade, envelope_identifier, tax_exclusive_amount, tax_total, exchange_rate, envelope_status, is_seen, order_document_id, message, create_date_utc, is_islendi, islendi_at')
         .eq('type', type)
         .order('issue_date', { ascending: false })
         .limit(500);
@@ -1124,6 +1266,22 @@ export default function Invoices({ type = 'inbox' }) {
                               Sil
                             </button>
                           )}
+                          {/* ── İşle / İşlendi ── */}
+                          {inv.is_islendi === true ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold"
+                              style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981' }}
+                              title={`İşlendi: ${inv.islendi_at ? new Date(inv.islendi_at).toLocaleDateString('tr-TR') : ''}`}>
+                              <CheckCircle2 size={10}/> İşlendi
+                            </span>
+                          ) : inv.is_islendi === false ? (
+                            <button
+                              onClick={e => { e.stopPropagation(); setIsleModal(inv); }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap animate-pulse"
+                              style={{ background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }}
+                              title="Bu faturayı işle (stok, cari hesap vb.)">
+                              <CheckCheck size={11}/> İşle
+                            </button>
+                          ) : null}
                         </div>
                       </td>
                     </motion.tr>
@@ -1744,6 +1902,25 @@ export default function Invoices({ type = 'inbox' }) {
         onClose={() => setDialog({ ...dialog, open: false })}
         onConfirm={dialog.onConfirm ? dialog.onConfirm : () => setDialog({ ...dialog, open: false })}
       />
+
+      {/* ── İşle Wizard Modal ───────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {isleModal && (
+          <IsleWizard
+            inv={isleModal}
+            supabase={supabase}
+            onClose={() => setIsleModal(null)}
+            onDone={(invoiceId) => {
+              setIsleModal(null);
+              setInvoices(prev => prev.map(i =>
+                i.invoice_id === invoiceId
+                  ? { ...i, is_islendi: true, islendi_at: new Date().toISOString() }
+                  : i
+              ));
+            }}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 }

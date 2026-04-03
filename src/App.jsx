@@ -16,6 +16,7 @@ import Media          from './pages/Media';
 import Notifications  from './pages/Notifications';
 import Kasa           from './pages/Kasa';
 import Reports        from './pages/Reports';
+import HesapDefteri  from './pages/HesapDefteri';
 import { supabase }   from './lib/supabaseClient';
 
 const PAGES = {
@@ -30,6 +31,7 @@ const PAGES = {
   '/quotes':     { title: 'Teklifler',      sub: 'Teklif Formu Yönetimi' },
   '/media':      { title: 'Medya',          sub: 'Görsel Kütüphanesi · Backblaze B2' },
   '/reports':    { title: 'Raporlar',       sub: 'Finans & Analiz' },
+  '/ledger':     { title: 'Hesap Defteri',  sub: 'Cari & Tedarikçi Borç / Alacak Takibi' },
   '/settings':   { title: 'Ayarlar',        sub: 'Sistem Yapılandırması' },
   '/notifications': { title: 'Bildirimler', sub: 'Ödeme Hatırlatmaları & Sistem Bildirimleri' },
 };
@@ -46,6 +48,7 @@ const ROUTE_TO_ID = {
   '/quotes':    'quotes',
   '/media':     'media',
   '/reports':   'reports',
+  '/ledger':    'ledger',
   '/settings':  'settings',
   '/notifications': 'notifications',
 };
@@ -113,6 +116,7 @@ function AppShell() {
     const routes = {
       dashboard: '/', stock: '/stock', suppliers: '/suppliers',
       contacts: '/contacts',
+      ledger: '/ledger',
       kasa: '/kasa',
       notifications: '/notifications',
       'incoming-invoices': '/incoming-invoices',
@@ -205,6 +209,7 @@ function AppShell() {
             <Route path="/notifications" element={<Notifications />} />
             <Route path="/kasa"          element={<Kasa />} />
             <Route path="/reports"    element={<Reports />} />
+            <Route path="/ledger"     element={<HesapDefteri />} />
           </Routes>
         </main>
       </div>
