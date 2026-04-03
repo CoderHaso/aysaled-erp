@@ -165,10 +165,11 @@ const currSymbol = (c) => ({ USD:'$', EUR:'€', GBP:'£', TRY:'₺' }[c] || c |
 // ── İşle Wizard: Adım adım fatura işleme ──────────────────────────────────────
 function IsleWizard({ inv, supabase, onClose, onDone }) {
   const fmtN = (n) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 });
-  // inv.type: 'outbox' = giden (biz kestik = alacak), 'inbox' = gelen (biz aldık = borç)
+  // outbox = giden fatura (biz kestik) → biz alacağız → Alacak (borc field)
+  // inbox  = gelen fatura (bize kesildi) → biz vereceğiz → Verecek (alacak field)
   const isOutbox = inv.type === 'outbox';
-  const defaultBorc   = isOutbox ? 0 : (inv.amount || 0);
-  const defaultAlacak = isOutbox ? (inv.amount || 0) : 0;
+  const defaultBorc   = isOutbox ? (inv.amount || 0) : 0; // giden → Alacak
+  const defaultAlacak = isOutbox ? 0 : (inv.amount || 0); // gelen → Verecek
 
   const [step, setStep]     = useState(0); // 0=cari hesap, 1=bitti
   const [ekle, setEkle]     = useState(true);
@@ -254,7 +255,9 @@ function IsleWizard({ inv, supabase, onClose, onDone }) {
                 Hesap Defteri'ne İşle
               </p>
               <p className="text-[10px] text-slate-500">
-                {isOutbox ? `${inv.cari_name || 'Müşteri'} alacağı olarak ekle` : `${inv.cari_name || 'Tedarikçi'} borcunuz olarak ekle`}
+                {isOutbox
+                  ? `${inv.cari_name || 'Müşteri'} için Alacak olarak ekle`
+                  : `${inv.cari_name || 'Tedarikçi'} için Verecek olarak ekle`}
               </p>
             </div>
           </label>
@@ -262,12 +265,12 @@ function IsleWizard({ inv, supabase, onClose, onDone }) {
           {ekle && (
             <div className="grid grid-cols-2 gap-3 pl-1">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider mb-1 text-red-400">Borç (Alacağımız)</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-1 text-emerald-400">Alacak (Alacağımız)</p>
                 <input type="number" className={inp} style={inpStyle} step="0.01" min="0"
                   value={borc} onChange={e => setBorc(e.target.value)} placeholder="0.00"/>
               </div>
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider mb-1 text-emerald-400">Alacak (Ödeme)</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-1 text-red-400">Verecek (Ödeyeceğimiz)</p>
                 <input type="number" className={inp} style={inpStyle} step="0.01" min="0"
                   value={alacak} onChange={e => setAlacak(e.target.value)} placeholder="0.00"/>
               </div>
