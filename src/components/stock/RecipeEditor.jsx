@@ -9,7 +9,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabaseClient';
 import {
   Plus, Trash2, Copy, ChevronDown, ChevronRight,
-  Search, X, Check, AlertCircle, Loader2, Tag
+  Search, X, Check, AlertCircle, Loader2, Tag, Edit2
 } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 
@@ -51,13 +51,16 @@ export default function RecipeEditor({ productId, productName, c, currentColor }
       .then(({ data }) => setAllProducts(data || []));
   }, [productId]);
 
-  // ── Yeni boş recete ───────────────────────────────────────────────────────
+  // ── Yeni boş recete ───────────────────────────────────────────────────
   const addRecipe = async () => {
     if (!productId) return;
     setSaving(true);
+    // Reçete numarası: mevcut reçete sayısı + 1
+    const nextNum = (recipes.length || 0) + 1;
+    const autoName = `${productName || 'Ürün'} - Reçete ${nextNum}`;
     const { data, error } = await supabase.from('product_recipes').insert({
       product_id: productId,
-      name: 'Yeni Reçete',
+      name: autoName,
       tags: [],
     }).select().single();
     setSaving(false);
@@ -113,20 +116,20 @@ export default function RecipeEditor({ productId, productName, c, currentColor }
     ));
   };
 
-  // ── Recete kopyala (kendi üründen veya başka üründen) ────────────────────
+  // ── Recete kopyala ────────────────────────────────────────────────────
   const copyRecipe = async (sourceRecipeId, sourceName, fromProductId) => {
     if (!productId) return;
     setSaving(true);
-    // Kaynak kalemleri çek
     const { data: srcItems } = await supabase
       .from('recipe_items').select('*').eq('recipe_id', sourceRecipeId);
-    // Yeni recete oluştur
+    // Kopyalanmış reçetenin adı: ProductName - Reçete N
+    const nextNum = (recipes.length || 0) + 1;
+    const autoName = `${productName || 'Ürün'} - Reçete ${nextNum}`;
     const { data: newRecipe } = await supabase.from('product_recipes').insert({
       product_id: productId,
-      name: `${sourceName} (Kopya)`,
+      name: autoName,
       tags: [],
     }).select().single();
-    // Kalemleri kopyala
     if (srcItems?.length > 0 && newRecipe) {
       await supabase.from('recipe_items').insert(
         srcItems.map(({ id: _, recipe_id: __, created_at: ___, ...rest }) => ({
@@ -265,18 +268,25 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
           style={{ background: currentColor }}>
           {index + 1}
         </div>
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0" onClick={e => e.stopPropagation()}>
           {editingName ? (
             <input autoFocus value={nameVal} onChange={e => setNameVal(e.target.value)}
               onBlur={handleNameBlur} onKeyDown={e => e.key === 'Enter' && handleNameBlur()}
-              onClick={e => e.stopPropagation()}
               className="bg-transparent outline-none font-semibold text-sm w-full"
               style={{ color: c.text, borderBottom: `1px solid ${currentColor}` }} />
           ) : (
-            <p className="font-semibold text-sm truncate" style={{ color: c.text }}
-              onDoubleClick={e => { e.stopPropagation(); setEditingName(true); }}>
-              {recipe.name}
-            </p>
+            <div className="flex items-center gap-1.5 group">
+              <p className="font-semibold text-sm truncate" style={{ color: c.text }}>
+                {recipe.name}
+              </p>
+              <button
+                onClick={e => { e.stopPropagation(); setEditingName(true); }}
+                className="p-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                style={{ color: c.muted }}
+                title="Adı düzenle">
+                <Edit2 size={11}/>
+              </button>
+            </div>
           )}
           <div className="flex flex-wrap gap-1 mt-0.5">
             {(recipe.tags || []).map(tag => (

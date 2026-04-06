@@ -1,250 +1,229 @@
 import React, { useState, useMemo } from 'react';
-import { motion } from 'framer-motion';
-import { X, Search, Tag, Check, Package, BookOpen, Edit3, Save, FlaskConical } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  X, Check, Package, FlaskConical, Plus, Trash2, ChevronRight,
+} from 'lucide-react';
 
 /**
- * RecipePickerModal
+ * RecipePickerModal — Sadeleştirilmiş
  *
- * product_recipes + recipe_items yapısını kullanır.
+ * Sol: reçete listesi  |  Sağ: seçili reçetenin malzemeleri (sipariş için düzenlenebilir)
  *
  * Props:
- *  - productId:     items.id (mamul ürün)
- *  - productName:   display adı
- *  - allRecipes:    [{id, product_id, name, tags[], recipe_items:[{id, item_name, quantity, unit}]}]
- *  - onSelect:      (recipeData) => void
- *  - onClose:       () => void
- *  - currentColor:  tema rengi
+ *  - productId, productName
+ *  - allRecipes: [{id, product_id, name, tags[], recipe_items:[{id, item_id, item_name, quantity, unit}]}]
+ *  - onSelect: ({recipe_id, recipe_key, recipe_note, components}) => void
+ *  - onClose
+ *  - currentColor
  */
-export default function RecipePickerModal({ productId, productName, allRecipes, onSelect, onClose, currentColor }) {
-  const [search,    setSearch]    = useState('');
-  const [activeTag, setActiveTag] = useState('Tümü');
-  const [selected,  setSelected]  = useState(null);
-  const [editMode,  setEditMode]  = useState(false);
-  const [editQtys,  setEditQtys]  = useState({});  // recipeItemId -> qty override
 
+const UNITS = ['Adet','Metre','cm','mm','Kg','g','Litre','ml','m²','Rulo','Paket','Kutu','Set','Takım'];
+
+export default function RecipePickerModal({
+  productId, productName, allRecipes, onSelect, onClose, currentColor,
+}) {
   // Bu ürüne ait reçeteler
   const productRecipes = useMemo(
     () => (allRecipes || []).filter(r => r.product_id === productId),
     [allRecipes, productId]
   );
 
-  // Tüm etiketler
-  const allTags = useMemo(() => {
-    const tags = new Set(['Tümü']);
-    productRecipes.forEach(r => (r.tags || []).forEach(t => tags.add(t)));
-    return [...tags];
-  }, [productRecipes]);
+  const [selectedId, setSelectedId] = useState(productRecipes[0]?.id || null);
 
-  // Tag filtreli reçeteler
-  const filteredRecipes = useMemo(() => {
-    return productRecipes.filter(r =>
-      activeTag === 'Tümü' || (r.tags || []).includes(activeTag)
-    );
-  }, [productRecipes, activeTag]);
+  // Seçili reçetenin malzemeleri — LOCAL kopyası (sipariş için, orijinal değişmez)
+  const [localItems, setLocalItems] = useState(() => {
+    const first = productRecipes[0];
+    return first ? cloneItems(first.recipe_items || []) : [];
+  });
 
-  const activeRecipe = selected
-    ? productRecipes.find(r => r.id === selected) || filteredRecipes[0]
-    : filteredRecipes[0];
+  // Reçete seçilince local items güncelle
+  const selectRecipe = (recipe) => {
+    setSelectedId(recipe.id);
+    setLocalItems(cloneItems(recipe.recipe_items || []));
+  };
 
-  // Hammadde arama filtresi
-  const filteredItems = useMemo(() => {
-    if (!activeRecipe) return [];
-    return (activeRecipe.recipe_items || []).filter(ri =>
-      !search || ri.item_name?.toLowerCase().includes(search.toLowerCase())
-    );
-  }, [activeRecipe, search]);
+  const activeRecipe = productRecipes.find(r => r.id === selectedId) || productRecipes[0];
 
+  // ── Malzeme CRUD (local only) ──────────────────────────────────────────
+  const updateItem = (idx, key, val) =>
+    setLocalItems(prev => prev.map((it, i) => i === idx ? { ...it, [key]: val } : it));
+
+  const removeItem = (idx) =>
+    setLocalItems(prev => prev.filter((_, i) => i !== idx));
+
+  const addItem = () =>
+    setLocalItems(prev => [...prev, { _new: true, item_name: '', quantity: 1, unit: 'Adet' }]);
+
+  // ── Onayla ──────────────────────────────────────────────────────────────
   const handleConfirm = () => {
     if (!activeRecipe) return;
-    const components = (activeRecipe.recipe_items || []).map(ri => ({
-      recipe_item_id: ri.id,
-      item_id:        ri.item_id || null,
-      item_name:      ri.item_name || '—',
-      quantity:       editMode && editQtys[ri.id] != null
-        ? Number(editQtys[ri.id])
-        : Number(ri.quantity || 1),
-      unit: ri.unit || 'Adet',
-    }));
+    const components = localItems
+      .filter(it => it.item_name?.trim())
+      .map(it => ({
+        recipe_item_id: it.id || null,
+        item_id:        it.item_id || null,
+        item_name:      it.item_name || '—',
+        quantity:       Number(it.quantity) || 1,
+        unit:           it.unit || 'Adet',
+      }));
 
     onSelect({
-      recipe_id:    activeRecipe.id,
-      recipe_key:   activeRecipe.name,
-      recipe_note:  `${activeRecipe.name}: ${components.map(c => `${c.quantity}x ${c.item_name}`).join(', ')}`,
+      recipe_id:   activeRecipe.id,
+      recipe_key:  activeRecipe.name,
+      recipe_note: `${activeRecipe.name}: ${components.map(c => `${c.quantity}x ${c.item_name}`).join(', ')}`,
       components,
     });
   };
 
+  const changed = JSON.stringify(localItems) !== JSON.stringify(cloneItems(activeRecipe?.recipe_items || []));
+
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-3 sm:p-6">
       <div className="absolute inset-0 bg-black/75 backdrop-blur-md" onClick={onClose}/>
       <motion.div
-        initial={{ scale: 0.93, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+        initial={{ scale: 0.94, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         className="relative w-full max-w-2xl rounded-2xl overflow-hidden flex flex-col"
-        style={{ background: '#0e1c34', border: '1px solid rgba(148,163,184,0.12)', maxHeight: '88vh' }}>
+        style={{ background: '#0e1c34', border: '1px solid rgba(148,163,184,0.12)', maxHeight: '90vh' }}>
 
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 flex-shrink-0"
+        <div className="flex items-center justify-between px-5 py-3.5 flex-shrink-0"
           style={{ borderBottom: '1px solid rgba(148,163,184,0.1)' }}>
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-purple-400">Reçete Seçici</p>
-            <h3 className="text-base font-bold text-white mt-0.5 truncate">{productName}</h3>
+          <div className="flex items-center gap-2.5">
+            <FlaskConical size={16} style={{ color: '#a78bfa' }}/>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-purple-400">Reçete Seç</p>
+              <h3 className="text-sm font-bold text-white">{productName}</h3>
+            </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/5 transition-colors">
-            <X size={16} className="text-slate-500"/>
+            <X size={15} className="text-slate-500"/>
           </button>
         </div>
 
-        {/* No recipe state */}
-        {productRecipes.length === 0 && (
-          <div className="px-8 py-16 text-center flex-1">
-            <Package size={40} className="mx-auto mb-3 text-slate-700"/>
-            <p className="text-sm text-slate-500">Bu ürün için reçete tanımlanmamış.</p>
-            <p className="text-[11px] text-slate-600 mt-1">Stok → Mamül → Reçeteler sekmesinden ekleyebilirsiniz.</p>
+        {/* Reçete yok */}
+        {productRecipes.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center py-16 px-8 text-center">
+            <Package size={38} className="mb-3 text-slate-700"/>
+            <p className="text-sm font-semibold text-slate-400">Bu ürün için reçete tanımlanmamış</p>
+            <p className="text-xs text-slate-600 mt-1">Stok → Mamül → Reçeteler sekmesinden ekleyin</p>
           </div>
-        )}
+        ) : (
+          <div className="flex flex-1 min-h-0">
 
-        {productRecipes.length > 0 && (
-          <>
-            {/* Tag filter bar */}
-            {allTags.length > 1 && (
-              <div className="px-5 py-3 flex gap-2 overflow-x-auto flex-shrink-0"
-                style={{ borderBottom: '1px solid rgba(148,163,184,0.07)' }}>
-                {allTags.map(tag => (
-                  <button key={tag} onClick={() => setActiveTag(tag)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all"
+            {/* SOL: Reçete listesi */}
+            {productRecipes.length > 1 && (
+              <div className="w-44 flex-shrink-0 overflow-y-auto py-2"
+                style={{ borderRight: '1px solid rgba(148,163,184,0.1)' }}>
+                {productRecipes.map(r => (
+                  <button key={r.id} onClick={() => selectRecipe(r)}
+                    className="w-full text-left px-4 py-2.5 flex items-center justify-between gap-2 transition-all"
                     style={{
-                      background: activeTag === tag ? `${currentColor}22` : 'rgba(255,255,255,0.04)',
-                      color:      activeTag === tag ? currentColor          : '#64748b',
-                      border:     `1px solid ${activeTag === tag ? currentColor + '50' : 'rgba(148,163,184,0.1)'}`,
+                      background: selectedId === r.id ? `${currentColor}18` : 'transparent',
+                      borderLeft: `2px solid ${selectedId === r.id ? currentColor : 'transparent'}`,
                     }}>
-                    <Tag size={9}/>{tag}
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold truncate"
+                        style={{ color: selectedId === r.id ? currentColor : '#94a3b8' }}>
+                        {r.name}
+                      </p>
+                      {(r.tags || []).length > 0 && (
+                        <p className="text-[10px] text-slate-600 truncate">{r.tags.join(', ')}</p>
+                      )}
+                    </div>
+                    {selectedId === r.id && <ChevronRight size={12} style={{ color: currentColor, flexShrink: 0 }}/>}
                   </button>
                 ))}
               </div>
             )}
 
-            {/* Scroll body */}
-            <div className="flex-1 overflow-y-auto">
-              <div className="p-5 space-y-4">
+            {/* SAĞ: Malzeme listesi (düzenlenebilir) */}
+            <div className="flex-1 flex flex-col min-w-0">
 
-                {/* Reçete seçici (birden fazla reçete varsa) */}
-                {filteredRecipes.length > 1 && (
-                  <div className="flex gap-2 flex-wrap">
-                    {filteredRecipes.map(r => (
-                      <button key={r.id} onClick={() => setSelected(r.id)}
-                        className="px-4 py-2 rounded-xl text-xs font-bold transition-all"
-                        style={{
-                          background: (activeRecipe?.id === r.id) ? `${currentColor}20` : 'rgba(255,255,255,0.04)',
-                          color:      (activeRecipe?.id === r.id) ? currentColor          : '#64748b',
-                          border:     `1px solid ${(activeRecipe?.id === r.id) ? currentColor + '40' : 'rgba(148,163,184,0.1)'}`,
-                        }}>
-                        {r.name}
-                        <span className="ml-1.5 opacity-60">({(r.recipe_items || []).length})</span>
-                      </button>
-                    ))}
+              {/* Reçete adı + değişti uyarısı */}
+              <div className="px-4 pt-3 pb-2 flex items-center justify-between flex-shrink-0">
+                <div>
+                  <p className="text-xs font-bold text-slate-300">{activeRecipe?.name}</p>
+                  {changed && (
+                    <p className="text-[10px] text-amber-400 mt-0.5">
+                      ✎ Yalnızca bu sipariş için düzenlendi
+                    </p>
+                  )}
+                </div>
+                <button onClick={addItem}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                  style={{ background: `${currentColor}18`, color: currentColor }}>
+                  <Plus size={11}/> Ekle
+                </button>
+              </div>
+
+              {/* Malzeme satırları */}
+              <div className="flex-1 overflow-y-auto px-4 pb-3 space-y-2">
+                {localItems.length === 0 && (
+                  <div className="text-center py-8 text-sm text-slate-600">
+                    Malzeme yok — Ekle butonuyla hammadde ekleyin
                   </div>
                 )}
-
-                {filteredRecipes.length === 0 && (
-                  <p className="text-center text-sm text-slate-600 py-6">Bu etiketle eşleşen reçete yok</p>
-                )}
-
-                {activeRecipe && (
-                  <>
-                    {/* Reçete başlık + etiketler */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <FlaskConical size={14} style={{ color: '#a78bfa' }}/>
-                      <p className="text-sm font-bold text-purple-300">{activeRecipe.name}</p>
-                      {(activeRecipe.tags || []).map(tag => (
-                        <span key={tag} className="px-2 py-0.5 rounded-full text-[10px] font-bold"
-                          style={{ background: `${currentColor}20`, color: currentColor }}>
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-
-                    {/* Search */}
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
-                      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(148,163,184,0.1)' }}>
-                      <Search size={12} className="text-slate-500 shrink-0"/>
-                      <input className="flex-1 bg-transparent text-sm outline-none placeholder-slate-600"
-                        placeholder="Hammadde ara…" value={search} onChange={e => setSearch(e.target.value)}/>
-                    </div>
-
-                    {/* Hammadde albüm */}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      {filteredItems.map(ri => (
-                        <div key={ri.id}
-                          className="rounded-xl p-3 space-y-2"
-                          style={{ background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.18)' }}>
-                          <div className="flex items-start gap-2">
-                            <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
-                              style={{ background: 'rgba(139,92,246,0.15)' }}>
-                              <Package size={12} style={{ color: '#a78bfa' }}/>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-bold text-slate-200 truncate">
-                                {ri.item_name || '—'}
-                              </p>
-                              <p className="text-[10px] text-slate-500">{ri.unit || 'Adet'}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] text-slate-500 uppercase tracking-wide">Miktar</span>
-                            {editMode ? (
-                              <input type="number" step="0.01" min="0"
-                                className="flex-1 px-2 py-1 rounded-lg text-xs outline-none text-right font-bold"
-                                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(139,92,246,0.3)', color: '#a78bfa' }}
-                                value={editQtys[ri.id] ?? ri.quantity}
-                                onChange={e => setEditQtys(q => ({ ...q, [ri.id]: e.target.value }))}/>
-                            ) : (
-                              <span className="ml-auto text-xs font-bold" style={{ color: '#a78bfa' }}>
-                                {ri.quantity} {ri.unit || ''}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                      {filteredItems.length === 0 && (
-                        <div className="col-span-3 py-8 text-center text-sm text-slate-600">
-                          Eşleşen hammadde yok
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
+                <AnimatePresence initial={false}>
+                  {localItems.map((it, idx) => (
+                    <motion.div key={idx}
+                      initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="flex items-center gap-2 rounded-xl px-3 py-2"
+                      style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(148,163,184,0.08)' }}>
+                      {/* Ad */}
+                      <input
+                        value={it.item_name || ''}
+                        onChange={e => updateItem(idx, 'item_name', e.target.value)}
+                        placeholder="Malzeme adı..."
+                        className="flex-1 bg-transparent outline-none text-xs text-slate-200 placeholder-slate-600 min-w-0"/>
+                      {/* Miktar */}
+                      <input type="number" min="0" step="0.01"
+                        value={it.quantity}
+                        onChange={e => updateItem(idx, 'quantity', e.target.value)}
+                        className="w-16 bg-transparent outline-none text-xs text-right font-bold border-b text-slate-200"
+                        style={{ borderColor: 'rgba(148,163,184,0.2)' }}/>
+                      {/* Birim */}
+                      <select value={it.unit || 'Adet'}
+                        onChange={e => updateItem(idx, 'unit', e.target.value)}
+                        className="bg-transparent outline-none text-[11px] text-slate-400"
+                        style={{ maxWidth: 64 }}>
+                        {UNITS.map(u => <option key={u} value={u} style={{ background: '#0e1c34' }}>{u}</option>)}
+                      </select>
+                      {/* Sil */}
+                      <button onClick={() => removeItem(idx)}
+                        className="p-1 rounded-lg hover:bg-red-500/10 transition-colors flex-shrink-0">
+                        <Trash2 size={12} className="text-red-400"/>
+                      </button>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
               </div>
             </div>
+          </div>
+        )}
 
-            {/* Footer */}
-            <div className="flex items-center justify-between gap-3 px-5 py-4 flex-shrink-0"
-              style={{ borderTop: '1px solid rgba(148,163,184,0.1)' }}>
-              <button onClick={() => setEditMode(v => !v)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all"
-                style={{
-                  background: editMode ? 'rgba(245,158,11,0.12)' : 'rgba(255,255,255,0.04)',
-                  color: editMode ? '#f59e0b' : '#64748b',
-                  border: `1px solid ${editMode ? 'rgba(245,158,11,0.3)' : 'rgba(148,163,184,0.1)'}`,
-                }}>
-                {editMode ? <Save size={13}/> : <Edit3 size={13}/>}
-                {editMode ? 'Düzenleme Modunda' : 'Miktarları Düzenle'}
-              </button>
-              <div className="flex gap-2">
-                <button onClick={onClose}
-                  className="px-4 py-2 rounded-xl text-sm text-slate-400 transition-all"
-                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(148,163,184,0.1)' }}>
-                  İptal
-                </button>
-                <button onClick={handleConfirm} disabled={!activeRecipe}
-                  className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold text-white transition-all"
-                  style={{ background: activeRecipe ? currentColor : '#475569' }}>
-                  <Check size={14}/> Bu Reçeteyi Seç
-                </button>
-              </div>
-            </div>
-          </>
+        {/* Footer */}
+        {productRecipes.length > 0 && (
+          <div className="flex items-center justify-end gap-2 px-5 py-3 flex-shrink-0"
+            style={{ borderTop: '1px solid rgba(148,163,184,0.1)' }}>
+            <button onClick={onClose}
+              className="px-4 py-2 rounded-xl text-xs text-slate-400 transition-all"
+              style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(148,163,184,0.1)' }}>
+              İptal
+            </button>
+            <button onClick={handleConfirm}
+              className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold text-white transition-all"
+              style={{ background: currentColor }}>
+              <Check size={14}/> Uygula
+            </button>
+          </div>
         )}
       </motion.div>
     </div>
   );
+}
+
+function cloneItems(items) {
+  return items.map(it => ({ ...it }));
 }
