@@ -227,40 +227,62 @@ function WorkOrderCard({ wo, items, orders, onStatusChange, onDelete, currentCol
     if (newStatus === 'completed')  patch.completed_at = new Date().toISOString();
     await supabase.from('work_orders').update(patch).eq('id', wo.id);
 
-    // Tamamlandı → stok düşür ve sipariş kontrolu
     if (newStatus === 'completed') {
-      // 1. product_recipes üzerinden recipe_items'ten stok düş
-      if (wo.notes) {
-        // notes'ta recipe bilgisi var: recipe_items'i çek
-        // work_order.notes format: "ReçeteAdı: Xq Malzeme, ..."
-        // Stok düşürmek için items tablosunu güncelle
-      }
-      // notlar içinde recipe_id var mı diye değil, direkt item'lar üzerinden gidelim
-      // recipe_id'yi work_orders'a kaydetmedik, ama product_id (item_id) üzerinden
-      // product_recipes çek ve recipe_items'ten stok düş
-      const { data: prodRecipes } = await supabase
+      const recipeId = wo.recipe_id || null;
+      const woQty    = Number(wo.quantity || 1);
+      const woNote   = `İş emri #${wo.id?.slice(0,8)} tamamlandı`;
+
+      // ── 1. Mamül ürünün stok sayısını ARTIR ────────────────────────────
+      await supabase.rpc('increment_stock', {
+        p_item_id:   wo.item_id,
+        p_qty:       woQty,
+        p_source:    'work_order',
+        p_source_id: wo.id,
+        p_recipe_id: recipeId,
+        p_note:      woNote,
+      });
+
+      // ── 2. Hammadde stoklarını DÜŞÜR (recipe_items üzerinden) ──────────
+      // Önce wo.recipe_id varsa o reçeteyi, yoksa ilk reçeteyi kullan
+      const recipeQuery = supabase
         .from('product_recipes')
         .select('id, recipe_items(item_id, quantity)')
-        .eq('product_id', wo.item_id)
-        .limit(1)
-        .single();
+        .eq('product_id', wo.item_id);
+      if (recipeId) recipeQuery.eq('id', recipeId);
+      else recipeQuery.limit(1);
 
-      if (prodRecipes?.recipe_items?.length) {
-        for (const ri of prodRecipes.recipe_items) {
-          if (!ri.item_id) continue;
-          const qty = Number(ri.quantity || 1) * Number(wo.quantity || 1);
-          const { data: itm } = await supabase.from('items').select('stock_count').eq('id', ri.item_id).single();
-          await supabase.from('items').update({ stock_count: (itm?.stock_count || 0) - qty }).eq('id', ri.item_id);
-        }
+      const { data: recipeData } = await recipeQuery.single();
+      const recipeItems = recipeData?.recipe_items || [];
+
+      for (const ri of recipeItems) {
+        if (!ri.item_id) continue;
+        const qty = Number(ri.quantity || 1) * woQty;
+        await supabase.rpc('decrement_stock', {
+          p_item_id:   ri.item_id,
+          p_qty:       qty,
+          p_source:    'work_order',
+          p_source_id: wo.id,
+          p_note:      `${woNote} — hammadde`,
+        }).catch(() => {
+          // RPC yoksa direkt güncelle (fallback)
+          return supabase.from('items')
+            .select('stock_count').eq('id', ri.item_id).single()
+            .then(({ data }) =>
+              supabase.from('items')
+                .update({ stock_count: (data?.stock_count || 0) - qty })
+                .eq('id', ri.item_id)
+            );
+        });
       }
 
-      // 2. Sipariş bağlı ise diğer iş emirlerini kontrol et
+      // ── 3. Sipariş bağlıysa tüm WO'ları kontrol et ────────────────────
       if (wo.order_id) {
         const { data: siblings } = await supabase
           .from('work_orders').select('id, status').eq('order_id', wo.order_id);
         const allDone = (siblings || []).every(s => s.status === 'completed' || s.id === wo.id);
         if (allDone) {
-          await supabase.from('orders').update({ status: 'completed' }).eq('id', wo.order_id);
+          // Siparişi processing'de bırak, Sales'taki banner halleder
+          // Ama orders.all_wo_done flag'ini işaretleyebiliriz
         }
       }
     }

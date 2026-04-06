@@ -8,6 +8,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import InvoicePreviewModal from '../components/InvoicePreviewModal';
+import InvoiceStockModal from '../components/InvoiceStockModal';
 import { useLocation } from 'react-router-dom';
 import { pageCache } from '../lib/pageCache';
 import CustomDialog from '../components/CustomDialog';
@@ -163,7 +164,7 @@ const unitLabel = (code) => UBL_UNITS[code?.toUpperCase?.()] || code || '';
 const currSymbol = (c) => ({ USD:'$', EUR:'€', GBP:'£', TRY:'₺' }[c] || c || '₺');
 
 // ── İşle Wizard: Adım adım fatura işleme ──────────────────────────────────────
-function IsleWizard({ inv, supabase, onClose, onDone }) {
+function IsleWizard({ inv, allItems, supabase, onClose, onDone }) {
   const fmtN = (n) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 });
   // outbox = giden fatura (biz kestik) → biz alacağız → Alacak (borc field)
   // inbox  = gelen fatura (bize kesildi) → biz vereceğiz → Verecek (alacak field)
@@ -171,12 +172,14 @@ function IsleWizard({ inv, supabase, onClose, onDone }) {
   const defaultBorc   = isOutbox ? (inv.amount || 0) : 0; // giden → Alacak
   const defaultAlacak = isOutbox ? 0 : (inv.amount || 0); // gelen → Verecek
 
-  const [step, setStep]     = useState(0); // 0=cari hesap, 1=bitti
-  const [ekle, setEkle]     = useState(true);
-  const [borc, setBorc]     = useState(String(defaultBorc));
-  const [alacak, setAlacak] = useState(String(defaultAlacak));
-  const [saving, setSaving] = useState(false);
-  const [err, setErr]       = useState('');
+  const [step, setStep]         = useState(0);
+  const [ekle, setEkle]         = useState(true);
+  const [stokIsle, setStokIsle] = useState(false); // stoğa işle seçimi
+  const [borc, setBorc]         = useState(String(defaultBorc));
+  const [alacak, setAlacak]     = useState(String(defaultAlacak));
+  const [saving, setSaving]     = useState(false);
+  const [err, setErr]           = useState('');
+  const [showStokModal, setShowStokModal] = useState(false);
 
   // Faturanın cari/tedarikçi ID'sini bul
   const [contactId, setContactId] = useState(null);
@@ -222,6 +225,7 @@ function IsleWizard({ inv, supabase, onClose, onDone }) {
   const inpStyle = { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(148,163,184,0.18)', color: '#f1f5f9' };
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose}/>
       <motion.div
@@ -282,6 +286,22 @@ function IsleWizard({ inv, supabase, onClose, onDone }) {
             </div>
           )}
 
+        {/* Stoğa İşle seçeneği */}
+          <label className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all"
+            style={{ background: stokIsle ? 'rgba(59,130,246,0.08)' : 'rgba(255,255,255,0.03)', border: `1px solid ${stokIsle ? 'rgba(59,130,246,0.3)' : 'rgba(148,163,184,0.1)'}` }}
+            onClick={() => setStokIsle(v => !v)}>
+            <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0"
+              style={{ background: stokIsle ? '#3b82f6' : 'rgba(255,255,255,0.08)', border: `1px solid ${stokIsle ? '#3b82f6' : 'rgba(148,163,184,0.2)'}` }}>
+              {stokIsle && <Check size={11} color="white"/>}
+            </div>
+            <div>
+              <p className="text-xs font-bold" style={{ color: stokIsle ? '#60a5fa' : '#94a3b8' }}>Stoğa İşle</p>
+              <p className="text-[10px] text-slate-500">
+                {isOutbox ? 'Satılan kalemleri stok kartlarına eşle' : 'Gelen malzemeleri stok kartlarına eşle'}
+              </p>
+            </div>
+          </label>
+
           <div className="p-2.5 rounded-xl text-[11px] text-slate-500"
             style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(148,163,184,0.07)' }}>
             ✓ Fatura <strong className="text-slate-300">"İşlendi"</strong> olarak işaretlenecek ve tekrar sorulmayacak.
@@ -295,15 +315,38 @@ function IsleWizard({ inv, supabase, onClose, onDone }) {
             style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)' }}>
             Atla
           </button>
-          <button onClick={handleTamam} disabled={saving}
+          <button onClick={stokIsle ? () => setShowStokModal(true) : handleTamam} disabled={saving}
             className="flex-1 py-2 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
-            style={{ background: '#f59e0b', opacity: saving ? 0.7 : 1 }}>
+            style={{ background: stokIsle ? '#3b82f6' : '#f59e0b', opacity: saving ? 0.7 : 1 }}>
             {saving ? <Loader2 size={14} className="animate-spin"/> : <CheckCheck size={14}/>}
-            {saving ? 'Kaydediliyor...' : 'Tamamla'}
+            {saving ? 'Kaydediliyor...' : (stokIsle ? 'Stoğa İşle →' : 'Tamamla')}
           </button>
         </div>
       </motion.div>
     </div>
+
+    {/* Stoğa İşle Modalı */}
+    {showStokModal && (
+      <InvoiceStockModal
+        inv={inv}
+        allItems={allItems}
+        supabase={supabase}
+        currentColor="#3b82f6"
+        onClose={() => setShowStokModal(false)}
+        onDone={(invoiceId) => {
+          setShowStokModal(false);
+          // Hesap defteri de eklenecekse yap
+          if (ekle) handleTamam();
+          else {
+            supabase.from('invoices')
+              .update({ is_islendi: true, islendi_at: new Date().toISOString() })
+              .eq('invoice_id', invoiceId);
+            onDone(invoiceId);
+          }
+        }}
+      />
+    )}
+    </>
   );
 }
 
@@ -649,6 +692,16 @@ export default function Invoices({ type = 'inbox' }) {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
   };
+
+  // Stok kartlarını yükle (Stoğa İşle için)
+  useEffect(() => {
+    if (!dbItems.length) {
+      supabase.from('items')
+        .select('id, name, unit, purchase_price, sale_price, stock_count, sku')
+        .order('name')
+        .then(({ data }) => setDbItems(data || []));
+    }
+  }, []);
 
   // Cari/Tedarikçi drawer’dan yönlendirme gelirse faturayı otomatik aç
   useEffect(() => {
@@ -1911,6 +1964,7 @@ export default function Invoices({ type = 'inbox' }) {
         {isleModal && (
           <IsleWizard
             inv={isleModal}
+            allItems={dbItems}
             supabase={supabase}
             onClose={() => setIsleModal(null)}
             onDone={(invoiceId) => {
