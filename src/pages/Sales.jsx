@@ -980,11 +980,18 @@ function SumRow({ label, value, bold, accent, color }) {
 }
 
 // ─── Sipariş Kartı ────────────────────────────────────────────────────────────
-function OrderCard({ order, onEdit, onStatusChange, currentColor, c }) {
+function OrderCard({ order, onEdit, onStatusChange, onSendToWorkOrders, currentColor, c }) {
   const urgent = isUrgent(order);
   const daysLeft = order.due_date
     ? Math.ceil((new Date(order.due_date) - new Date()) / 86400000)
     : null;
+
+  // Reçeteli satır var mı? (order_items içinde recipe_note dolu olanlar)
+  const recipeLines    = (order.items || []).filter(l => l.recipe_note || l.recipe_key);
+  const hasRecipeLines = recipeLines.length > 0;
+  const onlyMaterial   = !hasRecipeLines;
+  const canSendToWO    = hasRecipeLines && order.status !== 'completed' && order.status !== 'cancelled' && !order.work_orders_sent;
+  const sentToWO       = order.work_orders_sent;
 
   return (
     <motion.div initial={{ opacity:0, y:6 }} animate={{ opacity:1, y:0 }}
@@ -1140,19 +1147,27 @@ export default function Sales() {
     const [ordRes, custRes, itemRes, bomRes] = await Promise.all([
       supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }),
       supabase.from('customers').select('id, name, vkntckn, tax_office, phone, email, address, city').order('name'),
-      supabase.from('items').select('id, name, item_type, unit, sale_price, purchase_price, stock_count, sku, base_currency, vat_rate').order('name'),
-      // BOM ile component isimlerini çek (join)
-      supabase.from('bom_recipes').select('id, parent_id, component_id, quantity_required, unit, notes, items!bom_recipes_component_id_fkey(name, unit, category)').order('parent_id'),
+      supabase.from('items').select('id, name, item_type, unit, sale_price, purchase_price, stock_count, sku, base_currency, vat_rate, category').order('name'),
+      // BOM — basit select, join yok (FK alias sorunu yaşamamak için)
+      supabase.from('bom_recipes').select('id, parent_id, component_id, quantity_required, unit, notes').order('parent_id'),
     ]);
+
+    const loadedItems = itemRes.data || [];
+    const loadedBom   = bomRes.data || [];
+
     setOrders((ordRes.data || []).map(o => ({ ...o, items: o.order_items || [] })));
     setCustomers(custRes.data || []);
-    setAllItems(itemRes.data || []);
-    setAllBom((bomRes.data || []).map(r => ({
-      ...r,
-      component_name:     r.items?.name     || '',
-      component_unit:     r.items?.unit     || r.unit || 'Adet',
-      component_category: r.items?.category || '',
-    })));
+    setAllItems(loadedItems);
+    // Item isimlerini BOM satırlarına ekle (join yerine client-side enrich)
+    setAllBom(loadedBom.map(r => {
+      const comp = loadedItems.find(i => i.id === r.component_id);
+      return {
+        ...r,
+        component_name:     comp?.name     || '',
+        component_unit:     comp?.unit     || r.unit || 'Adet',
+        component_category: comp?.category || '',
+      };
+    }));
     setLoading(false);
   }, []);
 

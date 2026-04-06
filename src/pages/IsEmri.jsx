@@ -373,19 +373,23 @@ export default function IsEmri() {
     setLoading(true);
     const [woRes, itemRes, ordRes, bomRes] = await Promise.all([
       supabase.from('work_orders').select('*').order('created_at', { ascending: false }),
-      supabase.from('items').select('id, name, unit, item_type, stock_count').eq('is_active', true),
+      supabase.from('items').select('id, name, unit, item_type, stock_count, category').eq('is_active', true),
       supabase.from('orders').select('id, order_number, customer_name, status').order('created_at', { ascending: false }).limit(200),
-      supabase.from('bom_recipes').select('id, parent_id, component_id, quantity_required, unit, notes, items!bom_recipes_component_id_fkey(name, unit, category)').order('parent_id'),
+      supabase.from('bom_recipes').select('id, parent_id, component_id, quantity_required, unit, notes').order('parent_id'),
     ]);
+    const loadedItems = itemRes.data || [];
     setWorkOrders(woRes.data || []);
-    setItems(itemRes.data || []);
+    setItems(loadedItems);
     setOrders(ordRes.data || []);
-    setAllBom((bomRes.data || []).map(r => ({
-      ...r,
-      component_name:     r.items?.name     || '',
-      component_unit:     r.items?.unit     || r.unit || 'Adet',
-      component_category: r.items?.category || '',
-    })));
+    setAllBom((bomRes.data || []).map(r => {
+      const comp = loadedItems.find(i => i.id === r.component_id);
+      return {
+        ...r,
+        component_name:     comp?.name     || '',
+        component_unit:     comp?.unit     || r.unit || 'Adet',
+        component_category: comp?.category || '',
+      };
+    }));
     setLoading(false);
   }, []);
 
