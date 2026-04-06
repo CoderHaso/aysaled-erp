@@ -326,14 +326,14 @@ async function handleFormalize(body, res) {
   const suppDist = encodeXml((process.env.COMPANY_DISTRICT || process.env.VITE_COMPANY_DISTRICT || 'BAYRAKLI').replace(/^["']|["']$/g, ''));
 
   const custInfo = inv.line_items?.[0]?.customer_info || {};
-  const custName = encodeXml(inv.cari_name || '');
-  const custVkn = encodeXml(inv.vkntckn || '');
-  const custAddress = encodeXml(custInfo.address || ''); // Ensure this exists or fallback
-  const custDist = encodeXml(custInfo.district || '');
-  const custCity = encodeXml(custInfo.city || '');
-  const custTaxOff = encodeXml(custInfo.tax_office || '');
-
-
+  // custName en az 2 karakter olmalı (Uyumsoft zorunluluğu)
+  const custNameRaw = (inv.cari_name || '').trim();
+  const custName    = encodeXml(custNameRaw.length >= 2 ? custNameRaw : (custNameRaw || 'Bilinmiyor'));
+  const custVkn     = encodeXml((inv.vkntckn || '').replace(/\s/g, ''));
+  const custAddress = encodeXml(custInfo.address   || '');
+  const custDist    = encodeXml(custInfo.district   || '');
+  const custCity    = encodeXml(custInfo.city       || '');
+  const custTaxOff  = encodeXml(custInfo.tax_office || '');
 
   // KDV dökümü
   const vatGroups = {};
@@ -386,8 +386,12 @@ async function handleFormalize(body, res) {
             <cac:Country><cbc:Name>Türkiye</cbc:Name></cac:Country>
           </cac:PostalAddress>
           <cac:PartyTaxScheme>
-            <cac:TaxScheme><cbc:Name>${custTaxOff}</cbc:Name></cac:TaxScheme>
+            <cbc:CompanyID>${custVkn}</cbc:CompanyID>
+            <cac:TaxScheme><cbc:Name>${custTaxOff || 'Bilinmiyor'}</cbc:Name></cac:TaxScheme>
           </cac:PartyTaxScheme>
+          <cac:PartyLegalEntity>
+            <cbc:RegistrationName>${custName}</cbc:RegistrationName>
+          </cac:PartyLegalEntity>
         </cac:Party>
       </cac:AccountingCustomerParty>
       ${currency !== 'TRY' ? `

@@ -261,6 +261,7 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
           productId={line.item_id}
           productName={line.item_name}
           allRecipes={allRecipes || []}
+          allItems={allItems || []}
           currentColor="#8b5cf6"
           onClose={() => setShowRecipePicker(false)}
           onSelect={(recipeData) => {

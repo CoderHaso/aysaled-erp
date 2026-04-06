@@ -150,6 +150,7 @@ function WorkOrderForm({ items, orders, allRecipes, onClose, onSaved, currentCol
             productId={form.item_id}
             productName={selectedItem?.name || ''}
             allRecipes={allRecipes || []}
+            allItems={items || []}
             currentColor="#8b5cf6"
             onClose={() => setShowRecipePicker(false)}
             onSelect={rec => {
