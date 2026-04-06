@@ -6,12 +6,13 @@ import {
   ShoppingCart, Clock, History, Zap, Trash2, Package, Edit3,
   FileText, User, Calendar, CreditCard, MapPin, StickyNote,
   ChevronRight, CheckCircle2, XCircle, RefreshCw, TrendingUp,
-  Receipt, ScanEye,
+  Receipt, ScanEye, FlaskConical, Send, BookOpen,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import InvoicePreviewModal from '../components/InvoicePreviewModal';
 import CustomDialog from '../components/CustomDialog';
+import RecipePickerModal from '../components/RecipePickerModal';
 
 // ─── Sabitler & Yardımcılar ───────────────────────────────────────────────────
 const STATUS = {
@@ -94,21 +95,17 @@ function StatusBadge({ status, urgent }) {
 }
 
 // ─── Ürün Satırı ──────────────────────────────────────────────────────────────
-function LineRow({ line, idx, allItems, currency, onChange, onRemove, c, exchangeRate, invoiceToggle, recipes }) {
-  const [open, setOpen]         = useState(false);
-  const [q, setQ]               = useState('');
-  const [recOpen, setRecOpen]   = useState(false);
-  const [recQ, setRecQ]         = useState('');
+function LineRow({ line, idx, allItems, allBom, currency, onChange, onRemove, c, exchangeRate, invoiceToggle }) {
+  const [open, setOpen]             = useState(false);
+  const [q, setQ]                   = useState('');
+  const [showRecipePicker, setShowRecipePicker] = useState(false);
   const matches = allItems.filter(i =>
     !q || i.name.toLowerCase().includes(q.toLowerCase()) ||
     (i.sku||'').toLowerCase().includes(q.toLowerCase())
   ).slice(0, 8);
 
-  // Reçete eşleştirme: seçili ürüne ait reçeteler
-  const itemRecipes = (recipes || []).filter(r => r.item_id === line.item_id);
-  const recMatches  = itemRecipes.filter(r =>
-    !recQ || r.name.toLowerCase().includes(recQ.toLowerCase())
-  ).slice(0, 6);
+  // BOM: bu ürüne ait bileşenler var mı?
+  const hasRecipe = line.item_id && (allBom || []).some(r => r.parent_id === line.item_id);
 
   // Fiyat dönüştürme: stok'taki item.base_currency → satış currency
   const convertPrice = (item) => {
@@ -235,44 +232,41 @@ function LineRow({ line, idx, allItems, currency, onChange, onRemove, c, exchang
         </AnimatePresence>
       </div>
 
-      {/* Reçete seçici — sadece kayıtlı mamul seçilince */}
-      {line.item_id && line.item_type === 'product' && itemRecipes.length > 0 && (
-        <div className="relative">
+      {/* Reçete Seç butonu — sadece kayıtlı mamul ve BOM var ise */}
+      {hasRecipe && (
+        <div>
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Reçete</p>
-          <div onClick={() => setRecOpen(v => !v)}
-            className="flex items-center justify-between px-3 py-2 rounded-xl cursor-pointer"
-            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(139,92,246,0.2)' }}>
-            <span className="text-sm text-slate-300">
-              {line.recipe_id ? itemRecipes.find(r => r.id === line.recipe_id)?.name || 'Reçete seçildi' : 'Reçete seç...'}
+          <button onClick={() => setShowRecipePicker(true)}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-all"
+            style={{
+              background: line.recipe_note ? 'rgba(139,92,246,0.1)' : 'rgba(255,255,255,0.03)',
+              border: `1px solid ${line.recipe_note ? 'rgba(139,92,246,0.35)' : 'rgba(139,92,246,0.2)'}`,
+              color: line.recipe_note ? '#c4b5fd' : '#64748b',
+            }}>
+            <span className="flex items-center gap-2 text-left truncate">
+              <FlaskConical size={13} className="shrink-0" style={{ color: '#a78bfa' }}/>
+              <span className="truncate">{line.recipe_note ? '✓ ' + line.recipe_key : 'Reçete Seç...'}</span>
             </span>
-            <ChevronDown size={12} className="text-purple-400"/>
-          </div>
-          <AnimatePresence>
-            {recOpen && (
-              <motion.div initial={{ opacity:0, y:-4 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0 }}
-                className="absolute z-40 w-full mt-1 rounded-xl overflow-hidden"
-                style={{ background: '#0c1a2e', border: '1px solid rgba(139,92,246,0.25)', boxShadow: '0 12px 30px rgba(0,0,0,0.5)' }}>
-                {itemRecipes.map(r => (
-                  <div key={r.id}
-                    onClick={() => { onChange({ recipe_id: r.id }); setRecOpen(false); }}
-                    className="px-4 py-2.5 cursor-pointer transition-colors"
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(139,92,246,0.1)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                    <p className="text-sm text-purple-200 font-semibold">{r.name}</p>
-                    {r.components && <p className="text-[10px] text-slate-500">{r.components} kalem</p>}
-                  </div>
-                ))}
-                <div onClick={() => { onChange({ recipe_id: null }); setRecOpen(false); }}
-                  className="px-4 py-2 border-t cursor-pointer text-slate-500 text-xs transition-colors"
-                  style={{ borderColor: 'rgba(139,92,246,0.15)' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                  Reçetesiz devam et
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+            <BookOpen size={12} style={{ color: '#a78bfa', flexShrink: 0 }}/>
+          </button>
+          {line.recipe_note && (
+            <p className="text-[10px] text-slate-600 mt-1 truncate px-1">{line.recipe_note}</p>
+          )}
         </div>
+      )}
+
+      {/* Reçete Picker Modal */}
+      {showRecipePicker && (
+        <RecipePickerModal
+          itemId={line.item_id}
+          itemName={line.item_name}
+          allBom={allBom || []}
+          currentColor="#8b5cf6"
+          onClose={() => setShowRecipePicker(false)}
+          onSelect={(recipeData) => {
+            onChange({ recipe_key: recipeData.recipe_key, recipe_note: recipeData.recipe_note, recipe_components: recipeData.components });
+            setShowRecipePicker(false);
+          }}/>
       )}
 
       {/* Sayısal alanlar */}
@@ -336,7 +330,7 @@ function Field({ label, type = 'text', value, onChange, suffix, placeholder }) {
 }
 
 // ─── Sipariş Formu ────────────────────────────────────────────────────────────
-function OrderForm({ order, customers, allItems, recipes = [], onClose, onSaved, currentColor, quoteId, quoteRevertFn, markQuoteAccepted }) {
+function OrderForm({ order, customers, allItems, allBom = [], recipes = [], onClose, onSaved, currentColor, quoteId, quoteRevertFn, markQuoteAccepted }) {
   const isEdit = !!order?.id;
   // ── Local dialog state (OrderForm kendi dialogunu yönetir) ──
   const [dialog, setDialog] = useState({ open: false, title: '', message: '', type: 'confirm', onConfirm: null, loading: false });
@@ -754,7 +748,7 @@ function OrderForm({ order, customers, allItems, recipes = [], onClose, onSaved,
             {lines.map((line, idx) => (
               <LineRow key={line._key} line={line} idx={idx} allItems={allItems}
                 currency={form.currency} exchangeRate={exchangeRate}
-                invoiceToggle={invoiceToggle} recipes={recipes}
+                allBom={allBom} invoiceToggle={invoiceToggle}
                 onChange={patch => updateLine(idx, patch)}
                 onRemove={() => removeLine(idx)}
                 c={{}} />
@@ -1019,14 +1013,37 @@ function OrderCard({ order, onEdit, onStatusChange, currentColor, c }) {
       )}
 
       {/* Durum güncelle */}
-      <div className="flex gap-1.5 pt-1" onClick={e => e.stopPropagation()}>
-        {Object.entries(STATUS).filter(([k]) => k !== order.status).slice(0, 3).map(([key, val]) => (
-          <button key={key} onClick={() => onStatusChange(order.id, key)}
-            className="flex-1 py-1 rounded-lg text-[10px] font-bold transition-all"
-            style={{ background: val.bg, color: val.color }}>
-            {val.label}
+      <div className="flex gap-1.5 pt-1 flex-wrap" onClick={e => e.stopPropagation()}>
+        {/* Durum butonları: sadece hammadde ise pending/completed, reçeteli ise + iş emri */}
+        {Object.entries(STATUS)
+          .filter(([k]) => {
+            if (k === order.status) return false;
+            if (onlyMaterial && k === 'processing') return false; // sadece hammadde: hazırlanıyor yok
+            return true;
+          })
+          .slice(0, 3)
+          .map(([key, val]) => (
+            <button key={key} onClick={() => onStatusChange(order.id, key)}
+              className="flex-1 py-1 rounded-lg text-[10px] font-bold transition-all"
+              style={{ background: val.bg, color: val.color }}>
+              {val.label}
+            </button>
+          ))
+        }
+        {/* İş Emrine gönder — reçeteli satır varsa */}
+        {canSendToWO && (
+          <button onClick={e => { e.stopPropagation(); onSendToWorkOrders(order); }}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-bold transition-all"
+            style={{ background: 'rgba(59,130,246,0.12)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.25)' }}>
+            <Send size={9}/> İş Emrine Gönder
           </button>
-        ))}
+        )}
+        {sentToWO && (
+          <span className="px-2 py-1 rounded-lg text-[10px] font-bold"
+            style={{ background: 'rgba(16,185,129,0.1)', color: '#34d399' }}>
+            ✓ İş Emrinde
+          </span>
+        )}
       </div>
     </motion.div>
   );
@@ -1053,6 +1070,7 @@ export default function Sales() {
   const [orders,    setOrders]    = useState([]);
   const [customers, setCustomers] = useState([]);
   const [allItems,  setAllItems]  = useState([]);
+  const [allBom,    setAllBom]    = useState([]);
   const [recipes,   setRecipes]   = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [search,    setSearch]    = useState('');
@@ -1076,19 +1094,65 @@ export default function Sales() {
     setTimeout(() => setToast(null), 3000);
   };
 
+  // İş emrine gönder: reçeteli satırlar için work_orders oluştur
+  const sendToWorkOrders = async (order) => {
+    const recipeLines = (order.items || []).filter(l => l.recipe_note || l.recipe_key);
+    if (!recipeLines.length) return;
+    try {
+      const payload = recipeLines.map(line => ({
+        item_id:     line.item_id,
+        order_id:    order.id,
+        quantity:    Number(line.quantity || 1),
+        status:      'pending',
+        notes:       line.recipe_note || '',
+        line_key:    String(line._key || line.id || ''),
+        started_at:  null,
+      }));
+      const { error } = await supabase.from('work_orders').insert(payload);
+      if (error) throw error;
+      // Siparişi 'processing' yap ve work_orders_sent işaretle
+      await supabase.from('orders').update({ status: 'processing', work_orders_sent: true }).eq('id', order.id);
+      showToast(`${recipeLines.length} iş emri oluşturuldu!`);
+      loadAll();
+    } catch (e) { showToast(e.message, 'error'); }
+  };
+
+  // İş emirleri tamamlanma kontrolü (polling yerine manuel refresh’ta)
+  const checkWorkOrdersComplete = useCallback(async () => {
+    // processing siparişleri al
+    const processingOrders = orders.filter(o => o.status === 'processing' && o.work_orders_sent);
+    if (!processingOrders.length) return;
+    for (const ord of processingOrders) {
+      const { data: wos } = await supabase
+        .from('work_orders').select('status').eq('order_id', ord.id);
+      if (!wos?.length) continue;
+      const allDone = wos.every(w => w.status === 'completed');
+      if (allDone) {
+        await supabase.from('orders').update({ status: 'completed' }).eq('id', ord.id);
+        showToast(`Sipariş #${ord.order_number} tamamlandı — tüm iş emirleri bitti!`, 'success');
+      }
+    }
+    loadAll();
+  }, [orders]);
+
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const [ordRes, custRes, itemRes, recRes] = await Promise.all([
+    const [ordRes, custRes, itemRes, bomRes] = await Promise.all([
       supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }),
       supabase.from('customers').select('id, name, vkntckn, tax_office, phone, email, address, city').order('name'),
       supabase.from('items').select('id, name, item_type, unit, sale_price, purchase_price, stock_count, sku, base_currency, vat_rate').order('name'),
-      supabase.from('bom_recipes').select('id, parent_id, component_id, quantity_required, unit, notes').order('parent_id'),
+      // BOM ile component isimlerini çek (join)
+      supabase.from('bom_recipes').select('id, parent_id, component_id, quantity_required, unit, notes, items!bom_recipes_component_id_fkey(name, unit, category)').order('parent_id'),
     ]);
     setOrders((ordRes.data || []).map(o => ({ ...o, items: o.order_items || [] })));
     setCustomers(custRes.data || []);
     setAllItems(itemRes.data || []);
-    // Reçete listesi: item_id = parent_id (mamul), component bileşenler
-    setRecipes((recRes.data || []).map(r => ({ ...r, item_id: r.parent_id, name: `Reçete (${r.quantity_required} ${r.unit || ''})`.trim() })));
+    setAllBom((bomRes.data || []).map(r => ({
+      ...r,
+      component_name:     r.items?.name     || '',
+      component_unit:     r.items?.unit     || r.unit || 'Adet',
+      component_category: r.items?.category || '',
+    })));
     setLoading(false);
   }, []);
 
@@ -1346,6 +1410,7 @@ export default function Sales() {
               <OrderCard key={order.id} order={order}
                 onEdit={openEdit}
                 onStatusChange={updateStatus}
+                onSendToWorkOrders={sendToWorkOrders}
                 currentColor={currentColor}
                 c={c} />
             ))}
@@ -1361,6 +1426,7 @@ export default function Sales() {
             order={editOrder}
             customers={customers}
             allItems={allItems}
+            allBom={allBom}
             recipes={recipes}
             currentColor={currentColor}
             // Tekliften sipariş oluşturma: quote_id + geri alınabilir durum

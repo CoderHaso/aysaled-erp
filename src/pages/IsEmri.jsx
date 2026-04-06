@@ -3,10 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Hammer, Plus, Search, X, Loader2, ChevronDown, Check,
   Clock, CheckCircle2, XCircle, AlertCircle, Package,
-  User, Calendar, RefreshCw, Filter, Zap
+  User, Calendar, RefreshCw, Zap, FlaskConical, BookOpen,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
+import RecipePickerModal from '../components/RecipePickerModal';
 
 const STATUS = {
   pending:     { label: 'Bekliyor',     color: '#f59e0b', bg: 'rgba(245,158,11,0.12)',  icon: Clock        },
@@ -20,46 +21,44 @@ const fmtD = (d) => d ? new Date(d).toLocaleDateString('tr-TR', { day: '2-digit'
 const today = () => new Date().toISOString().slice(0, 16);
 
 // ── İş Emri Oluşturma Modal ───────────────────────────────────────────────────
-function WorkOrderForm({ items, orders, recipes, onClose, onSaved, currentColor }) {
+function WorkOrderForm({ items, orders, allBom, onClose, onSaved, currentColor }) {
   const [form, setForm] = useState({
     item_id:    '',
-    recipe_id:  '',
+    recipe_key: '',
+    recipe_note:'',
+    recipe_components: [],
     order_id:   '',
     quantity:   1,
     notes:      '',
     started_at: today(),
   });
-  const [saving, setSaving] = useState(false);
-  const [err, setErr]       = useState('');
-  const [itemQ, setItemQ]   = useState('');
-  const [itemOpen, setItemOpen] = useState(false);
+  const [saving, setSaving]             = useState(false);
+  const [err, setErr]                   = useState('');
+  const [itemQ, setItemQ]               = useState('');
+  const [itemOpen, setItemOpen]         = useState(false);
+  const [showRecipePicker, setShowRecipePicker] = useState(false);
 
   const selectedItem = items.find(i => i.id === form.item_id);
   const itemMatches  = items.filter(i =>
     i.item_type === 'product' &&
     (!itemQ || i.name.toLowerCase().includes(itemQ.toLowerCase()))
   ).slice(0, 8);
-  const itemRecipes = recipes.filter(r => r.parent_id === form.item_id);
-  const linkedOrder = orders.find(o => o.id === form.order_id);
+  const hasRecipe = form.item_id && (allBom || []).some(r => r.parent_id === form.item_id);
 
   const handleSave = async () => {
-    if (!form.item_id)    return setErr('Ürün seçilmeli');
-    if (!form.quantity)   return setErr('Miktar girilmeli');
+    if (!form.item_id)  return setErr('Ürün seçilmeli');
+    if (!form.quantity) return setErr('Miktar girilmeli');
     setSaving(true); setErr('');
     try {
       const payload = {
         item_id:    form.item_id,
         quantity:   Number(form.quantity),
         status:     'pending',
-        notes:      form.notes || null,
+        notes:      [form.recipe_note, form.notes].filter(Boolean).join(' | ') || null,
         started_at: form.started_at || null,
+        line_key:   '',
       };
-      if (form.order_id)  payload.order_id  = form.order_id;
-      // recipe_id sütunu schema'da yok, notes içine yazıyoruz
-      if (form.recipe_id) {
-        const rec = itemRecipes.find(r => r.id === form.recipe_id);
-        payload.notes = `[Reçete: ${rec?.notes || form.recipe_id}] ${form.notes || ''}`.trim();
-      }
+      if (form.order_id) payload.order_id = form.order_id;
       const { error } = await supabase.from('work_orders').insert(payload);
       if (error) throw error;
       onSaved();
@@ -124,20 +123,39 @@ function WorkOrderForm({ items, orders, recipes, onClose, onSaved, currentColor 
           </AnimatePresence>
         </div>
 
-        {/* Reçete */}
-        {form.item_id && itemRecipes.length > 0 && (
+        {/* Reçete — RecipePickerModal */}
+        {hasRecipe && (
           <div>
             <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Reçete</p>
-            <select className={inp} style={iS}
-              value={form.recipe_id} onChange={e => setForm(f => ({ ...f, recipe_id: e.target.value }))}>
-              <option value="">Reçetesiz devam et</option>
-              {itemRecipes.map(r => (
-                <option key={r.id} value={r.id}>
-                  {r.quantity_required} {r.unit} — {r.notes || r.id.slice(0, 8)}
-                </option>
-              ))}
-            </select>
+            <button onClick={() => setShowRecipePicker(true)}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-all"
+              style={{
+                background: form.recipe_note ? 'rgba(139,92,246,0.1)' : 'rgba(255,255,255,0.05)',
+                border: `1px solid ${form.recipe_note ? 'rgba(139,92,246,0.35)' : 'rgba(139,92,246,0.2)'}`,
+                color: form.recipe_note ? '#c4b5fd' : '#64748b',
+              }}>
+              <span className="flex items-center gap-2 truncate">
+                <FlaskConical size={13} style={{ color: '#a78bfa', flexShrink: 0 }}/>
+                {form.recipe_note ? `✓ ${form.recipe_key}` : 'Reçete Seç...'}
+              </span>
+              <BookOpen size={12} style={{ color: '#a78bfa' }}/>
+            </button>
+            {form.recipe_note && (
+              <p className="text-[10px] text-slate-600 mt-1 px-1 truncate">{form.recipe_note}</p>
+            )}
           </div>
+        )}
+        {showRecipePicker && (
+          <RecipePickerModal
+            itemId={form.item_id}
+            itemName={selectedItem?.name || ''}
+            allBom={allBom || []}
+            currentColor="#8b5cf6"
+            onClose={() => setShowRecipePicker(false)}
+            onSelect={rec => {
+              setForm(f => ({ ...f, recipe_key: rec.recipe_key, recipe_note: rec.recipe_note }));
+              setShowRecipePicker(false);
+            }}/>
         )}
 
         {/* Sipariş bağlantısı */}
@@ -207,6 +225,38 @@ function WorkOrderCard({ wo, items, orders, onStatusChange, onDelete, currentCol
     if (newStatus === 'in_progress' && !wo.started_at) patch.started_at = new Date().toISOString();
     if (newStatus === 'completed')  patch.completed_at = new Date().toISOString();
     await supabase.from('work_orders').update(patch).eq('id', wo.id);
+
+    // Tamamlandı → stok düşür ve sipariş kontrolu
+    if (newStatus === 'completed') {
+      // 1. recipe_note veya BOM ile hammadde stok düş
+      const { data: boms } = await supabase
+        .from('bom_recipes').select('component_id, quantity_required')
+        .eq('parent_id', wo.item_id);
+      if (boms?.length) {
+        for (const bom of boms) {
+          const qty = Number(bom.quantity_required) * Number(wo.quantity || 1);
+          // stock_count düşür (örn. stok.count - qty, negatife düşebilir)
+          await supabase.rpc('decrement_stock', { p_item_id: bom.component_id, p_qty: qty })
+            .then(async ({ error }) => {
+              if (error) {
+                // RPC yoksa direkt güncelle
+                const { data: itm } = await supabase.from('items').select('stock_count').eq('id', bom.component_id).single();
+                await supabase.from('items').update({ stock_count: (itm?.stock_count || 0) - qty }).eq('id', bom.component_id);
+              }
+            });
+        }
+      }
+      // 2. Sipariş bağlı ise diğer iş emirlerini kontrol et
+      if (wo.order_id) {
+        const { data: siblings } = await supabase
+          .from('work_orders').select('status').eq('order_id', wo.order_id);
+        const allDone = siblings?.every(s => s.status === 'completed' || s.id === wo.id);
+        if (allDone) {
+          await supabase.from('orders').update({ status: 'completed' }).eq('id', wo.order_id);
+        }
+      }
+    }
+
     onStatusChange();
     setChanging(false);
   };
@@ -313,24 +363,29 @@ export default function IsEmri() {
   const [workOrders, setWorkOrders] = useState([]);
   const [items,      setItems]      = useState([]);
   const [orders,     setOrders]     = useState([]);
-  const [recipes,    setRecipes]    = useState([]);
+  const [allBom,     setAllBom]     = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [showForm,   setShowForm]   = useState(false);
   const [search,     setSearch]     = useState('');
-  const [filter,     setFilter]     = useState('all'); // all | pending | in_progress | completed | cancelled
+  const [filter,     setFilter]     = useState('all');
 
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const [woRes, itemRes, ordRes, recRes] = await Promise.all([
+    const [woRes, itemRes, ordRes, bomRes] = await Promise.all([
       supabase.from('work_orders').select('*').order('created_at', { ascending: false }),
       supabase.from('items').select('id, name, unit, item_type, stock_count').eq('is_active', true),
       supabase.from('orders').select('id, order_number, customer_name, status').order('created_at', { ascending: false }).limit(200),
-      supabase.from('bom_recipes').select('*'),
+      supabase.from('bom_recipes').select('id, parent_id, component_id, quantity_required, unit, notes, items!bom_recipes_component_id_fkey(name, unit, category)').order('parent_id'),
     ]);
     setWorkOrders(woRes.data || []);
     setItems(itemRes.data || []);
     setOrders(ordRes.data || []);
-    setRecipes(recRes.data || []);
+    setAllBom((bomRes.data || []).map(r => ({
+      ...r,
+      component_name:     r.items?.name     || '',
+      component_unit:     r.items?.unit     || r.unit || 'Adet',
+      component_category: r.items?.category || '',
+    })));
     setLoading(false);
   }, []);
 
@@ -446,7 +501,7 @@ export default function IsEmri() {
       {/* Form modal */}
       {showForm && (
         <WorkOrderForm
-          items={items} orders={orders} recipes={recipes}
+          items={items} orders={orders} allBom={allBom}
           currentColor={currentColor}
           onClose={() => setShowForm(false)}
           onSaved={loadAll}/>
