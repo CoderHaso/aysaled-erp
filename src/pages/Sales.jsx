@@ -509,16 +509,20 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
       const orderLines = lines.filter(l => l.item_name);
       if (orderLines.length > 0) {
         const items = orderLines.map(l => ({
-          order_id:   orderId,
-          item_id:    l.item_id   || null,
-          item_name:  l.item_name,
-          item_type:  l.item_type || 'product',
-          quantity:   Number(l.quantity)   || 1,
-          unit:       l.unit       || 'Adet',
-          unit_price: Number(l.unit_price) || 0,
-          tax_rate:   Number(l.tax_rate)   || 0,
+          order_id:    orderId,
+          item_id:     l.item_id     || null,
+          item_name:   l.item_name,
+          item_type:   l.item_type   || 'product',
+          quantity:    Number(l.quantity)   || 1,
+          unit:        l.unit        || 'Adet',
+          unit_price:  Number(l.unit_price) || 0,
+          tax_rate:    Number(l.tax_rate)   || 0,
           stock_count: l.stock_count != null ? Number(l.stock_count) : null,
-          notes:      l.notes      || null,
+          notes:       l.notes       || null,
+          // Reçete bilgisi — iş emri + kart gösterimi için
+          recipe_id:   l.recipe_id   || null,
+          recipe_key:  l.recipe_key  || null,
+          recipe_note: l.recipe_note || null,
         }));
         const { error: itemsErr } = await supabase.from('order_items').insert(items);
         if (itemsErr) console.warn('[order_items insert]', itemsErr.message);
@@ -988,12 +992,13 @@ function OrderCard({ order, onEdit, onStatusChange, onSendToWorkOrders, currentC
     ? Math.ceil((new Date(order.due_date) - new Date()) / 86400000)
     : null;
 
-  // Reçeteli satır var mı? (order_items içinde recipe_note dolu olanlar)
   const recipeLines    = (order.items || []).filter(l => l.recipe_note || l.recipe_key);
   const hasRecipeLines = recipeLines.length > 0;
   const onlyMaterial   = !hasRecipeLines;
   const canSendToWO    = hasRecipeLines && order.status !== 'completed' && order.status !== 'cancelled' && !order.work_orders_sent;
   const sentToWO       = order.work_orders_sent;
+  // Tüm iş emirleri tamamlandı mı?
+  const allWOsDone = order.allWOsDone && sentToWO && order.status !== 'completed';
 
   return (
     <motion.div initial={{ opacity:0, y:6 }} animate={{ opacity:1, y:0 }}
@@ -1021,13 +1026,30 @@ function OrderCard({ order, onEdit, onStatusChange, onSendToWorkOrders, currentC
         <p className="text-xs text-slate-500 italic truncate">📝 {order.notes}</p>
       )}
 
+      {/* ÜRETİM TAMAMLANDI banner */}
+      {allWOsDone && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
+          style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)' }}
+          onClick={e => e.stopPropagation()}>
+          <span className="text-lg">🏭</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold text-emerald-400">Tüm üretim tamamlandı!</p>
+            <p className="text-[10px] text-emerald-600">Siparişi tamamlandı olarak işaretleyebilirsiniz.</p>
+          </div>
+          <button onClick={e => { e.stopPropagation(); onStatusChange(order.id, 'completed'); }}
+            className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-white"
+            style={{ background: '#10b981' }}>
+            Tamamla
+          </button>
+        </div>
+      )}
+
       {/* Durum güncelle */}
       <div className="flex gap-1.5 pt-1 flex-wrap" onClick={e => e.stopPropagation()}>
-        {/* Durum butonları: sadece hammadde ise pending/completed, reçeteli ise + iş emri */}
         {Object.entries(STATUS)
           .filter(([k]) => {
             if (k === order.status) return false;
-            if (onlyMaterial && k === 'processing') return false; // sadece hammadde: hazırlanıyor yok
+            if (onlyMaterial && k === 'processing') return false;
             return true;
           })
           .slice(0, 3)
@@ -1039,7 +1061,6 @@ function OrderCard({ order, onEdit, onStatusChange, onSendToWorkOrders, currentC
             </button>
           ))
         }
-        {/* İş Emrine gönder — reçeteli satır varsa */}
         {canSendToWO && (
           <button onClick={e => { e.stopPropagation(); onSendToWorkOrders(order); }}
             className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-bold transition-all"
@@ -1047,7 +1068,7 @@ function OrderCard({ order, onEdit, onStatusChange, onSendToWorkOrders, currentC
             <Send size={9}/> İş Emrine Gönder
           </button>
         )}
-        {sentToWO && (
+        {sentToWO && !allWOsDone && (
           <span className="px-2 py-1 rounded-lg text-[10px] font-bold"
             style={{ background: 'rgba(16,185,129,0.1)', color: '#34d399' }}>
             ✓ İş Emrinde
@@ -1102,18 +1123,19 @@ export default function Sales() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // İş emrine gönder: reçeteli satırlar için work_orders oluştur
+  // İş emrine gönder
   const sendToWorkOrders = async (order) => {
     const recipeLines = (order.items || []).filter(l => l.recipe_note || l.recipe_key);
     if (!recipeLines.length) return;
     try {
       const payload = recipeLines.map(line => ({
-        item_id:  line.item_id,
-        order_id: order.id,
-        quantity: Number(line.quantity || 1),
-        status:   'pending',
-        notes:    line.recipe_note || '',
-        line_key: String(line._key || line.id || ''),
+        item_id:   line.item_id,
+        order_id:  order.id,
+        recipe_id: line.recipe_id || null,
+        quantity:  Number(line.quantity || 1),
+        status:    'pending',
+        notes:     line.recipe_note || line.recipe_key || '',
+        line_key:  String(line.id || ''),
         started_at: null,
       }));
       const { error } = await supabase.from('work_orders').insert(payload);
@@ -1144,14 +1166,19 @@ export default function Sales() {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const [ordRes, custRes, itemRes, recRes] = await Promise.all([
+    const [ordRes, custRes, itemRes, recRes, woRes] = await Promise.all([
       supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }),
       supabase.from('customers').select('id, name, vkntckn, tax_office, phone, email, address, city').order('name'),
       supabase.from('items').select('id, name, item_type, unit, sale_price, purchase_price, stock_count, sku, base_currency, vat_rate, category').order('name'),
-      // product_recipes ile recipe_items kalemlerini birlikte çek
       supabase.from('product_recipes').select('id, product_id, name, tags, recipe_items(id, item_id, item_name, quantity, unit)').order('name'),
+      supabase.from('work_orders').select('id, order_id, status').order('created_at', { ascending: false }),
     ]);
-    setOrders((ordRes.data || []).map(o => ({ ...o, items: o.order_items || [] })));
+    const allWOs = woRes.data || [];
+    setOrders((ordRes.data || []).map(o => {
+      const orderWOs = allWOs.filter(w => w.order_id === o.id);
+      const allWOsDone = orderWOs.length > 0 && orderWOs.every(w => w.status === 'completed');
+      return { ...o, items: o.order_items || [], orderWOs, allWOsDone };
+    }));
     setCustomers(custRes.data || []);
     setAllItems(itemRes.data || []);
     setAllRecipes(recRes.data || []);

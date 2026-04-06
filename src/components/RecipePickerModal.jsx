@@ -3,43 +3,43 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Check, Package, FlaskConical, Plus, Trash2,
   ChevronRight, ArrowLeftRight, Search, AlertCircle,
+  ShoppingBag, DollarSign, Tag,
 } from 'lucide-react';
 
 /**
- * RecipePickerModal — Gelişmiş
- *
- * Sol panel : Etiket filtresi + Reçete listesi + Önizleme
- * Sağ panel : Seçili reçetenin malzemeleri — CRUD (yalnızca bu sipariş için)
- *             · Sil · Değiştir (swap — canlı stok araması) · Ekle
+ * RecipePickerModal
+ * 
+ * Sol : Etiket filtresi + Reçete listesi
+ * Sağ : Seçili reçetenin malzemeleri (tam CRUD, fiyat dahil)
+ *       Swap/Ekle → ItemPickerModal (ayrı modal, scrollable tam liste)
  *
  * Props:
- *  - productId, productName
- *  - allRecipes : [{id, product_id, name, tags[], recipe_items:[{id, item_id, item_name, quantity, unit, purchase_price?}]}]
- *  - allItems   : [{id, name, unit, purchase_price, item_type}]  — swap live search için
- *  - onSelect   : ({recipe_id, recipe_key, recipe_note, components}) => void
- *  - onClose    : () => void
- *  - currentColor
+ *  productId, productName
+ *  allRecipes  : [{id, product_id, name, tags[], recipe_items:[{id,item_id,item_name,quantity,unit}]}]
+ *  allItems    : [{id, name, unit, purchase_price, item_type}]
+ *  onSelect    : ({recipe_id, recipe_key, recipe_note, components}) => void
+ *  onClose     : () => void
+ *  currentColor
  */
 
 const UNITS = ['Adet','Metre','cm','mm','Kg','g','Litre','ml','m²','Rulo','Paket','Kutu','Set','Takım'];
 
 export default function RecipePickerModal({
-  productId, productName, allRecipes, allItems = [], onSelect, onClose, currentColor = '#8b5cf6',
+  productId, productName, allRecipes, allItems = [],
+  onSelect, onClose, currentColor = '#8b5cf6',
 }) {
-  // ── Bu ürüne ait reçeteler ───────────────────────────────────────────────────
   const productRecipes = useMemo(
     () => (allRecipes || []).filter(r => r.product_id === productId),
     [allRecipes, productId]
   );
 
-  // ── State ────────────────────────────────────────────────────────────────────
-  const [activeTag,   setActiveTag]   = useState('Tümü');
-  const [selectedId,  setSelectedId]  = useState(() => productRecipes[0]?.id || null);
-  const [localItems,  setLocalItems]  = useState(() => cloneItems(productRecipes[0]?.recipe_items || []));
-  const [swapIdx,     setSwapIdx]     = useState(null);   // hangi satırın swap dropu açık
-  const [swapSearch,  setSwapSearch]  = useState('');
+  const [activeTag,  setActiveTag]  = useState('Tümü');
+  const [selectedId, setSelectedId] = useState(() => productRecipes[0]?.id || null);
+  const [localItems, setLocalItems] = useState(() => cloneItems(productRecipes[0]?.recipe_items || []));
+  // ItemPickerModal: 'add' | idx (swap) | null
+  const [pickerTarget, setPickerTarget] = useState(null);
 
-  // ── Hesaplamalar reçete ──────────────────────────────────────────────────────
+  /* ── Etiketler ─────────────────────────────────────────────── */
   const allTags = useMemo(() => {
     const s = new Set(['Tümü']);
     productRecipes.forEach(r => (r.tags || []).forEach(t => s.add(t)));
@@ -53,62 +53,56 @@ export default function RecipePickerModal({
 
   const activeRecipe = filteredRecipes.find(r => r.id === selectedId) || filteredRecipes[0];
 
-  // ── Maliyet hesabı ───────────────────────────────────────────────────────────
+  /* ── Maliyet ───────────────────────────────────────────────── */
   const totalCost = useMemo(() => localItems.reduce((sum, it) => {
     const item  = (allItems || []).find(i => i.id === it.item_id) || {};
     const price = it.purchase_price ?? item.purchase_price ?? 0;
     return sum + Number(price) * Number(it.quantity || 1);
   }, 0), [localItems, allItems]);
 
-  // ── Değişti mi? ──────────────────────────────────────────────────────────────
+  /* ── Değişti mi? ───────────────────────────────────────────── */
   const changed = useMemo(() =>
-    JSON.stringify(localItems.map(i => ({ n: i.item_name, q: i.quantity, u: i.unit }))) !==
-    JSON.stringify((activeRecipe?.recipe_items || []).map(i => ({ n: i.item_name, q: i.quantity, u: i.unit }))),
+    JSON.stringify(localItems.map(i => ({ n: i.item_name, q: String(i.quantity), u: i.unit }))) !==
+    JSON.stringify((activeRecipe?.recipe_items || []).map(i => ({ n: i.item_name, q: String(i.quantity), u: i.unit }))),
     [localItems, activeRecipe]
   );
 
-  // ── Reçete seçimi ────────────────────────────────────────────────────────────
+  /* ── Reçete seç ────────────────────────────────────────────── */
   const selectRecipe = useCallback(recipe => {
     setSelectedId(recipe.id);
     setLocalItems(cloneItems(recipe.recipe_items || []));
-    setSwapIdx(null);
   }, []);
 
-  // ── CRUD ─────────────────────────────────────────────────────────────────────
+  /* ── CRUD ──────────────────────────────────────────────────── */
   const updateItem = (idx, key, val) =>
     setLocalItems(prev => prev.map((it, i) => i === idx ? { ...it, [key]: val } : it));
-
-  const removeItem = (idx) => {
-    setSwapIdx(null);
+  const removeItem = idx =>
     setLocalItems(prev => prev.filter((_, i) => i !== idx));
-  };
 
-  const addItem = () => setLocalItems(prev => [
-    ...prev, { _new: true, item_id: null, item_name: '', quantity: 1, unit: 'Adet' }
-  ]);
+  /* ── ItemPickerModal callback ──────────────────────────────── */
+  const handleItemPick = useCallback(({ item, custom }) => {
+    if (pickerTarget === 'add') {
+      setLocalItems(prev => [...prev, {
+        _new: true,
+        item_id:   item?.id   || null,
+        item_name: item?.name || custom || '',
+        unit:      item?.unit || 'Adet',
+        quantity:  1,
+        purchase_price: item?.purchase_price ?? null,
+      }]);
+    } else if (pickerTarget != null) {
+      setLocalItems(prev => prev.map((it, i) => i === pickerTarget ? {
+        ...it,
+        item_id:   item?.id   || null,
+        item_name: item?.name || custom || it.item_name,
+        unit:      item?.unit || it.unit,
+        purchase_price: item?.purchase_price ?? it.purchase_price,
+      } : it));
+    }
+    setPickerTarget(null);
+  }, [pickerTarget]);
 
-  // Swap: bir stok kartını seç ve o satıra uygula
-  const swapItem = (idx, rawItem) => {
-    setLocalItems(prev => prev.map((it, i) => i === idx ? {
-      ...it,
-      item_id:  rawItem.id,
-      item_name: rawItem.name,
-      unit:     rawItem.unit || it.unit,
-      purchase_price: rawItem.purchase_price || 0,
-    } : it));
-    setSwapIdx(null);
-    setSwapSearch('');
-  };
-
-  // Swap search sonuçları
-  const swapResults = useMemo(() => {
-    const q = swapSearch.toLowerCase();
-    return (allItems || [])
-      .filter(i => !q || i.name.toLowerCase().includes(q) || (i.sku || '').toLowerCase().includes(q))
-      .slice(0, 12);
-  }, [allItems, swapSearch]);
-
-  // ── Onayla ──────────────────────────────────────────────────────────────────
+  /* ── Onayla ────────────────────────────────────────────────── */
   const handleConfirm = () => {
     if (!activeRecipe) return;
     const components = localItems
@@ -129,221 +123,268 @@ export default function RecipePickerModal({
     });
   };
 
-  // ── Render ───────────────────────────────────────────────────────────────────
-  return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-3 sm:p-6">
-      <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={onClose}/>
-      <motion.div
-        initial={{ scale: 0.94, opacity: 0, y: 8 }} animate={{ scale: 1, opacity: 1, y: 0 }}
-        className="relative w-full max-w-3xl rounded-2xl overflow-hidden flex flex-col shadow-2xl"
-        style={{ background: '#0b1729', border: '1px solid rgba(148,163,184,0.12)', maxHeight: '92vh' }}>
+  const hasSingleRecipe = productRecipes.length <= 1;
 
-        {/* ─── Header ───────────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between px-5 py-3.5 flex-shrink-0"
-          style={{ borderBottom: '1px solid rgba(148,163,184,0.1)' }}>
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center"
-              style={{ background: `${currentColor}20` }}>
-              <FlaskConical size={15} style={{ color: currentColor }}/>
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: currentColor }}>Reçete Seç</p>
-              <h3 className="text-sm font-bold text-white">{productName}</h3>
-            </div>
+  return (
+    <>
+    <div className="fixed inset-0 z-[199] flex items-center justify-center p-3 sm:p-5">
+      <motion.div
+        className="absolute inset-0 bg-black/85 backdrop-blur-lg"
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+        onClick={pickerTarget !== null ? undefined : onClose}
+      />
+      <motion.div
+        initial={{ scale: 0.92, opacity: 0, y: 10 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+        className="relative w-full flex flex-col rounded-3xl overflow-hidden shadow-2xl"
+        style={{
+          maxWidth: 780, maxHeight: '92vh',
+          background: 'linear-gradient(145deg, #0d1b2e 0%, #0a1628 100%)',
+          border: '1px solid rgba(139,92,246,0.2)',
+          boxShadow: `0 0 60px rgba(139,92,246,0.12), 0 25px 50px rgba(0,0,0,0.5)`,
+        }}>
+
+        {/* ═══ HEADER ═══ */}
+        <div className="flex items-center gap-3 px-5 py-4 flex-shrink-0"
+          style={{
+            background: 'linear-gradient(90deg, rgba(139,92,246,0.12) 0%, transparent 100%)',
+            borderBottom: '1px solid rgba(148,163,184,0.08)',
+          }}>
+          <div className="w-9 h-9 rounded-2xl flex items-center justify-center flex-shrink-0"
+            style={{ background: 'rgba(139,92,246,0.2)', border: '1px solid rgba(139,92,246,0.3)' }}>
+            <FlaskConical size={17} style={{ color: '#c4b5fd' }}/>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/5 transition-colors">
-            <X size={15} className="text-slate-500"/>
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-purple-400">Reçete Seç & Düzenle</p>
+            <h3 className="text-sm font-bold text-white truncate mt-0.5">{productName}</h3>
+          </div>
+          {changed && (
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-full"
+              style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)' }}>
+              <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"/>
+              <p className="text-[10px] font-bold text-amber-400">Siparişe özel</p>
+            </div>
+          )}
+          <button onClick={onClose}
+            className="p-2 rounded-xl hover:bg-white/5 transition-colors flex-shrink-0"
+            style={{ color: '#64748b' }}>
+            <X size={15}/>
           </button>
         </div>
 
-        {/* ─── Boş durum ────────────────────────────────────────────────────── */}
+        {/* ═══ BODY ═══ */}
         {productRecipes.length === 0 ? (
-          <div className="flex-1 flex flex-col items-center justify-center py-14 px-8 text-center">
-            <Package size={38} className="mb-3 text-slate-700"/>
+          <div className="flex-1 flex flex-col items-center justify-center py-16 px-8 text-center">
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
+              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(148,163,184,0.1)' }}>
+              <Package size={24} className="text-slate-700"/>
+            </div>
             <p className="text-sm font-semibold text-slate-400">Bu ürün için reçete tanımlanmamış</p>
-            <p className="text-[11px] text-slate-600 mt-1">Stok → Mamül → Reçeteler sekmesinden ekleyin</p>
+            <p className="text-[11px] text-slate-600 mt-2">Stok → Mamül → Reçeteler sekmesinden ekleyebilirsiniz</p>
           </div>
         ) : (
           <div className="flex flex-1 min-h-0">
 
-            {/* ── SOL PANEL: Filtre + Liste ──────────────────────────────── */}
-            <div className="w-52 flex-shrink-0 flex flex-col overflow-hidden"
-              style={{ borderRight: '1px solid rgba(148,163,184,0.08)' }}>
+            {/* ── SOL: Reçete listesi (birden fazla varsa) ── */}
+            {!hasSingleRecipe && (
+              <div className="w-48 flex-shrink-0 flex flex-col overflow-hidden"
+                style={{ borderRight: '1px solid rgba(148,163,184,0.07)' }}>
 
-              {/* Etiket filtresi */}
-              {allTags.length > 1 && (
-                <div className="px-3 pt-3 pb-2 flex flex-wrap gap-1.5 flex-shrink-0"
-                  style={{ borderBottom: '1px solid rgba(148,163,184,0.08)' }}>
-                  {allTags.map(tag => (
-                    <button key={tag} onClick={() => setActiveTag(tag)}
-                      className="px-2.5 py-1 rounded-full text-[10px] font-bold transition-all"
-                      style={{
-                        background: activeTag === tag ? `${currentColor}25` : 'rgba(255,255,255,0.04)',
-                        color:      activeTag === tag ? currentColor          : '#64748b',
-                        border:     `1px solid ${activeTag === tag ? currentColor + '50' : 'rgba(148,163,184,0.1)'}`,
-                      }}>
-                      {tag}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Reçete listesi */}
-              <div className="flex-1 overflow-y-auto py-2">
-                {filteredRecipes.length === 0 && (
-                  <p className="text-[11px] text-slate-600 text-center py-4 px-3">Bu etiketle reçete yok</p>
+                {/* Etiket filtresi */}
+                {allTags.length > 1 && (
+                  <div className="p-3 flex flex-wrap gap-1.5 flex-shrink-0"
+                    style={{ borderBottom: '1px solid rgba(148,163,184,0.07)' }}>
+                    {allTags.map(tag => (
+                      <button key={tag} onClick={() => setActiveTag(tag)}
+                        className="px-2.5 py-1 rounded-full text-[10px] font-bold transition-all"
+                        style={{
+                          background: activeTag === tag ? `${currentColor}25` : 'rgba(255,255,255,0.03)',
+                          color:      activeTag === tag ? currentColor : '#475569',
+                          border:     `1px solid ${activeTag === tag ? currentColor + '45' : 'rgba(148,163,184,0.1)'}`,
+                        }}>
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
                 )}
-                {filteredRecipes.map(r => {
-                  const isActive = (activeRecipe?.id === r.id);
-                  return (
-                    <button key={r.id} onClick={() => selectRecipe(r)}
-                      className="w-full text-left px-4 py-2.5 flex items-start justify-between gap-2 transition-all"
-                      style={{
-                        background:  isActive ? `${currentColor}15` : 'transparent',
-                        borderLeft: `2px solid ${isActive ? currentColor : 'transparent'}`,
-                      }}>
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold truncate" style={{ color: isActive ? currentColor : '#94a3b8' }}>
-                          {r.name}
-                        </p>
-                        <p className="text-[10px] text-slate-600 mt-0.5">
-                          {(r.recipe_items || []).length} malzeme
-                          {(r.tags || []).length > 0 && <span className="ml-1 opacity-70">· {r.tags.join(', ')}</span>}
-                        </p>
-                      </div>
-                      {isActive && <ChevronRight size={12} style={{ color: currentColor, flexShrink: 0, marginTop: 2 }}/>}
-                    </button>
-                  );
-                })}
+
+                {/* Liste */}
+                <div className="flex-1 overflow-y-auto">
+                  {filteredRecipes.map(r => {
+                    const active = (activeRecipe?.id === r.id);
+                    return (
+                      <button key={r.id} onClick={() => selectRecipe(r)}
+                        className="w-full text-left px-4 py-3 flex items-start gap-2 transition-all group"
+                        style={{
+                          background:  active ? `${currentColor}15` : 'transparent',
+                          borderLeft: `2px solid ${active ? currentColor : 'transparent'}`,
+                        }}>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold truncate"
+                            style={{ color: active ? '#c4b5fd' : '#64748b' }}>
+                            {r.name}
+                          </p>
+                          <p className="text-[10px] mt-0.5 flex items-center gap-1" style={{ color: '#334155'}}>
+                            <Package size={8}/> {(r.recipe_items || []).length} malzeme
+                          </p>
+                        </div>
+                        {active && <ChevronRight size={11} style={{ color: currentColor, marginTop: 2, flexShrink: 0 }}/>}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* ── SAĞ PANEL: Malzeme Düzenleme ──────────────────────────── */}
-            <div className="flex-1 flex flex-col min-w-0">
+            {/* ── SAĞ: Malzeme paneli ── */}
+            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-              {/* Alt başlık + sipariş özel uyarısı */}
-              <div className="px-4 pt-3 pb-2 flex items-center justify-between flex-shrink-0"
-                style={{ borderBottom: '1px solid rgba(148,163,184,0.06)' }}>
+              {/* Reçete başlığı + Ekle */}
+              <div className="px-4 py-3 flex items-center justify-between flex-shrink-0"
+                style={{ borderBottom: '1px solid rgba(148,163,184,0.07)' }}>
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Malzemeler</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-bold" style={{ color: '#e2e8f0' }}>
+                      {activeRecipe?.name}
+                    </p>
+                    {(activeRecipe?.tags || []).map(tag => (
+                      <span key={tag} className="px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1"
+                        style={{ background: `${currentColor}20`, color: currentColor }}>
+                        <Tag size={8}/> {tag}
+                      </span>
+                    ))}
+                  </div>
                   {changed && (
-                    <div className="flex items-center gap-1 mt-0.5">
-                      <div className="w-1.5 h-1.5 rounded-full bg-amber-400"/>
-                      <p className="text-[10px] text-amber-400 font-semibold">Yalnızca bu sipariş için özenleştirildi</p>
-                    </div>
+                    <p className="text-[10px] text-amber-400 mt-0.5 flex items-center gap-1">
+                      <AlertCircle size={9}/> Yalnızca bu sipariş için özelleştirildi
+                    </p>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
-                  {totalCost > 0 && (
-                    <span className="text-[11px] font-bold text-emerald-400">
-                      ₺{totalCost.toFixed(2)}
-                    </span>
-                  )}
-                  <button onClick={addItem}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all"
-                    style={{ background: `${currentColor}18`, color: currentColor }}>
-                    <Plus size={10}/> Ekle
-                  </button>
-                </div>
+                <button onClick={() => setPickerTarget('add')}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all"
+                  style={{
+                    background: `${currentColor}18`,
+                    color: currentColor,
+                    border: `1px solid ${currentColor}35`,
+                  }}>
+                  <Plus size={12}/> Malzeme Ekle
+                </button>
+              </div>
+
+              {/* Tablo başlığı */}
+              <div className="px-4 py-1.5 flex-shrink-0 grid text-[10px] font-bold uppercase tracking-widest text-slate-600"
+                style={{ gridTemplateColumns: '1fr 64px 68px 80px 56px', borderBottom: '1px solid rgba(148,163,184,0.05)' }}>
+                <span>Malzeme</span>
+                <span className="text-center">Miktar</span>
+                <span className="text-center">Birim</span>
+                <span className="text-right">Birim Fiyat</span>
+                <span/>
               </div>
 
               {/* Malzeme satırları */}
-              <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1.5">
+              <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1">
                 {localItems.length === 0 && (
-                  <p className="text-center text-sm text-slate-600 py-6">Malzeme yok</p>
+                  <div className="flex flex-col items-center justify-center py-10 text-slate-600">
+                    <Package size={26} className="mb-2 opacity-30"/>
+                    <p className="text-xs">Malzeme yok — Ekle ile başlayın</p>
+                  </div>
                 )}
                 <AnimatePresence initial={false}>
-                  {localItems.map((it, idx) => (
-                    <motion.div key={idx}
-                      initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}>
-                      <div className="flex items-center gap-2 rounded-xl px-3 py-2"
-                        style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(148,163,184,0.08)' }}>
+                  {localItems.map((it, idx) => {
+                    const stockItem = (allItems || []).find(i => i.id === it.item_id);
+                    const linePrice = Number(it.purchase_price ?? stockItem?.purchase_price ?? 0);
+                    const lineTotal = linePrice * Number(it.quantity || 1);
+                    return (
+                      <motion.div key={idx}
+                        initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="group">
+                        <div className="grid items-center gap-2 px-3 py-2.5 rounded-2xl transition-colors"
+                          style={{
+                            gridTemplateColumns: '1fr 64px 68px 80px 56px',
+                            background: 'rgba(255,255,255,0.025)',
+                            border: '1px solid rgba(148,163,184,0.07)',
+                          }}>
 
-                        {/* İsim */}
-                        <input
-                          value={it.item_name || ''}
-                          onChange={e => updateItem(idx, 'item_name', e.target.value)}
-                          placeholder="Malzeme adı..."
-                          className="flex-1 bg-transparent outline-none text-xs text-slate-200 placeholder-slate-700 min-w-0"/>
+                          {/* Ad + stock bilgisi */}
+                          <div className="min-w-0 flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
+                              style={{ background: it.item_id ? `${currentColor}18` : 'rgba(255,255,255,0.05)' }}>
+                              <ShoppingBag size={10}
+                                style={{ color: it.item_id ? currentColor : '#475569' }}/>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <input
+                                value={it.item_name || ''}
+                                onChange={e => updateItem(idx, 'item_name', e.target.value)}
+                                placeholder="Malzeme adı..."
+                                className="w-full bg-transparent outline-none text-xs font-semibold text-slate-200 placeholder-slate-700"/>
+                              {stockItem && (
+                                <p className="text-[9px] text-slate-600 truncate">
+                                  Stok: {stockItem.stock_count} {stockItem.unit}
+                                </p>
+                              )}
+                            </div>
+                          </div>
 
-                        {/* Miktar */}
-                        <input type="number" min="0" step="0.01"
-                          value={it.quantity}
-                          onChange={e => updateItem(idx, 'quantity', e.target.value)}
-                          className="w-14 bg-transparent outline-none text-xs text-right font-bold border-b text-slate-200"
-                          style={{ borderColor: 'rgba(148,163,184,0.2)' }}/>
+                          {/* Miktar */}
+                          <input type="number" min="0" step="0.01"
+                            value={it.quantity}
+                            onChange={e => updateItem(idx, 'quantity', e.target.value)}
+                            className="w-full bg-transparent outline-none text-xs text-center font-bold text-slate-200 rounded-lg px-1 py-1"
+                            style={{ border: '1px solid rgba(148,163,184,0.12)' }}/>
 
-                        {/* Birim */}
-                        <select value={it.unit || 'Adet'}
-                          onChange={e => updateItem(idx, 'unit', e.target.value)}
-                          className="bg-transparent outline-none text-[11px] text-slate-400"
-                          style={{ maxWidth: 60 }}>
-                          {UNITS.map(u => <option key={u} value={u} style={{ background: '#0b1729' }}>{u}</option>)}
-                        </select>
+                          {/* Birim */}
+                          <select value={it.unit || 'Adet'}
+                            onChange={e => updateItem(idx, 'unit', e.target.value)}
+                            className="bg-transparent outline-none text-[11px] text-center text-slate-400 rounded-lg px-1 py-1 w-full"
+                            style={{ border: '1px solid rgba(148,163,184,0.12)', background: 'rgba(15,23,42,0.5)' }}>
+                            {UNITS.map(u => <option key={u} value={u} style={{ background: '#0d1b2e' }}>{u}</option>)}
+                          </select>
 
-                        {/* Swap butonu */}
-                        <div className="relative">
-                          <button
-                            onClick={() => { setSwapIdx(swapIdx === idx ? null : idx); setSwapSearch(''); }}
-                            title="Malzeme değiştir (stoktan seç)"
-                            className="p-1.5 rounded-lg transition-colors hover:bg-blue-500/10"
-                            style={{ color: swapIdx === idx ? '#60a5fa' : '#475569' }}>
-                            <ArrowLeftRight size={11}/>
-                          </button>
+                          {/* Birim Fiyat */}
+                          <div className="flex items-center justify-end gap-0.5">
+                            <span className="text-[10px] text-slate-600">₺</span>
+                            <input type="number" min="0" step="0.01"
+                              value={it.purchase_price ?? (stockItem?.purchase_price ?? '')}
+                              onChange={e => updateItem(idx, 'purchase_price', e.target.value === '' ? null : Number(e.target.value))}
+                              placeholder={stockItem?.purchase_price ? String(stockItem.purchase_price) : '0'}
+                              className="w-14 bg-transparent outline-none text-xs text-right font-bold text-emerald-400 placeholder-slate-700"/>
+                          </div>
 
-                          {/* Swap dropdown */}
-                          <AnimatePresence>
-                            {swapIdx === idx && (
-                              <motion.div
-                                initial={{ opacity: 0, y: -4, scale: 0.97 }}
-                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                exit={{ opacity: 0, y: -4, scale: 0.97 }}
-                                className="absolute right-0 top-8 z-50 rounded-xl overflow-hidden shadow-2xl"
-                                style={{ width: 240, background: '#0f1e36', border: '1px solid rgba(96,165,250,0.3)' }}>
-                                <div className="flex items-center gap-2 px-3 py-2"
-                                  style={{ borderBottom: '1px solid rgba(148,163,184,0.1)' }}>
-                                  <Search size={11} className="text-slate-500 shrink-0"/>
-                                  <input autoFocus value={swapSearch}
-                                    onChange={e => setSwapSearch(e.target.value)}
-                                    placeholder="Stokta ara..."
-                                    className="bg-transparent outline-none text-xs text-slate-200 flex-1 placeholder-slate-600"/>
-                                </div>
-                                <div className="max-h-44 overflow-y-auto">
-                                  {swapResults.length === 0 && (
-                                    <p className="text-center text-[11px] text-slate-600 py-3">Bulunamadı</p>
-                                  )}
-                                  {swapResults.map(raw => (
-                                    <button key={raw.id} onClick={() => swapItem(idx, raw)}
-                                      className="w-full text-left px-3 py-2 text-xs transition-colors hover:bg-white/5 flex items-center justify-between">
-                                      <span className="font-semibold text-slate-200 truncate">{raw.name}</span>
-                                      <span className="text-slate-500 text-[10px] ml-2 shrink-0">{raw.unit}</span>
-                                    </button>
-                                  ))}
-                                </div>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
+                          {/* Aksiyonlar */}
+                          <div className="flex items-center justify-end gap-1">
+                            <button onClick={() => setPickerTarget(idx)} title="Malzeme değiştir (stoktan)"
+                              className="p-1.5 rounded-lg transition-colors hover:bg-blue-500/10">
+                              <ArrowLeftRight size={10} className="text-blue-400"/>
+                            </button>
+                            <button onClick={() => removeItem(idx)}
+                              className="p-1.5 rounded-lg transition-colors hover:bg-red-500/10">
+                              <Trash2 size={10} className="text-red-400"/>
+                            </button>
+                          </div>
                         </div>
 
-                        {/* Sil */}
-                        <button onClick={() => removeItem(idx)}
-                          className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors flex-shrink-0">
-                          <Trash2 size={11} className="text-red-400"/>
-                        </button>
-                      </div>
-                    </motion.div>
-                  ))}
+                        {/* Satır toplam */}
+                        {linePrice > 0 && (
+                          <p className="text-right text-[10px] text-slate-600 pr-3 -mt-0.5 pb-0.5">
+                            {Number(it.quantity || 1).toFixed(2)} × ₺{linePrice.toFixed(2)} = <span className="text-slate-400 font-semibold">₺{lineTotal.toFixed(2)}</span>
+                          </p>
+                        )}
+                      </motion.div>
+                    );
+                  })}
                 </AnimatePresence>
               </div>
 
-              {/* Değişti uyarısı — alt bannerı */}
+              {/* Sipariş özel uyarı */}
               {changed && (
-                <div className="mx-4 mb-3 flex-shrink-0 flex items-start gap-2 rounded-xl px-3 py-2.5"
-                  style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
-                  <AlertCircle size={13} className="text-amber-400 shrink-0 mt-0.5"/>
+                <div className="mx-4 mb-2 flex-shrink-0 flex items-start gap-2 px-3 py-2 rounded-xl"
+                  style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.18)' }}>
+                  <AlertCircle size={12} className="text-amber-400 shrink-0 mt-0.5"/>
                   <p className="text-[11px] text-amber-300 leading-relaxed">
-                    Bu değişiklikler <strong>yalnızca bu sipariş</strong> için geçerli. Asıl reçete etkilenmez.
+                    Bu değişiklikler <strong>yalnızca bu sipariş</strong> için geçerli — asıl reçete değişmez.
                   </p>
                 </div>
               )}
@@ -351,28 +392,185 @@ export default function RecipePickerModal({
           </div>
         )}
 
-        {/* ─── Footer ───────────────────────────────────────────────────────── */}
+        {/* ═══ FOOTER ═══ */}
         {productRecipes.length > 0 && (
-          <div className="flex items-center justify-between gap-3 px-5 py-3 flex-shrink-0"
-            style={{ borderTop: '1px solid rgba(148,163,184,0.1)' }}>
-            <div className="text-[11px] text-slate-500">
-              {localItems.filter(i => i.item_name?.trim()).length} malzeme
-              {totalCost > 0 && <span className="ml-2 text-emerald-500 font-bold">≈ ₺{totalCost.toFixed(2)}</span>}
+          <div className="flex items-center justify-between gap-3 px-5 py-3.5 flex-shrink-0"
+            style={{ borderTop: '1px solid rgba(148,163,184,0.08)', background: 'rgba(0,0,0,0.2)' }}>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <Package size={12} className="text-slate-600"/>
+                <span className="text-xs text-slate-500">{localItems.filter(i => i.item_name?.trim()).length} malzeme</span>
+              </div>
+              {totalCost > 0 && (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg"
+                  style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)' }}>
+                  <DollarSign size={11} className="text-emerald-400"/>
+                  <span className="text-xs font-bold text-emerald-400">₺{totalCost.toFixed(2)}</span>
+                  <span className="text-[10px] text-emerald-600">toplam maliyet</span>
+                </div>
+              )}
             </div>
             <div className="flex gap-2">
               <button onClick={onClose}
-                className="px-4 py-2 rounded-xl text-xs text-slate-400 transition-all"
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 transition-all hover:text-slate-300"
                 style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(148,163,184,0.1)' }}>
                 İptal
               </button>
               <button onClick={handleConfirm}
                 className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold text-white transition-all"
-                style={{ background: currentColor }}>
-                <Check size={14}/> Uygula
+                style={{
+                  background: `linear-gradient(135deg, ${currentColor}, ${currentColor}cc)`,
+                  boxShadow: `0 4px 15px ${currentColor}40`,
+                }}>
+                <Check size={14}/> Reçeteyi Uygula
               </button>
             </div>
           </div>
         )}
+      </motion.div>
+    </div>
+
+    {/* ═══ ITEM PICKER MODAL ═══ */}
+    <AnimatePresence>
+      {pickerTarget !== null && (
+        <ItemPickerModal
+          allItems={allItems}
+          onPick={handleItemPick}
+          onClose={() => setPickerTarget(null)}
+          currentColor={currentColor}
+          isSwap={pickerTarget !== 'add'}
+        />
+      )}
+    </AnimatePresence>
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ItemPickerModal — Ayrı tam modal: stok araması + kayıtsız seçim
+═══════════════════════════════════════════════════════════════ */
+function ItemPickerModal({ allItems, onPick, onClose, currentColor, isSwap }) {
+  const [search, setSearch] = useState('');
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    if (!q) return (allItems || []).slice(0, 40);
+    return (allItems || []).filter(i =>
+      i.name.toLowerCase().includes(q) ||
+      (i.sku || '').toLowerCase().includes(q)
+    ).slice(0, 40);
+  }, [allItems, search]);
+
+  return (
+    <div className="fixed inset-0 z-[210] flex items-center justify-center p-4">
+      <motion.div
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+        onClick={onClose}/>
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0, y: 8 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        exit={{ scale: 0.95, opacity: 0, y: 8 }}
+        className="relative w-full max-w-md rounded-2xl overflow-hidden flex flex-col"
+        style={{
+          background: '#0c1829',
+          border: '1px solid rgba(139,92,246,0.25)',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
+          maxHeight: '80vh',
+        }}>
+
+        {/* Başlık */}
+        <div className="flex items-center gap-3 px-4 py-3 flex-shrink-0"
+          style={{ borderBottom: '1px solid rgba(148,163,184,0.1)' }}>
+          <Search size={15} style={{ color: currentColor }}/>
+          <div className="flex-1">
+            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: currentColor }}>
+              {isSwap ? 'Malzeme Değiştir' : 'Malzeme Ekle'}
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/5 transition-colors">
+            <X size={14} className="text-slate-500"/>
+          </button>
+        </div>
+
+        {/* Arama */}
+        <div className="px-4 py-3 flex-shrink-0"
+          style={{ borderBottom: '1px solid rgba(148,163,184,0.08)' }}>
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl"
+            style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${currentColor}30` }}>
+            <Search size={12} style={{ color: '#64748b' }}/>
+            <input autoFocus value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Ad veya SKU ile ara..."
+              className="flex-1 bg-transparent outline-none text-sm text-slate-200 placeholder-slate-600"/>
+            {search && (
+              <button onClick={() => setSearch('')} className="text-slate-500 hover:text-slate-300">
+                <X size={12}/>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Liste */}
+        <div className="flex-1 overflow-y-auto">
+          {/* Kayıtsız devam et */}
+          {search.trim() && (
+            <button
+              onClick={() => onPick({ custom: search.trim() })}
+              className="w-full text-left px-4 py-3 flex items-center gap-3 transition-all hover:bg-white/5"
+              style={{ borderBottom: '1px solid rgba(148,163,184,0.07)' }}>
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.25)' }}>
+                <Plus size={14} className="text-amber-400"/>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-amber-300">"{search.trim()}" — Kayıtsız olarak ekle</p>
+                <p className="text-[10px] text-amber-600">Stok bağlantısı olmadan sadece isimle eklenir</p>
+              </div>
+            </button>
+          )}
+
+          {/* Stok listesi */}
+          {filtered.length === 0 && !search.trim() && (
+            <p className="text-center text-sm text-slate-700 py-8">Stok bulunamadı</p>
+          )}
+          {filtered.map(item => (
+            <button key={item.id}
+              onClick={() => onPick({ item })}
+              className="w-full text-left px-4 py-2.5 flex items-center gap-3 transition-all hover:bg-white/4 group"
+              style={{ borderBottom: '1px solid rgba(148,163,184,0.04)' }}>
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: `${currentColor}12`, border: `1px solid ${currentColor}25` }}>
+                <Package size={12} style={{ color: currentColor }}/>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-slate-200 truncate group-hover:text-white">{item.name}</p>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-[10px] text-slate-600">{item.unit}</span>
+                  {item.sku && <span className="text-[10px] text-slate-700">· #{item.sku}</span>}
+                  {item.stock_count != null && (
+                    <span className="text-[10px]"
+                      style={{ color: item.stock_count > 0 ? '#64748b' : '#ef4444' }}>
+                      Stok: {item.stock_count}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {item.purchase_price > 0 && (
+                <span className="text-xs font-bold text-emerald-400 flex-shrink-0">
+                  ₺{Number(item.purchase_price).toFixed(2)}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Footer info */}
+        <div className="px-4 py-2.5 flex-shrink-0 text-center"
+          style={{ borderTop: '1px solid rgba(148,163,184,0.08)' }}>
+          <p className="text-[10px] text-slate-700">
+            {filtered.length} sonuç · Kayıtsız eklemek için adı yazın ve ilk seçeneğe tıklayın
+          </p>
+        </div>
       </motion.div>
     </div>
   );
