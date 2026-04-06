@@ -95,7 +95,7 @@ function StatusBadge({ status, urgent }) {
 }
 
 // ─── Ürün Satırı ──────────────────────────────────────────────────────────────
-function LineRow({ line, idx, allItems, allBom, currency, onChange, onRemove, c, exchangeRate, invoiceToggle }) {
+function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove, c, exchangeRate, invoiceToggle }) {
   const [open, setOpen]             = useState(false);
   const [q, setQ]                   = useState('');
   const [showRecipePicker, setShowRecipePicker] = useState(false);
@@ -104,8 +104,8 @@ function LineRow({ line, idx, allItems, allBom, currency, onChange, onRemove, c,
     (i.sku||'').toLowerCase().includes(q.toLowerCase())
   ).slice(0, 8);
 
-  // BOM: bu ürüne ait bileşenler var mı?
-  const hasRecipe = line.item_id && (allBom || []).some(r => r.parent_id === line.item_id);
+  // product_recipes: bu ürüne ait reçete var mı?
+  const hasRecipe = line.item_id && (allRecipes || []).some(r => r.product_id === line.item_id);
 
   // Fiyat dönüştürme: stok'taki item.base_currency → satış currency
   const convertPrice = (item) => {
@@ -258,13 +258,13 @@ function LineRow({ line, idx, allItems, allBom, currency, onChange, onRemove, c,
       {/* Reçete Picker Modal */}
       {showRecipePicker && (
         <RecipePickerModal
-          itemId={line.item_id}
-          itemName={line.item_name}
-          allBom={allBom || []}
+          productId={line.item_id}
+          productName={line.item_name}
+          allRecipes={allRecipes || []}
           currentColor="#8b5cf6"
           onClose={() => setShowRecipePicker(false)}
           onSelect={(recipeData) => {
-            onChange({ recipe_key: recipeData.recipe_key, recipe_note: recipeData.recipe_note, recipe_components: recipeData.components });
+            onChange({ recipe_id: recipeData.recipe_id, recipe_key: recipeData.recipe_key, recipe_note: recipeData.recipe_note, recipe_components: recipeData.components });
             setShowRecipePicker(false);
           }}/>
       )}
@@ -330,7 +330,7 @@ function Field({ label, type = 'text', value, onChange, suffix, placeholder }) {
 }
 
 // ─── Sipariş Formu ────────────────────────────────────────────────────────────
-function OrderForm({ order, customers, allItems, allBom = [], recipes = [], onClose, onSaved, currentColor, quoteId, quoteRevertFn, markQuoteAccepted }) {
+function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSaved, currentColor, quoteId, quoteRevertFn, markQuoteAccepted }) {
   const isEdit = !!order?.id;
   // ── Local dialog state (OrderForm kendi dialogunu yönetir) ──
   const [dialog, setDialog] = useState({ open: false, title: '', message: '', type: 'confirm', onConfirm: null, loading: false });
@@ -748,10 +748,11 @@ function OrderForm({ order, customers, allItems, allBom = [], recipes = [], onCl
             {lines.map((line, idx) => (
               <LineRow key={line._key} line={line} idx={idx} allItems={allItems}
                 currency={form.currency} exchangeRate={exchangeRate}
-                allBom={allBom} invoiceToggle={invoiceToggle}
+                allRecipes={allRecipes} invoiceToggle={invoiceToggle}
                 onChange={patch => updateLine(idx, patch)}
                 onRemove={() => removeLine(idx)}
                 c={{}} />
+
             ))}
           </div>
           <button onClick={() => setLines(ls => [...ls, blankLine()])}
@@ -1077,8 +1078,7 @@ export default function Sales() {
   const [orders,    setOrders]    = useState([]);
   const [customers, setCustomers] = useState([]);
   const [allItems,  setAllItems]  = useState([]);
-  const [allBom,    setAllBom]    = useState([]);
-  const [recipes,   setRecipes]   = useState([]);
+  const [allRecipes, setAllRecipes] = useState([]);  // product_recipes + recipe_items
   const [loading,   setLoading]   = useState(true);
   const [search,    setSearch]    = useState('');
   const [tab,       setTab]       = useState('current');
@@ -1107,17 +1107,16 @@ export default function Sales() {
     if (!recipeLines.length) return;
     try {
       const payload = recipeLines.map(line => ({
-        item_id:     line.item_id,
-        order_id:    order.id,
-        quantity:    Number(line.quantity || 1),
-        status:      'pending',
-        notes:       line.recipe_note || '',
-        line_key:    String(line._key || line.id || ''),
-        started_at:  null,
+        item_id:  line.item_id,
+        order_id: order.id,
+        quantity: Number(line.quantity || 1),
+        status:   'pending',
+        notes:    line.recipe_note || '',
+        line_key: String(line._key || line.id || ''),
+        started_at: null,
       }));
       const { error } = await supabase.from('work_orders').insert(payload);
       if (error) throw error;
-      // Siparişi 'processing' yap ve work_orders_sent işaretle
       await supabase.from('orders').update({ status: 'processing', work_orders_sent: true }).eq('id', order.id);
       showToast(`${recipeLines.length} iş emri oluşturuldu!`);
       loadAll();
@@ -1144,30 +1143,17 @@ export default function Sales() {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const [ordRes, custRes, itemRes, bomRes] = await Promise.all([
+    const [ordRes, custRes, itemRes, recRes] = await Promise.all([
       supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }),
       supabase.from('customers').select('id, name, vkntckn, tax_office, phone, email, address, city').order('name'),
       supabase.from('items').select('id, name, item_type, unit, sale_price, purchase_price, stock_count, sku, base_currency, vat_rate, category').order('name'),
-      // BOM — basit select, join yok (FK alias sorunu yaşamamak için)
-      supabase.from('bom_recipes').select('id, parent_id, component_id, quantity_required, unit, notes').order('parent_id'),
+      // product_recipes ile recipe_items kalemlerini birlikte çek
+      supabase.from('product_recipes').select('id, product_id, name, tags, recipe_items(id, item_id, item_name, quantity, unit)').order('name'),
     ]);
-
-    const loadedItems = itemRes.data || [];
-    const loadedBom   = bomRes.data || [];
-
     setOrders((ordRes.data || []).map(o => ({ ...o, items: o.order_items || [] })));
     setCustomers(custRes.data || []);
-    setAllItems(loadedItems);
-    // Item isimlerini BOM satırlarına ekle (join yerine client-side enrich)
-    setAllBom(loadedBom.map(r => {
-      const comp = loadedItems.find(i => i.id === r.component_id);
-      return {
-        ...r,
-        component_name:     comp?.name     || '',
-        component_unit:     comp?.unit     || r.unit || 'Adet',
-        component_category: comp?.category || '',
-      };
-    }));
+    setAllItems(itemRes.data || []);
+    setAllRecipes(recRes.data || []);
     setLoading(false);
   }, []);
 
@@ -1441,8 +1427,7 @@ export default function Sales() {
             order={editOrder}
             customers={customers}
             allItems={allItems}
-            allBom={allBom}
-            recipes={recipes}
+            allRecipes={allRecipes}
             currentColor={currentColor}
             // Tekliften sipariş oluşturma: quote_id + geri alınabilir durum
             quoteId={pendingQuoteId}

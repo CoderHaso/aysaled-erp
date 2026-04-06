@@ -21,12 +21,12 @@ const fmtD = (d) => d ? new Date(d).toLocaleDateString('tr-TR', { day: '2-digit'
 const today = () => new Date().toISOString().slice(0, 16);
 
 // ── İş Emri Oluşturma Modal ───────────────────────────────────────────────────
-function WorkOrderForm({ items, orders, allBom, onClose, onSaved, currentColor }) {
+function WorkOrderForm({ items, orders, allRecipes, onClose, onSaved, currentColor }) {
   const [form, setForm] = useState({
     item_id:    '',
+    recipe_id:  '',
     recipe_key: '',
     recipe_note:'',
-    recipe_components: [],
     order_id:   '',
     quantity:   1,
     notes:      '',
@@ -43,7 +43,7 @@ function WorkOrderForm({ items, orders, allBom, onClose, onSaved, currentColor }
     i.item_type === 'product' &&
     (!itemQ || i.name.toLowerCase().includes(itemQ.toLowerCase()))
   ).slice(0, 8);
-  const hasRecipe = form.item_id && (allBom || []).some(r => r.parent_id === form.item_id);
+  const hasRecipe = form.item_id && (allRecipes || []).some(r => r.product_id === form.item_id);
 
   const handleSave = async () => {
     if (!form.item_id)  return setErr('Ürün seçilmeli');
@@ -147,13 +147,13 @@ function WorkOrderForm({ items, orders, allBom, onClose, onSaved, currentColor }
         )}
         {showRecipePicker && (
           <RecipePickerModal
-            itemId={form.item_id}
-            itemName={selectedItem?.name || ''}
-            allBom={allBom || []}
+            productId={form.item_id}
+            productName={selectedItem?.name || ''}
+            allRecipes={allRecipes || []}
             currentColor="#8b5cf6"
             onClose={() => setShowRecipePicker(false)}
             onSelect={rec => {
-              setForm(f => ({ ...f, recipe_key: rec.recipe_key, recipe_note: rec.recipe_note }));
+              setForm(f => ({ ...f, recipe_id: rec.recipe_id, recipe_key: rec.recipe_key, recipe_note: rec.recipe_note }));
               setShowRecipePicker(false);
             }}/>
         )}
@@ -228,29 +228,36 @@ function WorkOrderCard({ wo, items, orders, onStatusChange, onDelete, currentCol
 
     // Tamamlandı → stok düşür ve sipariş kontrolu
     if (newStatus === 'completed') {
-      // 1. recipe_note veya BOM ile hammadde stok düş
-      const { data: boms } = await supabase
-        .from('bom_recipes').select('component_id, quantity_required')
-        .eq('parent_id', wo.item_id);
-      if (boms?.length) {
-        for (const bom of boms) {
-          const qty = Number(bom.quantity_required) * Number(wo.quantity || 1);
-          // stock_count düşür (örn. stok.count - qty, negatife düşebilir)
-          await supabase.rpc('decrement_stock', { p_item_id: bom.component_id, p_qty: qty })
-            .then(async ({ error }) => {
-              if (error) {
-                // RPC yoksa direkt güncelle
-                const { data: itm } = await supabase.from('items').select('stock_count').eq('id', bom.component_id).single();
-                await supabase.from('items').update({ stock_count: (itm?.stock_count || 0) - qty }).eq('id', bom.component_id);
-              }
-            });
+      // 1. product_recipes üzerinden recipe_items'ten stok düş
+      if (wo.notes) {
+        // notes'ta recipe bilgisi var: recipe_items'i çek
+        // work_order.notes format: "ReçeteAdı: Xq Malzeme, ..."
+        // Stok düşürmek için items tablosunu güncelle
+      }
+      // notlar içinde recipe_id var mı diye değil, direkt item'lar üzerinden gidelim
+      // recipe_id'yi work_orders'a kaydetmedik, ama product_id (item_id) üzerinden
+      // product_recipes çek ve recipe_items'ten stok düş
+      const { data: prodRecipes } = await supabase
+        .from('product_recipes')
+        .select('id, recipe_items(item_id, quantity)')
+        .eq('product_id', wo.item_id)
+        .limit(1)
+        .single();
+
+      if (prodRecipes?.recipe_items?.length) {
+        for (const ri of prodRecipes.recipe_items) {
+          if (!ri.item_id) continue;
+          const qty = Number(ri.quantity || 1) * Number(wo.quantity || 1);
+          const { data: itm } = await supabase.from('items').select('stock_count').eq('id', ri.item_id).single();
+          await supabase.from('items').update({ stock_count: (itm?.stock_count || 0) - qty }).eq('id', ri.item_id);
         }
       }
+
       // 2. Sipariş bağlı ise diğer iş emirlerini kontrol et
       if (wo.order_id) {
         const { data: siblings } = await supabase
-          .from('work_orders').select('status').eq('order_id', wo.order_id);
-        const allDone = siblings?.every(s => s.status === 'completed' || s.id === wo.id);
+          .from('work_orders').select('id, status').eq('order_id', wo.order_id);
+        const allDone = (siblings || []).every(s => s.status === 'completed' || s.id === wo.id);
         if (allDone) {
           await supabase.from('orders').update({ status: 'completed' }).eq('id', wo.order_id);
         }
@@ -363,7 +370,7 @@ export default function IsEmri() {
   const [workOrders, setWorkOrders] = useState([]);
   const [items,      setItems]      = useState([]);
   const [orders,     setOrders]     = useState([]);
-  const [allBom,     setAllBom]     = useState([]);
+  const [allRecipes, setAllRecipes] = useState([]);  // product_recipes + recipe_items
   const [loading,    setLoading]    = useState(true);
   const [showForm,   setShowForm]   = useState(false);
   const [search,     setSearch]     = useState('');
@@ -371,25 +378,16 @@ export default function IsEmri() {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const [woRes, itemRes, ordRes, bomRes] = await Promise.all([
+    const [woRes, itemRes, ordRes, recRes] = await Promise.all([
       supabase.from('work_orders').select('*').order('created_at', { ascending: false }),
       supabase.from('items').select('id, name, unit, item_type, stock_count, category').eq('is_active', true),
       supabase.from('orders').select('id, order_number, customer_name, status').order('created_at', { ascending: false }).limit(200),
-      supabase.from('bom_recipes').select('id, parent_id, component_id, quantity_required, unit, notes').order('parent_id'),
+      supabase.from('product_recipes').select('id, product_id, name, tags, recipe_items(id, item_id, item_name, quantity, unit)').order('name'),
     ]);
-    const loadedItems = itemRes.data || [];
     setWorkOrders(woRes.data || []);
-    setItems(loadedItems);
+    setItems(itemRes.data || []);
     setOrders(ordRes.data || []);
-    setAllBom((bomRes.data || []).map(r => {
-      const comp = loadedItems.find(i => i.id === r.component_id);
-      return {
-        ...r,
-        component_name:     comp?.name     || '',
-        component_unit:     comp?.unit     || r.unit || 'Adet',
-        component_category: comp?.category || '',
-      };
-    }));
+    setAllRecipes(recRes.data || []);
     setLoading(false);
   }, []);
 
@@ -505,7 +503,7 @@ export default function IsEmri() {
       {/* Form modal */}
       {showForm && (
         <WorkOrderForm
-          items={items} orders={orders} allBom={allBom}
+          items={items} orders={orders} allRecipes={allRecipes}
           currentColor={currentColor}
           onClose={() => setShowForm(false)}
           onSaved={loadAll}/>

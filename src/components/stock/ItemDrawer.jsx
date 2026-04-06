@@ -172,6 +172,11 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
 
     const payload = {
       ...form,
+      name:           form.name.trim(),
+      sku:            form.sku?.trim()  || null,   // boş → NULL (UNIQUE constraint)
+      location:       form.location?.trim()        || null,
+      supplier_name:  form.supplier_name?.trim()   || null,
+      description:    form.description?.trim()     || null,
       purchase_price:  parseFloat(form.purchase_price)  || 0,
       sale_price:      parseFloat(form.sale_price)      || 0,
       stock_count:     parseFloat(form.stock_count)     || 0,
