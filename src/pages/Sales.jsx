@@ -94,16 +94,35 @@ function StatusBadge({ status, urgent }) {
 }
 
 // ─── Ürün Satırı ──────────────────────────────────────────────────────────────
-function LineRow({ line, idx, allItems, currency, onChange, onRemove, c, exchangeRate }) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ]       = useState('');
+function LineRow({ line, idx, allItems, currency, onChange, onRemove, c, exchangeRate, invoiceToggle, recipes }) {
+  const [open, setOpen]         = useState(false);
+  const [q, setQ]               = useState('');
+  const [recOpen, setRecOpen]   = useState(false);
+  const [recQ, setRecQ]         = useState('');
   const matches = allItems.filter(i =>
     !q || i.name.toLowerCase().includes(q.toLowerCase()) ||
     (i.sku||'').toLowerCase().includes(q.toLowerCase())
   ).slice(0, 8);
 
+  // Reçete eşleştirme: seçili ürüne ait reçeteler
+  const itemRecipes = (recipes || []).filter(r => r.item_id === line.item_id);
+  const recMatches  = itemRecipes.filter(r =>
+    !recQ || r.name.toLowerCase().includes(recQ.toLowerCase())
+  ).slice(0, 6);
+
+  // Fiyat dönüştürme: stok'taki item.base_currency → satış currency
+  const convertPrice = (item) => {
+    const basePrice    = item.sale_price || item.purchase_price || 0;
+    const itemCurrency = item.base_currency || 'TRY';
+    if (itemCurrency === currency) return basePrice; // aynı birim, dönüş gerekmez
+    const rate = exchangeRate?.rate || 1;
+    if (itemCurrency === 'TRY' && currency !== 'TRY') return basePrice / rate; // TRY→yabancı
+    if (itemCurrency !== 'TRY' && currency === 'TRY')  return basePrice * rate; // yabancı→TRY
+    return basePrice; // farklı yabancı para birimleri aralarında yaklaşık
+  };
+
   const total    = (line.quantity || 0) * (line.unit_price || 0);
-  const taxAmt   = total * (line.tax_rate || 0) / 100;
+  const taxAmt   = invoiceToggle ? total * (line.tax_rate || 0) / 100 : 0;
   const stockOk  = line.stock_count == null || line.quantity <= line.stock_count;
 
   return (
@@ -143,29 +162,42 @@ function LineRow({ line, idx, allItems, currency, onChange, onRemove, c, exchang
                   style={{ background: 'rgba(255,255,255,0.07)', color: '#f1f5f9' }} />
               </div>
               <div className="max-h-48 overflow-y-auto">
-                {matches.length === 0 && <p className="px-4 py-3 text-xs text-slate-500">Sonuç yok</p>}
-                
+                {matches.length === 0 && q && <p className="px-4 py-3 text-xs text-slate-500">Sonuç yok</p>}
+
                 {q.trim().length > 0 && (
-                  <div onClick={() => {
-                    onChange({ item_id: null, item_name: q.trim(), item_type: 'product',
-                      unit: 'Adet', unit_price: 0, stock_count: null });
-                    setOpen(false); setQ('');
-                  }}
-                    className="flex items-center gap-2 px-4 py-3 cursor-pointer transition-colors"
-                    style={{ borderBottom: '1px solid rgba(148,163,184,0.06)' }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(16,185,129,0.1)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                    <Plus size={14} className="text-emerald-400" />
-                    <span className="text-sm font-semibold text-emerald-400">"{q}" olarak kayıtsız seç</span>
-                  </div>
+                  <>
+                    {/* Kayıtsız devam et */}
+                    <div onClick={() => {
+                        onChange({ item_id: null, item_name: q.trim(), item_type: 'product',
+                          unit: 'Adet', unit_price: 0, stock_count: null });
+                        setOpen(false); setQ('');
+                      }}
+                      className="flex items-center gap-2 px-4 py-2.5 cursor-pointer transition-colors"
+                      style={{ borderBottom: '1px solid rgba(148,163,184,0.06)' }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(148,163,184,0.07)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <span className="text-sm text-slate-400">📋 <strong className="text-slate-300">&quot;{q}&quot;</strong> — Kayıtsız devam et</span>
+                    </div>
+                    {/* Yeni ürün / hammadde oluştur */}
+                    <div onClick={() => {
+                        window.open('#/stock', '_blank');
+                        setOpen(false); setQ('');
+                      }}
+                      className="flex items-center gap-2 px-4 py-2.5 cursor-pointer transition-colors"
+                      style={{ borderBottom: '1px solid rgba(148,163,184,0.06)' }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(16,185,129,0.08)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <span className="text-sm text-emerald-400">➕ Stok’a Yeni Ürün / Hammadde Ekle</span>
+                    </div>
+                  </>
                 )}
 
                 {matches.map(item => (
                   <div key={item.id} onClick={() => {
-                    const basePrice = item.sale_price || item.purchase_price || 0;
-                    const finalPrice = (exchangeRate?.rate && currency !== 'TRY') ? (basePrice / exchangeRate.rate) : basePrice;
+                    const finalPrice = convertPrice(item);
                     onChange({ item_id: item.id, item_name: item.name, item_type: item.item_type,
-                      unit: item.unit, unit_price: finalPrice, stock_count: item.stock_count || 0 });
+                      unit: item.unit, unit_price: finalPrice, stock_count: item.stock_count || 0,
+                      tax_rate: item.vat_rate ?? 20, item_base_currency: item.base_currency || 'TRY' });
                     setOpen(false); setQ('');
                   }}
                     className="flex items-center justify-between px-4 py-2.5 cursor-pointer transition-colors"
@@ -177,14 +209,20 @@ function LineRow({ line, idx, allItems, currency, onChange, onRemove, c, exchang
                       <p className="text-[10px] text-slate-500">
                         {item.item_type === 'product' ? '⚡' : '🔩'} {item.unit}
                         {item.sku ? ` · ${item.sku}` : ''}
+                        {item.base_currency && item.base_currency !== 'TRY' ? (
+                          <span className="ml-1 text-amber-500 font-bold">{item.base_currency}</span>
+                        ) : null}
                       </p>
                     </div>
                     <div className="text-right">
                       <p className="text-xs font-bold text-slate-300">
-                        {currency === 'TRY' ? fmt(item.sale_price || item.purchase_price, 'TRY') : (
-                          exchangeRate?.rate ? fmt((item.sale_price || item.purchase_price) / exchangeRate.rate, currency) : fmt(item.sale_price || item.purchase_price, 'TRY')
-                        )}
+                        {fmt(item.sale_price || item.purchase_price, item.base_currency || 'TRY')}
                       </p>
+                      {item.base_currency && item.base_currency !== currency && (
+                        <p className="text-[10px] text-amber-400">
+                          ≈ {fmt(convertPrice(item), currency)}
+                        </p>
+                      )}
                       <p className="text-[10px]" style={{ color: item.stock_count > 0 ? '#10b981' : '#ef4444' }}>
                         Stok: {item.stock_count}
                       </p>
@@ -197,6 +235,46 @@ function LineRow({ line, idx, allItems, currency, onChange, onRemove, c, exchang
         </AnimatePresence>
       </div>
 
+      {/* Reçete seçici — sadece kayıtlı mamul seçilince */}
+      {line.item_id && line.item_type === 'product' && itemRecipes.length > 0 && (
+        <div className="relative">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Reçete</p>
+          <div onClick={() => setRecOpen(v => !v)}
+            className="flex items-center justify-between px-3 py-2 rounded-xl cursor-pointer"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(139,92,246,0.2)' }}>
+            <span className="text-sm text-slate-300">
+              {line.recipe_id ? itemRecipes.find(r => r.id === line.recipe_id)?.name || 'Reçete seçildi' : 'Reçete seç...'}
+            </span>
+            <ChevronDown size={12} className="text-purple-400"/>
+          </div>
+          <AnimatePresence>
+            {recOpen && (
+              <motion.div initial={{ opacity:0, y:-4 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0 }}
+                className="absolute z-40 w-full mt-1 rounded-xl overflow-hidden"
+                style={{ background: '#0c1a2e', border: '1px solid rgba(139,92,246,0.25)', boxShadow: '0 12px 30px rgba(0,0,0,0.5)' }}>
+                {itemRecipes.map(r => (
+                  <div key={r.id}
+                    onClick={() => { onChange({ recipe_id: r.id }); setRecOpen(false); }}
+                    className="px-4 py-2.5 cursor-pointer transition-colors"
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(139,92,246,0.1)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                    <p className="text-sm text-purple-200 font-semibold">{r.name}</p>
+                    {r.components && <p className="text-[10px] text-slate-500">{r.components} kalem</p>}
+                  </div>
+                ))}
+                <div onClick={() => { onChange({ recipe_id: null }); setRecOpen(false); }}
+                  className="px-4 py-2 border-t cursor-pointer text-slate-500 text-xs transition-colors"
+                  style={{ borderColor: 'rgba(139,92,246,0.15)' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  Reçetesiz devam et
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
+
       {/* Sayısal alanlar */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <Field label="Miktar" type="number" value={line.quantity}
@@ -204,11 +282,17 @@ function LineRow({ line, idx, allItems, currency, onChange, onRemove, c, exchang
         <Field label="Birim Fiyat" type="number" value={line.unit_price}
           onChange={v => onChange({ unit_price: parseFloat(v) || 0 })} />
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">KDV %</p>
-          <select value={line.tax_rate ?? 18}
+          <p className="text-[10px] font-bold uppercase tracking-wider mb-1"
+            style={{ color: invoiceToggle ? '#94a3b8' : '#475569' }}>KDV %
+            {!invoiceToggle && <span className="ml-1 text-[9px] text-slate-600">(resmi fatura yok)</span>}
+          </p>
+          <select value={invoiceToggle ? (line.tax_rate ?? 20) : 0}
             onChange={e => onChange({ tax_rate: parseFloat(e.target.value) })}
+            disabled={!invoiceToggle}
             className="w-full rounded-xl px-3 py-2 text-sm outline-none"
-            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)', color: '#f1f5f9' }}>
+            style={{ background: invoiceToggle ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)',
+              border: '1px solid rgba(148,163,184,0.15)', color: invoiceToggle ? '#f1f5f9' : '#475569',
+              cursor: invoiceToggle ? 'pointer' : 'not-allowed' }}>
             {TAX_RATES.map(r => <option key={r} value={r}>%{r}</option>)}
           </select>
         </div>
@@ -252,7 +336,7 @@ function Field({ label, type = 'text', value, onChange, suffix, placeholder }) {
 }
 
 // ─── Sipariş Formu ────────────────────────────────────────────────────────────
-function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor, quoteId, quoteRevertFn, markQuoteAccepted }) {
+function OrderForm({ order, customers, allItems, recipes = [], onClose, onSaved, currentColor, quoteId, quoteRevertFn, markQuoteAccepted }) {
   const isEdit = !!order?.id;
   // ── Local dialog state (OrderForm kendi dialogunu yönetir) ──
   const [dialog, setDialog] = useState({ open: false, title: '', message: '', type: 'confirm', onConfirm: null, loading: false });
@@ -271,7 +355,7 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor,
 
   const blankLine = () => ({
     _key: Math.random(), item_id: null, item_name: '', item_type: 'product',
-    quantity: 1, unit: 'Adet', unit_price: 0, tax_rate: 18, stock_count: null, notes: '',
+    quantity: 1, unit: 'Adet', unit_price: 0, tax_rate: 20, stock_count: null, notes: '',
   });
 
   const [form, setForm] = useState({
@@ -588,15 +672,36 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor,
                         {c.vkntckn && <p className="text-[10px] text-slate-500 font-mono">{c.vkntckn}</p>}
                       </div>
                     ))}
-                    {custQ && filteredCusts.length === 0 && (
-                      <div className="px-4 py-2.5 cursor-pointer text-slate-400 text-sm"
-                        onClick={async () => {
-                          const num = await generateOrderNumber(custQ);
-                          setForm(f => ({ ...f, customer_name: custQ, order_number: isEdit ? f.order_number : num }));
-                          setCustOpen(false);
-                        }}>
-                        + "{custQ}" olarak devam et
-                      </div>
+                    {custQ && (
+                      <>
+                        {/* Kayıtsız devam et */}
+                        <div className="px-4 py-2.5 cursor-pointer transition-colors border-t"
+                          style={{ borderColor: 'rgba(148,163,184,0.08)' }}
+                          onClick={async () => {
+                            const num = await generateOrderNumber(custQ);
+                            setForm(f => ({ ...f, customer_name: custQ, customer_id: null, order_number: isEdit ? f.order_number : num }));
+                            setCustOpen(false);
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(148,163,184,0.07)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                          <p className="text-sm text-slate-400">📋 <strong className="text-slate-300">&quot;{custQ}&quot;</strong> — Kayıtsız devam et</p>
+                          <p className="text-[10px] text-slate-600">Sisteme kayıt oluşturulmaz</p>
+                        </div>
+                        {/* Yeni kayıt oluştur */}
+                        <div className="px-4 py-2.5 cursor-pointer transition-colors"
+                          onClick={async () => {
+                            const num = await generateOrderNumber(custQ);
+                            setForm(f => ({ ...f, customer_name: custQ, customer_id: null, order_number: isEdit ? f.order_number : num }));
+                            setCustOpen(false);
+                            // Cariler sayfasına yönlendirme yerine bilgi ver
+                            window.open('#/contacts', '_blank');
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(16,185,129,0.08)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                          <p className="text-sm text-emerald-400">➕ <strong>&quot;{custQ}&quot;</strong> — Yeni kayıt oluştur</p>
+                          <p className="text-[10px] text-slate-600">Cariler sayfası açılır (sipariş devam eder)</p>
+                        </div>
+                      </>
                     )}
                   </motion.div>
                 )}
@@ -649,6 +754,7 @@ function OrderForm({ order, customers, allItems, onClose, onSaved, currentColor,
             {lines.map((line, idx) => (
               <LineRow key={line._key} line={line} idx={idx} allItems={allItems}
                 currency={form.currency} exchangeRate={exchangeRate}
+                invoiceToggle={invoiceToggle} recipes={recipes}
                 onChange={patch => updateLine(idx, patch)}
                 onRemove={() => removeLine(idx)}
                 c={{}} />
@@ -947,6 +1053,7 @@ export default function Sales() {
   const [orders,    setOrders]    = useState([]);
   const [customers, setCustomers] = useState([]);
   const [allItems,  setAllItems]  = useState([]);
+  const [recipes,   setRecipes]   = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [search,    setSearch]    = useState('');
   const [tab,       setTab]       = useState('current');
@@ -971,14 +1078,17 @@ export default function Sales() {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const [ordRes, custRes, itemRes] = await Promise.all([
+    const [ordRes, custRes, itemRes, recRes] = await Promise.all([
       supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }),
       supabase.from('customers').select('id, name, vkntckn, tax_office, phone, email, address, city').order('name'),
-      supabase.from('items').select('id, name, item_type, unit, sale_price, purchase_price, stock_count, sku').order('name'),
+      supabase.from('items').select('id, name, item_type, unit, sale_price, purchase_price, stock_count, sku, base_currency, vat_rate').order('name'),
+      supabase.from('bom_recipes').select('id, parent_id, component_id, quantity_required, unit, notes').order('parent_id'),
     ]);
     setOrders((ordRes.data || []).map(o => ({ ...o, items: o.order_items || [] })));
     setCustomers(custRes.data || []);
     setAllItems(itemRes.data || []);
+    // Reçete listesi: item_id = parent_id (mamul), component bileşenler
+    setRecipes((recRes.data || []).map(r => ({ ...r, item_id: r.parent_id, name: `Reçete (${r.quantity_required} ${r.unit || ''})`.trim() })));
     setLoading(false);
   }, []);
 
@@ -1251,6 +1361,7 @@ export default function Sales() {
             order={editOrder}
             customers={customers}
             allItems={allItems}
+            recipes={recipes}
             currentColor={currentColor}
             // Tekliften sipariş oluşturma: quote_id + geri alınabilir durum
             quoteId={pendingQuoteId}

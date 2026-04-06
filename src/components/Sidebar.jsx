@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import {
   LayoutDashboard, Package, Users, FileDown, FileUp,
   ShoppingCart, TrendingUp, Settings, Palette, Building2,
-  FileText, Image, Wallet, BookOpen
+  FileText, Image, Wallet, BookOpen, Hammer
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { AnimatePresence } from 'framer-motion';
@@ -14,6 +14,7 @@ const MENU = [
   { name: 'Tedarikçiler', icon: Building2,       id: 'suppliers' },
   { name: 'Cariler',      icon: Users,           id: 'contacts'  },
   { name: 'Hesap Defteri',icon: BookOpen,        id: 'ledger'    },
+  { name: 'İş Emirleri',   icon: Hammer,          id: 'is-emri'   },
   { name: 'Kasa',         icon: Wallet,          id: 'kasa'      },
   { name: 'Giden Fat.',   icon: FileUp,          id: 'incoming-invoices' },
   { name: 'Gelen Fat.',   icon: FileDown,        id: 'outgoing-invoices' },

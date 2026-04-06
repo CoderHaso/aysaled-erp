@@ -174,7 +174,7 @@ function BalanceChip({ value, compact = false }) {
 }
 
 // ── Tekil kişi satırı (accordion) ─────────────────────────────────────────────
-function ContactRow({ contact, contactType, color }) {
+function ContactRow({ contact, contactType, color, preloadedBalance }) {
   const [open, setOpen]       = useState(false);
   const [hareketler, setHar]  = useState([]);
   const [loading, setLoading] = useState(false);
@@ -213,7 +213,8 @@ function ContactRow({ contact, contactType, color }) {
     running += (h.borc || 0) - (h.alacak || 0);
     return { ...h, snapshot: running };
   });
-  const totalBalance = running;
+  // Yerel veri yüklenmeden önce parent'ın önceden hesapladığı bakiyeyi göster
+  const totalBalance = hareketler.length > 0 ? running : (preloadedBalance ?? 0);
 
   return (
     <div className="rounded-2xl overflow-hidden transition-all"
@@ -593,7 +594,8 @@ export default function HesapDefteri() {
             <motion.div key={contact.id}
               initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.018 }}>
-              <ContactRow contact={contact} contactType={tab?.type} color={tabColor}/>
+              <ContactRow contact={contact} contactType={tab?.type} color={tabColor}
+                preloadedBalance={balances[contact.id] ?? 0}/>
             </motion.div>
           ))}
         </AnimatePresence>

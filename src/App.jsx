@@ -17,6 +17,7 @@ import Notifications  from './pages/Notifications';
 import Kasa           from './pages/Kasa';
 import Reports        from './pages/Reports';
 import HesapDefteri  from './pages/HesapDefteri';
+import IsEmri        from './pages/IsEmri';
 import { supabase }   from './lib/supabaseClient';
 
 const PAGES = {
@@ -32,6 +33,7 @@ const PAGES = {
   '/media':      { title: 'Medya',          sub: 'Görsel Kütüphanesi · Backblaze B2' },
   '/reports':    { title: 'Raporlar',       sub: 'Finans & Analiz' },
   '/ledger':     { title: 'Hesap Defteri',  sub: 'Cari & Tedarikçi Borç / Alacak Takibi' },
+  '/is-emri':    { title: 'İş Emirleri',      sub: 'Atölye Üretim Takibi' },
   '/settings':   { title: 'Ayarlar',        sub: 'Sistem Yapılandırması' },
   '/notifications': { title: 'Bildirimler', sub: 'Ödeme Hatırlatmaları & Sistem Bildirimleri' },
 };
@@ -49,6 +51,7 @@ const ROUTE_TO_ID = {
   '/media':     'media',
   '/reports':   'reports',
   '/ledger':    'ledger',
+  '/is-emri':   'is-emri',
   '/settings':  'settings',
   '/notifications': 'notifications',
 };
@@ -117,6 +120,7 @@ function AppShell() {
       dashboard: '/', stock: '/stock', suppliers: '/suppliers',
       contacts: '/contacts',
       ledger: '/ledger',
+      'is-emri': '/is-emri',
       kasa: '/kasa',
       notifications: '/notifications',
       'incoming-invoices': '/incoming-invoices',
@@ -210,6 +214,7 @@ function AppShell() {
             <Route path="/kasa"          element={<Kasa />} />
             <Route path="/reports"    element={<Reports />} />
             <Route path="/ledger"     element={<HesapDefteri />} />
+            <Route path="/is-emri"    element={<IsEmri />} />
           </Routes>
         </main>
       </div>
