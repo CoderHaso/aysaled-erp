@@ -1006,8 +1006,8 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
                       <div className="flex items-center gap-1.5 mt-1">
                         <span style={{ color: c.muted }}>{srcIcon(mv.source)}</span>
                         <span className="text-[10px] font-semibold" style={{ color: c.muted }}>{srcLabel(mv.source)}</span>
-                        {mv.stock_after != null && (
-                          <span className="text-[10px] ml-auto" style={{ color: c.muted }}>→ {mv.stock_after} {item.unit}</span>
+                        {mv.quantity_after != null && (
+                          <span className="text-[10px] ml-auto" style={{ color: c.muted }}>→ {mv.quantity_after} {item.unit}</span>
                         )}
                       </div>
                       {mv.note && (

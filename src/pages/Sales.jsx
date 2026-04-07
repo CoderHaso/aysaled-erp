@@ -1615,24 +1615,18 @@ export default function Sales() {
       await supabase.from('orders').update(patch).eq('id', orderId);
 
       const orderItems = order.items || [];
-      for (const line of orderItems) {
-        if (!line.item_id) continue;
+      // Sadece reçetesiz kalemlerin stoğunu düş — reçeteliler iş emrinde halledildi
+      const directLines = orderItems.filter(l => l.item_id && !l.recipe_id && !l.recipe_key);
+      for (const line of directLines) {
         const qty  = Number(line.quantity || 1);
         const note = `Sipariş #${order.order_number} tamamlandı — satış stok düşümü`;
-        // Önce reçete bazlı stok düş, yoksa genel stok
-        const { error: rpcErr } = await supabase.rpc('decrement_stock', {
+        await supabase.rpc('decrement_stock', {
           p_item_id:   line.item_id,
           p_qty:       qty,
           p_source:    'sale',
           p_source_id: orderId,
-          p_recipe_id: line.recipe_id || null,
           p_note:      note,
         });
-        if (rpcErr) {
-          // RPC hata verirse manuel fallback
-          const { data: itm } = await supabase.from('items').select('stock_count').eq('id', line.item_id).single();
-          await supabase.from('items').update({ stock_count: (itm?.stock_count || 0) - qty }).eq('id', line.item_id);
-        }
       }
 
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...patch } : o));
