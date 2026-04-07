@@ -43,7 +43,7 @@ BEGIN
   RETURNING stock_count INTO v_new_count;
 
   INSERT INTO stock_movements(
-    item_id, delta, quantity_before, stock_after,
+    item_id, delta, quantity_before, quantity_after,
     source, source_id, recipe_id, note, "type"
   )
   VALUES(
@@ -95,7 +95,7 @@ BEGIN
   RETURNING stock_count INTO v_new_count;
 
   INSERT INTO stock_movements(
-    item_id, delta, quantity_before, stock_after,
+    item_id, delta, quantity_before, quantity_after,
     source, source_id, recipe_id, note, "type"
   )
   VALUES(
@@ -139,7 +139,7 @@ BEGIN
   IF v_delta = 0 THEN RETURN; END IF;
 
   INSERT INTO stock_movements(
-    item_id, delta, quantity_before, stock_after, source, note, "type"
+    item_id, delta, quantity_before, quantity_after, source, note, "type"
   )
   VALUES(
     p_item_id, v_delta, p_old_qty, p_new_qty,

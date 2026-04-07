@@ -1039,6 +1039,27 @@ function OrderSummaryModal({ order, onConfirm, onCancel, c, currentColor, isDark
             <span className="text-xs font-bold" style={{ color: c.muted }}>GENEL TOPLAM</span>
             <span className="text-lg font-black" style={{ color: '#10b981' }}>{fmt(order.grand_total || subtotal, order.currency)}</span>
           </div>
+          {/* Üretim notları */}
+          {order.woNotes && (
+            <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl"
+              style={{ background:'rgba(16,185,129,0.07)', border:'1px solid rgba(16,185,129,0.2)' }}>
+              <span className="text-[11px] font-black mt-0.5" style={{ color:'#10b981' }}>🏭</span>
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-widest mb-0.5" style={{ color:'#10b981' }}>Üretim Notları</p>
+                <p className="text-[11px]" style={{ color: isDark?'#6ee7b7':'#047857' }}>{order.woNotes}</p>
+              </div>
+            </div>
+          )}
+          {order.woRecipeChanges && (
+            <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl"
+              style={{ background:'rgba(245,158,11,0.07)', border:'1px solid rgba(245,158,11,0.2)' }}>
+              <span className="text-[11px]">🔄</span>
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-widest mb-0.5" style={{ color:'#f59e0b' }}>Reçete Değişiklikleri</p>
+                <p className="text-[11px]" style={{ color: isDark?'#fcd34d':'#92400e' }}>{order.woRecipeChanges}</p>
+              </div>
+            </div>
+          )}
           <p className="text-[10px] text-center" style={{ color: c.muted }}>Onaylandıktan sonra stoklar güncellenecektir.</p>
         </div>
         {/* Footer */}
