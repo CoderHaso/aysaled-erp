@@ -7,6 +7,7 @@ import {
   FileText, User, Calendar, CreditCard, MapPin, StickyNote,
   ChevronRight, CheckCircle2, XCircle, RefreshCw, TrendingUp,
   Receipt, ScanEye, FlaskConical, Send, BookOpen,
+  Eye, RotateCcw, Info, BadgeCheck, BadgeX,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
@@ -992,58 +993,253 @@ function SumRow({ label, value, bold, accent, color }) {
   );
 }
 
-// ─── Sipariş Kartı ────────────────────────────────────────────────────────────
-function OrderCard({ order, onEdit, onStatusChange, onSendToWorkOrders, currentColor, c }) {
-  const urgent = isUrgent(order);
-  const daysLeft = order.due_date
-    ? Math.ceil((new Date(order.due_date) - new Date()) / 86400000)
-    : null;
+// ─── Sipariş Özet Onay Modalı ─────────────────────────────────────────────────
+function OrderSummaryModal({ order, onConfirm, onCancel, c, currentColor, isDark, confirming }) {
+  const items = order.items || [];
+  const subtotal = items.reduce((s, l) => s + (Number(l.quantity||1) * Number(l.unit_price||0)), 0);
+  return (
+    <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onCancel}/>
+      <motion.div initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }}
+        className="relative w-full max-w-md rounded-2xl overflow-hidden shadow-2xl"
+        style={{ background: isDark ? '#0f1e36' : '#ffffff', border: `1px solid ${currentColor}30` }}>
+        {/* Header */}
+        <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${c.border}`, background: `${currentColor}08` }}>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: currentColor }}>Sipariş Özeti</p>
+            <p className="text-sm font-bold mt-0.5" style={{ color: c.text }}>{order.order_number}</p>
+          </div>
+          <button onClick={onCancel} style={{ color: c.muted }}><X size={16}/></button>
+        </div>
+        {/* Body */}
+        <div className="px-5 py-4 space-y-3">
+          <div className="flex items-center justify-between text-xs" style={{ color: c.muted }}>
+            <span className="flex items-center gap-1"><User size={11}/> {order.customer_name}</span>
+            <span className="flex items-center gap-1">
+              {order.is_invoiced ? <BadgeCheck size={11} color="#10b981"/> : <BadgeX size={11} color="#94a3b8"/>}
+              {order.is_invoiced ? 'Faturalı' : 'Faturasız'}
+            </span>
+          </div>
+          {/* Kalemler */}
+          <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${c.border}` }}>
+            {items.map((l, i) => (
+              <div key={i} className="flex items-center justify-between px-3 py-2 text-xs"
+                style={{ borderBottom: i < items.length -1 ? `1px solid ${c.border}` : 'none', color: c.text }}>
+                <span className="truncate flex-1">{l.item_name || 'Ürün'}</span>
+                <span className="ml-2 tabular-nums font-semibold" style={{ color: c.muted }}>{l.quantity} {l.unit}</span>
+                <span className="ml-3 tabular-nums font-bold" style={{ color: '#10b981' }}>
+                  {fmt(Number(l.quantity||1)*Number(l.unit_price||0), order.currency)}
+                </span>
+              </div>
+            ))}
+          </div>
+          {/* Toplam */}
+          <div className="flex items-center justify-between px-1">
+            <span className="text-xs font-bold" style={{ color: c.muted }}>GENEL TOPLAM</span>
+            <span className="text-lg font-black" style={{ color: '#10b981' }}>{fmt(order.grand_total || subtotal, order.currency)}</span>
+          </div>
+          <p className="text-[10px] text-center" style={{ color: c.muted }}>Onaylandıktan sonra stoklar güncellenecektir.</p>
+        </div>
+        {/* Footer */}
+        <div className="px-5 py-3 flex gap-3" style={{ borderTop: `1px solid ${c.border}` }}>
+          <button onClick={onCancel} disabled={confirming}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all"
+            style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', color: c.muted }}>
+            İptal
+          </button>
+          <button onClick={onConfirm} disabled={confirming}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 transition-all"
+            style={{ background: '#10b981', opacity: confirming ? 0.7 : 1 }}>
+            {confirming ? <Loader2 size={14} className="animate-spin"/> : <CheckCircle2 size={14}/>}
+            {confirming ? 'İşleniyor...' : 'Onayla ve Tamamla'}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
 
-  const recipeLines    = (order.items || []).filter(l => l.recipe_note || l.recipe_key);
-  const hasRecipeLines = recipeLines.length > 0;
-  const onlyMaterial   = !hasRecipeLines;
-  const canSendToWO    = hasRecipeLines && order.status !== 'completed' && order.status !== 'cancelled' && !order.work_orders_sent;
-  const sentToWO       = order.work_orders_sent;
-  // Tüm iş emirleri tamamlandı mı?
-  const allWOsDone = order.allWOsDone && sentToWO && order.status !== 'completed';
+// ─── Sipariş Detay Drawer ─────────────────────────────────────────────────────
+function OrderDetailDrawer({ order, onClose, onEdit, onSendToWorkOrders, onStatusChange, onRefund, c, currentColor, isDark, tab }) {
+  const urgent = isUrgent(order);
+  const recipeLines = (order.items || []).filter(l => l.recipe_note || l.recipe_key);
+  const hasRecipe = recipeLines.length > 0;
+  const sentToWO = order.work_orders_sent;
+  const allWOsDone = order.allWOsDone && sentToWO;
+  const isHistory = tab === 'history';
+  const isCancelled = order.status === 'cancelled';
+  const isRefunded = order.status === 'refunded';
 
   return (
-    <motion.div initial={{ opacity:0, y:6 }} animate={{ opacity:1, y:0 }}
-      className="rounded-2xl p-4 space-y-3 cursor-pointer transition-all"
-      style={{ background: c.card, border: `1px solid ${urgent ? 'rgba(239,68,68,0.3)' : c.border}` }}
-      onClick={() => onEdit(order)}>
-      {/* Üst satır */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-mono font-bold" style={{ color: currentColor }}>{order.order_number}</p>
-          <p className="text-sm font-bold text-slate-100 mt-0.5 truncate">{order.customer_name}</p>
+    <div className="fixed inset-0 z-[300] flex justify-end">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose}/>
+      <motion.div initial={{ x: 380 }} animate={{ x: 0 }} exit={{ x: 380 }}
+        transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+        className="relative w-full max-w-md h-full overflow-y-auto flex flex-col shadow-2xl"
+        style={{ background: isDark ? '#0b1729' : '#f8fafc', borderLeft: `1px solid ${c.border}` }}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 flex-shrink-0"
+          style={{ borderBottom: `1px solid ${c.border}`, background: `${currentColor}06` }}>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: currentColor }}>Sipariş Detayı</p>
+            <p className="text-sm font-bold mt-0.5" style={{ color: c.text }}>{order.order_number} · {order.customer_name}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {!isHistory && (
+              <button onClick={() => { onClose(); onEdit(order); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
+                style={{ background: `${currentColor}15`, color: currentColor }}>
+                <Edit3 size={12}/> Düzenle
+              </button>
+            )}
+            <button onClick={onClose} className="p-1.5 rounded-lg" style={{ color: c.muted }}><X size={16}/></button>
+          </div>
         </div>
-        <StatusBadge status={order.status} urgent={urgent} />
+        {/* Status + Invoice badge */}
+        <div className="px-5 py-3 flex items-center gap-2 flex-shrink-0" style={{ borderBottom: `1px solid ${c.border}` }}>
+          <StatusBadge status={order.status} urgent={urgent}/>
+          <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold"
+            style={{ background: order.is_invoiced ? 'rgba(16,185,129,0.1)' : 'rgba(148,163,184,0.1)', color: order.is_invoiced ? '#10b981' : '#94a3b8' }}>
+            {order.is_invoiced ? <BadgeCheck size={11}/> : <BadgeX size={11}/>}
+            {order.is_invoiced ? 'Faturalı' : 'Faturasız'}
+          </span>
+          {urgent && <span className="text-xs font-bold text-red-400">⚡ ACİL</span>}
+        </div>
+        {/* Meta */}
+        <div className="px-5 py-3 grid grid-cols-2 gap-2 flex-shrink-0" style={{ borderBottom: `1px solid ${c.border}` }}>
+          {[['Toplam', fmt(order.grand_total, order.currency), '#10b981'],
+            ['Para Birimi', order.currency, currentColor],
+            ['Teslim Tarihi', fmtD(order.due_date), '#f59e0b'],
+            ['Oluşturulma', fmtD(order.created_at), c.muted]].map(([l,v,col], i) => (
+            <div key={i} className="text-xs">
+              <p style={{ color: c.muted }}>{l}</p>
+              <p className="font-bold mt-0.5" style={{ color: col }}>{v || '—'}</p>
+            </div>
+          ))}
+        </div>
+        {/* Items */}
+        <div className="flex-1 px-5 py-3 overflow-y-auto">
+          <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: c.muted }}>Kalemler</p>
+          <div className="space-y-2">
+            {(order.items || []).map((l, i) => (
+              <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl"
+                style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#ffffff', border: `1px solid ${c.border}` }}>
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                  style={{ background: (l.recipe_note||l.recipe_key) ? 'rgba(139,92,246,0.1)' : `${currentColor}10` }}>
+                  {(l.recipe_note||l.recipe_key) ? <FlaskConical size={14} color="#a78bfa"/> : <Package size={14} style={{ color: currentColor }}/>}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold truncate" style={{ color: c.text }}>{l.item_name || 'Ürün'}</p>
+                  {(l.recipe_note || l.recipe_key) && (
+                    <p className="text-[10px] truncate" style={{ color: '#a78bfa' }}>📋 {l.recipe_key || l.recipe_note}</p>
+                  )}
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-xs font-bold tabular-nums" style={{ color: '#10b981' }}>{fmt(Number(l.quantity||1)*Number(l.unit_price||0), order.currency)}</p>
+                  <p className="text-[10px]" style={{ color: c.muted }}>{l.quantity} {l.unit}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          {order.notes && (
+            <div className="mt-3 p-3 rounded-xl" style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#fff', border: `1px solid ${c.border}` }}>
+              <p className="text-[10px] font-bold uppercase" style={{ color: c.muted }}>Not</p>
+              <p className="text-xs mt-1" style={{ color: c.text }}>{order.notes}</p>
+            </div>
+          )}
+        </div>
+        {/* Actions footer */}
+        {isCancelled && !isRefunded && (
+          <div className="px-5 py-4 flex-shrink-0" style={{ borderTop: `1px solid ${c.border}` }}>
+            <button onClick={() => onRefund(order)}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all"
+              style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.25)' }}>
+              <RotateCcw size={15}/> İade Et (Stokları Geri Yükle)
+            </button>
+          </div>
+        )}
+        {isRefunded && (
+          <div className="px-5 py-4 flex-shrink-0" style={{ borderTop: `1px solid ${c.border}` }}>
+            <div className="flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-semibold"
+              style={{ background: 'rgba(16,185,129,0.08)', color: '#10b981' }}>
+              <CheckCircle2 size={14}/> İade Tamamlandı — Stoklar Geri Yüklendi
+            </div>
+          </div>
+        )}
+      </motion.div>
+    </div>
+  );
+}
+
+// ─── Sipariş Kartı ────────────────────────────────────────────────────────────
+function OrderCard({ order, onView, onEdit, onStatusChange, onSendToWorkOrders, onConfirmComplete, currentColor, c, isDark, tab }) {
+  const urgent = isUrgent(order);
+  const daysLeft = order.due_date ? Math.ceil((new Date(order.due_date) - new Date()) / 86400000) : null;
+  const recipeLines = (order.items || []).filter(l => l.recipe_note || l.recipe_key);
+  const hasRecipe = recipeLines.length > 0;
+  const sentToWO = order.work_orders_sent;
+  const allWOsDone = order.allWOsDone && sentToWO && order.status !== 'completed';
+  const isHistory = tab === 'history';
+
+  const BtnStyle = (color, bg) => ({
+    background: `linear-gradient(135deg, ${bg}, ${color}25)`,
+    color,
+    border: `1px solid ${color}45`,
+    boxShadow: `0 2px 6px ${color}18, inset 0 1px 0 ${color}20`,
+    transition: 'all 0.15s ease',
+  });
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+      className="rounded-2xl overflow-hidden transition-all cursor-pointer"
+      style={{ background: c.card, border: `1px solid ${urgent ? 'rgba(239,68,68,0.3)' : c.border}` }}
+      onClick={() => onView(order)}>
+      {/* Üst satır */}
+      <div className="p-4 space-y-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-mono font-bold" style={{ color: currentColor }}>{order.order_number}</p>
+            <p className="text-sm font-bold mt-0.5 truncate" style={{ color: c.text }}>{order.customer_name}</p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {/* Faturalı/Faturasız badge */}
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-bold"
+              style={{ background: order.is_invoiced ? 'rgba(16,185,129,0.1)' : 'rgba(148,163,184,0.08)', color: order.is_invoiced ? '#10b981' : '#64748b' }}>
+              {order.is_invoiced ? <BadgeCheck size={9}/> : <BadgeX size={9}/>}
+              {order.is_invoiced ? 'Faturalı' : 'Faturasız'}
+            </span>
+            {!isHistory && (
+              <button onClick={e => { e.stopPropagation(); onEdit(order); }}
+                className="p-1.5 rounded-lg transition-all"
+                style={{ color: c.muted }}
+                onMouseEnter={e => e.currentTarget.style.background = `${currentColor}15`}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                <Edit3 size={13}/>
+              </button>
+            )}
+            <StatusBadge status={order.status} urgent={urgent}/>
+          </div>
+        </div>
+        {/* Bilgi çipleri */}
+        <div className="grid grid-cols-3 gap-1.5">
+          <InfoChip icon={CreditCard} label="Toplam" value={fmt(order.grand_total, order.currency)} color="#10b981" c={c}/>
+          <InfoChip icon={Calendar} label="Teslim" value={fmtD(order.due_date)}
+            color={daysLeft != null && daysLeft <= 3 ? '#ef4444' : daysLeft != null && daysLeft <= 7 ? '#f59e0b' : c.muted} c={c}/>
+          <InfoChip icon={Package} label="Oluşturma" value={fmtD(order.created_at)} c={c}/>
+        </div>
+        {order.notes && <p className="text-[10px] italic truncate" style={{ color: c.muted }}>📝 {order.notes}</p>}
       </div>
 
-      {/* Orta */}
-      <div className="grid grid-cols-3 gap-2">
-        <InfoChip icon={CreditCard} label="Toplam" value={fmt(order.grand_total, order.currency)} color="#34d399" />
-        <InfoChip icon={Calendar} label="Teslim" value={fmtD(order.due_date)}
-          color={daysLeft != null && daysLeft <= 3 ? '#ef4444' : (daysLeft != null && daysLeft <= 7 ? '#f59e0b' : '#94a3b8')} />
-        <InfoChip icon={Package} label="Oluşturma" value={fmtD(order.created_at)} />
-      </div>
-
-      {order.notes && (
-        <p className="text-xs text-slate-500 italic truncate">📝 {order.notes}</p>
-      )}
-
-      {/* ÜRETİM TAMAMLANDI banner */}
+      {/* Üretim tamamlandı banner */}
       {allWOsDone && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
+        <div className="mx-3 mb-2 flex items-center gap-2 px-3 py-2 rounded-xl"
           style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)' }}
           onClick={e => e.stopPropagation()}>
-          <span className="text-lg">🏭</span>
+          <span>🏭</span>
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-bold text-emerald-400">Tüm üretim tamamlandı!</p>
-            <p className="text-[10px] text-emerald-600">Siparişi tamamlandı olarak işaretleyebilirsiniz.</p>
+            <p className="text-[10px] font-bold text-emerald-400">Tüm üretim tamamlandı!</p>
           </div>
-          <button onClick={e => { e.stopPropagation(); onStatusChange(order.id, 'completed'); }}
+          <button onClick={e => { e.stopPropagation(); onConfirmComplete(order); }}
             className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-white"
             style={{ background: '#10b981' }}>
             Tamamla
@@ -1051,49 +1247,85 @@ function OrderCard({ order, onEdit, onStatusChange, onSendToWorkOrders, currentC
         </div>
       )}
 
-      {/* Durum güncelle */}
-      <div className="flex gap-1.5 pt-1 flex-wrap" onClick={e => e.stopPropagation()}>
-        {Object.entries(STATUS)
-          .filter(([k]) => {
-            if (k === order.status) return false;
-            if (onlyMaterial && k === 'processing') return false;
-            return true;
-          })
-          .slice(0, 3)
-          .map(([key, val]) => (
-            <button key={key} onClick={() => onStatusChange(order.id, key)}
-              className="flex-1 py-1 rounded-lg text-[10px] font-bold transition-all"
-              style={{ background: val.bg, color: val.color }}>
-              {val.label}
-            </button>
-          ))
-        }
-        {canSendToWO && (
-          <button onClick={e => { e.stopPropagation(); onSendToWorkOrders(order); }}
-            className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-bold transition-all"
-            style={{ background: 'rgba(59,130,246,0.12)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.25)' }}>
-            <Send size={9}/> İş Emrine Gönder
-          </button>
-        )}
-        {sentToWO && !allWOsDone && (
-          <span className="px-2 py-1 rounded-lg text-[10px] font-bold"
-            style={{ background: 'rgba(16,185,129,0.1)', color: '#34d399' }}>
-            ✓ İş Emrinde
-          </span>
-        )}
-      </div>
+      {/* Aksiyonlar — sadece mevcut/acil sekmelerde */}
+      {!isHistory && (
+        <div className="px-3 pb-3 flex gap-2 flex-wrap" onClick={e => e.stopPropagation()}>
+          {hasRecipe ? (
+            /* Reçeteli sipariş — sadece iş emri akışı */
+            <>
+              {!sentToWO && order.status !== 'completed' && order.status !== 'cancelled' && (
+                <button onClick={e => { e.stopPropagation(); onSendToWorkOrders(order); }}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 active:translate-y-px"
+                  style={BtnStyle('#3b82f6', 'rgba(59,130,246,0.08)')}
+                  onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-1px)'}
+                  onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
+                  <Send size={11}/> İş Emrine Gönder
+                </button>
+              )}
+              {sentToWO && !allWOsDone && (
+                <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
+                  style={{ background: 'rgba(16,185,129,0.08)', color: '#10b981' }}>
+                  <CheckCircle2 size={11}/> İş Emrinde
+                </span>
+              )}
+              {order.status !== 'cancelled' && (
+                <button onClick={() => onStatusChange(order.id, 'cancelled')}
+                  className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-95"
+                  style={BtnStyle('#ef4444', 'rgba(239,68,68,0.06)')}
+                  onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-1px)'}
+                  onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
+                  <XCircle size={11}/> İptal
+                </button>
+              )}
+            </>
+          ) : (
+            /* Reçetesiz sipariş — toggle + tamamla */
+            <>
+              {order.status !== 'completed' && order.status !== 'cancelled' && (
+                <button
+                  onClick={() => onStatusChange(order.id, order.status === 'pending' ? 'processing' : 'pending')}
+                  className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-95"
+                  style={BtnStyle(order.status === 'processing' ? '#f59e0b' : '#3b82f6', order.status === 'processing' ? 'rgba(245,158,11,0.06)' : 'rgba(59,130,246,0.06)')}
+                  onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-1px)'}
+                  onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
+                  {order.status === 'processing' ? <Clock size={11}/> : <Zap size={11}/>}
+                  {order.status === 'processing' ? 'Beklemede' : 'Hazırlanıyor'}
+                </button>
+              )}
+              {order.status !== 'completed' && order.status !== 'cancelled' && (
+                <button onClick={() => onConfirmComplete(order)}
+                  className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 flex-1"
+                  style={BtnStyle('#10b981', 'rgba(16,185,129,0.08)')}
+                  onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-1px)'}
+                  onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
+                  <CheckCircle2 size={11}/> Tamamla
+                </button>
+              )}
+              {order.status !== 'cancelled' && order.status !== 'completed' && (
+                <button onClick={() => onStatusChange(order.id, 'cancelled')}
+                  className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-95"
+                  style={BtnStyle('#ef4444', 'rgba(239,68,68,0.06)')}
+                  onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-1px)'}
+                  onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
+                  <XCircle size={11}/> İptal
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </motion.div>
   );
 }
 
-function InfoChip({ icon: Icon, label, value, color }) {
+function InfoChip({ icon: Icon, label, value, color, c }) {
   return (
-    <div className="rounded-xl p-2" style={{ background: 'rgba(255,255,255,0.04)' }}>
+    <div className="rounded-xl p-2" style={{ background: c ? (c.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)') : 'rgba(255,255,255,0.04)' }}>
       <div className="flex items-center gap-1 mb-0.5">
-        <Icon size={9} className="text-slate-600" />
-        <p className="text-[9px] text-slate-600 uppercase tracking-wide">{label}</p>
+        <Icon size={9} style={{ color: c?.muted || '#64748b' }}/>
+        <p className="text-[9px] uppercase tracking-wide" style={{ color: c?.muted || '#64748b' }}>{label}</p>
       </div>
-      <p className="text-xs font-bold truncate" style={{ color: color || '#f1f5f9' }}>{value}</p>
+      <p className="text-xs font-bold truncate" style={{ color: color || c?.text || '#f1f5f9' }}>{value}</p>
     </div>
   );
 }
@@ -1114,6 +1346,9 @@ export default function Sales() {
   const [showForm,  setShowForm]  = useState(false);
   const [editOrder, setEditOrder] = useState(null);
   const [toast,     setToast]     = useState(null);
+  const [detailOrder,    setDetailOrder]    = useState(null);   // sağdan açılan detay
+  const [confirmOrder,   setConfirmOrder]   = useState(null);   // tamamlama onay modalı
+  const [confirming,     setConfirming]     = useState(false);  // onay işlemi
   // Tekliften sipariş oluşturma için durum yönetimi
   const [pendingQuoteId,       setPendingQuoteId]       = useState(null);
   const [pendingQuoteOriginal, setPendingQuoteOriginal] = useState(null); // geri alınabilir durum
@@ -1364,13 +1599,36 @@ export default function Sales() {
     }
     if (tab === 'current')  return list.filter(o => o.status === 'pending' || o.status === 'processing');
     if (tab === 'urgent')   return list.filter(o => isUrgent(o));
-    if (tab === 'history')  return list.filter(o => o.status === 'completed' || o.status === 'cancelled');
+    if (tab === 'history')  return list.filter(o => o.status === 'cancelled' || o.status === 'refunded');
     return list;
   }, [orders, tab, search]);
 
   const urgentCount  = orders.filter(isUrgent).length;
   const currentCount = orders.filter(o => o.status === 'pending' || o.status === 'processing').length;
-  const historyCount = orders.filter(o => o.status === 'completed' || o.status === 'cancelled').length;
+  const historyCount = orders.filter(o => o.status === 'cancelled' || o.status === 'refunded').length;
+
+  // Sipariş tamamlama onayı
+  const confirmComplete = async (order) => {
+    setConfirming(true);
+    await updateStatus(order.id, 'completed');
+    setConfirmOrder(null);
+    setDetailOrder(null);
+    setConfirming(false);
+  };
+
+  // İade
+  const handleRefund = async (order) => {
+    try {
+      const { error } = await supabase.rpc('refund_order_stock', { p_order_id: order.id });
+      if (error) throw error;
+      pageCache.invalidate('items');
+      showToast('İade tamamlandı — stoklar geri yüklendi ✓');
+      setDetailOrder(null);
+      loadAll();
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
+  };
   const totalRevenue = orders.filter(o => o.status === 'completed').reduce((s, o) => s + o.grand_total, 0);
 
   const TABS = [
@@ -1476,9 +1734,13 @@ export default function Sales() {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {filtered.map(order => (
               <OrderCard key={order.id} order={order}
+                tab={tab}
+                isDark={isDark}
+                onView={o => setDetailOrder(o)}
                 onEdit={openEdit}
                 onStatusChange={updateStatus}
                 onSendToWorkOrders={sendToWorkOrders}
+                onConfirmComplete={o => setConfirmOrder(o)}
                 currentColor={currentColor}
                 c={c} />
             ))}
@@ -1526,6 +1788,39 @@ export default function Sales() {
               loadAll(); 
               showToast(editOrder?.id ? 'Sipariş güncellendi ✓' : 'Sipariş oluşturuldu ✓'); 
             }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Sipariş Detay Drawer */}
+      <AnimatePresence>
+        {detailOrder && (
+          <OrderDetailDrawer
+            order={detailOrder}
+            tab={tab}
+            c={c}
+            isDark={isDark}
+            currentColor={currentColor}
+            onClose={() => setDetailOrder(null)}
+            onEdit={openEdit}
+            onSendToWorkOrders={sendToWorkOrders}
+            onStatusChange={updateStatus}
+            onRefund={handleRefund}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Tamamlama Onay Modalı */}
+      <AnimatePresence>
+        {confirmOrder && (
+          <OrderSummaryModal
+            order={confirmOrder}
+            c={c}
+            isDark={isDark}
+            currentColor={currentColor}
+            confirming={confirming}
+            onConfirm={() => confirmComplete(confirmOrder)}
+            onCancel={() => setConfirmOrder(null)}
           />
         )}
       </AnimatePresence>
