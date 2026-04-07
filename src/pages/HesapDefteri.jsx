@@ -71,22 +71,24 @@ function HareketModal({ contact, contactType, onClose, onSaved }) {
     finally { setSaving(false); }
   };
 
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
   const inp = 'w-full px-3 py-2 text-sm rounded-xl outline-none';
-  const iS  = { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(148,163,184,0.18)', color: '#f1f5f9' };
+  const iS  = { background: isDark ? 'rgba(255,255,255,0.06)' : '#f1f5f9', border: `1px solid ${isDark ? 'rgba(148,163,184,0.18)' : '#e2e8f0'}`, color: isDark ? '#f1f5f9' : '#1e293b' };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}/>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         className="relative w-full max-w-md rounded-2xl p-5 space-y-4"
-        style={{ background: '#0f1f38', border: '1px solid rgba(148,163,184,0.12)' }}>
+        style={{ background: isDark ? '#0f1f38' : '#ffffff', border: `1px solid ${isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0'}` }}>
 
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Yeni Hareket</p>
-            <h3 className="text-sm font-bold text-white mt-0.5">{contact.name}</h3>
+            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>Yeni Hareket</p>
+            <h3 className="text-sm font-bold mt-0.5" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{contact.name}</h3>
           </div>
-          <button onClick={onClose}><X size={16} className="text-slate-500"/></button>
+          <button onClick={onClose}><X size={16} style={{ color: '#94a3b8' }}/></button>
         </div>
 
         {/* Alacak / Verecek */}
@@ -143,8 +145,8 @@ function HareketModal({ contact, contactType, onClose, onSaved }) {
         {err && <p className="text-xs text-red-400 flex items-center gap-1"><AlertCircle size={12}/>{err}</p>}
 
         <div className="flex gap-2 pt-1">
-          <button onClick={onClose} className="flex-1 py-2 rounded-xl text-sm text-slate-400"
-            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)' }}>
+          <button onClick={onClose} className="flex-1 py-2 rounded-xl text-sm"
+            style={{ color: isDark ? '#94a3b8' : '#64748b', background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}` }}>
             İptal
           </button>
           <button onClick={handleSave} disabled={saving}
@@ -219,20 +221,22 @@ function ContactRow({ contact, contactType, color, preloadedBalance }) {
   return (
     <div className="rounded-2xl overflow-hidden transition-all"
       style={{
-        border: open ? `1px solid ${color}30` : '1px solid rgba(148,163,184,0.08)',
-        background: 'rgba(255,255,255,0.025)',
+        border: open ? `1px solid ${color}30` : `1px solid ${isDark ? 'rgba(148,163,184,0.08)' : '#e2e8f0'}`,
+        background: isDark ? 'rgba(255,255,255,0.025)' : '#fafbfc',
       }}>
 
       {/* Başlık satırı */}
       <button onClick={handleOpen}
-        className="w-full flex items-center gap-3 px-4 py-3.5 hover:bg-white/5 transition-colors text-left">
+        className="w-full flex items-center gap-3 px-4 py-3.5 transition-colors text-left"
+        onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)'}
+        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
         <div className="w-8 h-8 rounded-xl flex items-center justify-center font-bold text-sm shrink-0"
           style={{ background: color + '20', color }}>
           {(contact.name || '?')[0].toUpperCase()}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-slate-100 truncate">{contact.name}</p>
-          <p className="text-[11px] text-slate-500 truncate">{contact.phone || contact.vkntckn || '—'}</p>
+          <p className="text-sm font-semibold truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{contact.name}</p>
+          <p className="text-[11px] truncate" style={{ color: '#64748b' }}>{contact.phone || contact.vkntckn || '—'}</p>
         </div>
         <BalanceChip value={totalBalance}/>
         <ChevronDown size={15} className="text-slate-500 shrink-0 transition-transform"
@@ -244,19 +248,19 @@ function ContactRow({ contact, contactType, color, preloadedBalance }) {
         {open && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }}>
-            <div className="px-3 pb-4" style={{ borderTop: '1px solid rgba(148,163,184,0.08)' }}>
+            <div className="px-3 pb-4" style={{ borderTop: `1px solid ${isDark ? 'rgba(148,163,184,0.08)' : '#e2e8f0'}` }}>
 
               {loading && (
                 <div className="flex items-center justify-center py-8 gap-2">
-                  <Loader2 size={16} className="animate-spin text-blue-400"/>
-                  <span className="text-xs text-slate-400">Yükleniyor…</span>
+                  <Loader2 size={16} className="animate-spin" style={{ color: '#3b82f6' }}/>
+                  <span className="text-xs" style={{ color: '#64748b' }}>Yükleniyor…</span>
                 </div>
               )}
 
               {!loading && rows.length === 0 && (
                 <div className="text-center py-8">
-                  <Receipt size={26} className="mx-auto mb-2 opacity-20 text-slate-400"/>
-                  <p className="text-xs text-slate-500">Henüz hareket yok</p>
+                  <Receipt size={26} className="mx-auto mb-2 opacity-20" style={{ color: '#94a3b8' }}/>
+                  <p className="text-xs" style={{ color: '#64748b' }}>Henüz hareket yok</p>
                 </div>
               )}
 
@@ -273,12 +277,12 @@ function ContactRow({ contact, contactType, color, preloadedBalance }) {
                       <col style={{ width: '28px' }}/>  {/* Sil */}
                     </colgroup>
                     <thead>
-                      <tr style={{ borderBottom: '1px solid rgba(148,163,184,0.1)' }}>
-                        <th className="text-left pb-2 pt-1 px-1 text-[10px] font-bold uppercase tracking-wider text-slate-600">Tarih</th>
-                        <th className="text-left pb-2 pt-1 px-1 text-[10px] font-bold uppercase tracking-wider text-slate-600">Başlık</th>
-                        <th className="text-right pb-2 pt-1 px-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700">Alacak</th>
-                        <th className="text-right pb-2 pt-1 px-1 text-[10px] font-bold uppercase tracking-wider text-red-700">Verecek</th>
-                        <th className="text-right pb-2 pt-1 px-1 text-[10px] font-bold uppercase tracking-wider text-slate-600">Bakiye</th>
+                      <tr style={{ borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.1)' : '#e2e8f0'}` }}>
+                        <th className="text-left pb-2 pt-1 px-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: '#64748b' }}>Tarih</th>
+                        <th className="text-left pb-2 pt-1 px-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: '#64748b' }}>Başlık</th>
+                        <th className="text-right pb-2 pt-1 px-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: '#059669' }}>Alacak</th>
+                        <th className="text-right pb-2 pt-1 px-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: '#dc2626' }}>Verecek</th>
+                        <th className="text-right pb-2 pt-1 px-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: '#64748b' }}>Bakiye</th>
                         <th/>
                       </tr>
                     </thead>
@@ -290,23 +294,26 @@ function ContactRow({ contact, contactType, color, preloadedBalance }) {
                           <motion.tr key={h.id}
                             initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                             transition={{ delay: i * 0.025 }}
-                            className="group border-b border-slate-800/40 hover:bg-white/[0.03] transition-colors">
-                            <td className="py-2 px-1 text-slate-400 whitespace-nowrap text-[11px]">
+                            className="group transition-colors"
+                            style={{ borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.06)' : '#f1f5f9'}` }}
+                            onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.015)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                            <td className="py-2 px-1 whitespace-nowrap text-[11px]" style={{ color: '#64748b' }}>
                               {fmtD(h.tarih)}
                             </td>
                             <td className="py-2 px-1 overflow-hidden">
-                              <p className="text-slate-200 font-medium truncate text-[12px]">{h.baslik}</p>
-                              {h.aciklama && <p className="text-slate-600 truncate text-[10px]">{h.aciklama}</p>}
+                              <p className="font-medium truncate text-[12px]" style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}>{h.baslik}</p>
+                              {h.aciklama && <p className="truncate text-[10px]" style={{ color: '#94a3b8' }}>{h.aciklama}</p>}
                             </td>
                             <td className="py-2 px-1 font-mono text-right whitespace-nowrap">
                               {h.borc > 0
-                                ? <span className="text-emerald-400 text-[12px]">{fmtN(h.borc)}</span>
-                                : <span className="text-slate-700 text-[11px]">—</span>}
+                                ? <span className="text-[12px]" style={{ color: '#10b981' }}>{fmtN(h.borc)}</span>
+                                : <span className="text-[11px]" style={{ color: '#94a3b8' }}>—</span>}
                             </td>
                             <td className="py-2 px-1 font-mono text-right whitespace-nowrap">
                               {h.alacak > 0
-                                ? <span className="text-red-400 text-[12px]">{fmtN(h.alacak)}</span>
-                                : <span className="text-slate-700 text-[11px]">—</span>}
+                                ? <span className="text-[12px]" style={{ color: '#ef4444' }}>{fmtN(h.alacak)}</span>
+                                : <span className="text-[11px]" style={{ color: '#94a3b8' }}>—</span>}
                             </td>
                             <td className="py-2 px-1 font-mono text-right whitespace-nowrap">
                               <span className="font-bold text-[11px]" style={{ color: balColor }}>
@@ -316,7 +323,7 @@ function ContactRow({ contact, contactType, color, preloadedBalance }) {
                             </td>
                             <td className="py-2 px-1">
                               <button onClick={() => handleDelete(h.id)} disabled={deleting === h.id}
-                                className="opacity-0 group-hover:opacity-100 p-1 rounded text-slate-700 hover:text-red-400 transition-all">
+                                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:text-red-400 transition-all" style={{ color: '#94a3b8' }}>
                                 {deleting === h.id ? <Loader2 size={11} className="animate-spin"/> : <Trash2 size={11}/>}
                               </button>
                             </td>
@@ -326,8 +333,8 @@ function ContactRow({ contact, contactType, color, preloadedBalance }) {
                     </tbody>
                     {/* Toplam satırı */}
                     <tfoot>
-                      <tr style={{ borderTop: '2px solid rgba(148,163,184,0.15)' }}>
-                        <td colSpan={2} className="pt-2 pb-1 px-1 text-[10px] font-bold uppercase tracking-wider text-slate-600">Net Bakiye</td>
+                      <tr style={{ borderTop: `2px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}` }}>
+                        <td colSpan={2} className="pt-2 pb-1 px-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: '#64748b' }}>Net Bakiye</td>
                         <td className="pt-2 pb-1 px-1 font-mono font-bold text-right text-emerald-500 text-[11px]">
                           {fmtN(rows.reduce((s, h) => s + (h.borc || 0), 0))} ₺
                         </td>
@@ -478,7 +485,7 @@ export default function HesapDefteri() {
           </div>
           <div>
             <h1 className="text-lg font-bold">Hesap Defteri</h1>
-            <p className="text-xs text-slate-500">Alacak / Verecek Takibi</p>
+            <p className="text-xs" style={{ color: '#64748b' }}>Alacak / Verecek Takibi</p>
           </div>
         </div>
 
@@ -487,13 +494,13 @@ export default function HesapDefteri() {
           <div className="flex gap-3 mt-3">
             <div className="flex-1 flex items-center justify-between px-3 py-2 rounded-xl"
               style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.15)' }}>
-              <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Toplam Alacak</p>
-              <p className="text-sm font-bold text-emerald-400">{fmtN(totalAlacak)} ₺</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#059669' }}>Toplam Alacak</p>
+              <p className="text-sm font-bold" style={{ color: '#10b981' }}>{fmtN(totalAlacak)} ₺</p>
             </div>
             <div className="flex-1 flex items-center justify-between px-3 py-2 rounded-xl"
               style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)' }}>
-              <p className="text-[10px] font-bold text-red-600 uppercase tracking-wider">Toplam Verecek</p>
-              <p className="text-sm font-bold text-red-400">{fmtN(Math.abs(totalVerecek))} ₺</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#dc2626' }}>Toplam Verecek</p>
+              <p className="text-sm font-bold" style={{ color: '#ef4444' }}>{fmtN(Math.abs(totalVerecek))} ₺</p>
             </div>
           </div>
         )}
@@ -501,7 +508,7 @@ export default function HesapDefteri() {
 
       {/* ── Sekmeler ── */}
       <div className="flex-shrink-0 px-6">
-        <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)' }}>
+        <div className="flex gap-1 p-1 rounded-xl" style={{ background: isDark ? 'rgba(255,255,255,0.04)' : '#f1f5f9' }}>
           {TABS.map(t => {
             const active = t.id === activeTab;
             const c = t.type === 'customer' ? '#3b82f6' : '#f97316';
@@ -525,12 +532,13 @@ export default function HesapDefteri() {
       {/* ── Arama + Sıralama ── */}
       <div className="flex-shrink-0 px-6 mt-3 flex gap-2">
         <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl"
-          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(148,163,184,0.1)' }}>
-          <Search size={13} className="text-slate-500 shrink-0"/>
-          <input className="flex-1 bg-transparent text-sm outline-none placeholder-slate-600"
+          style={{ background: isDark ? 'rgba(255,255,255,0.04)' : '#f1f5f9', border: `1px solid ${isDark ? 'rgba(148,163,184,0.1)' : '#e2e8f0'}` }}>
+          <Search size={13} style={{ color: '#94a3b8' }} className="shrink-0"/>
+          <input className="flex-1 bg-transparent text-sm outline-none"
+            style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}
             placeholder={`${tab?.label} ara…`} value={search}
             onChange={e => setSearch(e.target.value)}/>
-          {search && <button onClick={() => setSearch('')}><X size={12} className="text-slate-500"/></button>}
+          {search && <button onClick={() => setSearch('')}><X size={12} style={{ color: '#94a3b8' }}/></button>}
         </div>
 
         {/* Sıralama dropdown */}
@@ -538,8 +546,8 @@ export default function HesapDefteri() {
           <button onClick={() => setSortOpen(v => !v)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all"
             style={{
-              background: sortOpen ? `${tabColor}20` : 'rgba(255,255,255,0.04)',
-              border: `1px solid ${sortOpen ? tabColor + '40' : 'rgba(148,163,184,0.1)'}`,
+              background: sortOpen ? `${tabColor}20` : (isDark ? 'rgba(255,255,255,0.04)' : '#f1f5f9'),
+              border: `1px solid ${sortOpen ? tabColor + '40' : (isDark ? 'rgba(148,163,184,0.1)' : '#e2e8f0')}`,
               color: sortOpen ? tabColor : '#64748b',
             }}>
             <ChevronsUpDown size={12}/>
@@ -550,7 +558,7 @@ export default function HesapDefteri() {
               <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.12 }}
                 className="absolute right-0 top-full mt-1 z-20 rounded-xl overflow-hidden shadow-2xl"
-                style={{ background: '#0f1f38', border: '1px solid rgba(148,163,184,0.15)', minWidth: '160px' }}>
+                style={{ background: isDark ? '#0f1f38' : '#ffffff', border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`, minWidth: '160px' }}>
                 {SORT_OPTIONS.map(opt => (
                   <button key={opt.id}
                     onClick={() => { setSort(opt.id); setSortOpen(false); }}
@@ -574,16 +582,16 @@ export default function HesapDefteri() {
         {loading && (
           <div className="flex items-center justify-center py-16 gap-2">
             <Loader2 size={20} className="animate-spin" style={{ color: tabColor }}/>
-            <span className="text-sm text-slate-400">Yükleniyor…</span>
+            <span className="text-sm" style={{ color: '#64748b' }}>Yükleniyor…</span>
           </div>
         )}
 
         {!loading && filtered.length === 0 && (
           <div className="text-center py-16">
             {tab?.type === 'customer'
-              ? <User size={38} className="mx-auto mb-3 opacity-20 text-slate-400"/>
-              : <Building2 size={38} className="mx-auto mb-3 opacity-20 text-slate-400"/>}
-            <p className="text-sm text-slate-500">
+              ? <User size={38} className="mx-auto mb-3 opacity-20" style={{ color: '#94a3b8' }}/>
+              : <Building2 size={38} className="mx-auto mb-3 opacity-20" style={{ color: '#94a3b8' }}/>}
+            <p className="text-sm" style={{ color: '#64748b' }}>
               {search ? 'Arama sonucu bulunamadı' : `${tab?.label} bulunamadı`}
             </p>
           </div>
@@ -604,8 +612,8 @@ export default function HesapDefteri() {
       {/* ── Alt bilgi ── */}
       {!loading && filtered.length > 0 && (
         <div className="flex-shrink-0 px-6 py-2 border-t text-center"
-          style={{ borderColor: 'rgba(148,163,184,0.07)' }}>
-          <p className="text-[11px] text-slate-600">
+          style={{ borderColor: isDark ? 'rgba(148,163,184,0.07)' : '#e2e8f0' }}>
+          <p className="text-[11px]" style={{ color: '#64748b' }}>
             {filtered.length} kayıt · {SORT_OPTIONS.find(s => s.id === sort)?.label}
           </p>
         </div>

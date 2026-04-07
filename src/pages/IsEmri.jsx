@@ -21,7 +21,7 @@ const fmtD = (d) => d ? new Date(d).toLocaleDateString('tr-TR', { day: '2-digit'
 const today = () => new Date().toISOString().slice(0, 16);
 
 // ── İş Emri Oluşturma Modal ───────────────────────────────────────────────────
-function WorkOrderForm({ items, orders, allRecipes, onClose, onSaved, currentColor }) {
+function WorkOrderForm({ items, orders, allRecipes, onClose, onSaved, currentColor, isDark }) {
   const [form, setForm] = useState({
     item_id:    '',
     recipe_id:  '',
@@ -68,39 +68,39 @@ function WorkOrderForm({ items, orders, allRecipes, onClose, onSaved, currentCol
   };
 
   const inp = 'w-full px-3 py-2 text-sm rounded-xl outline-none';
-  const iS  = { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(148,163,184,0.18)', color: '#f1f5f9' };
+  const iS  = { background: isDark ? 'rgba(255,255,255,0.06)' : '#f1f5f9', border: `1px solid ${isDark ? 'rgba(148,163,184,0.18)' : '#e2e8f0'}`, color: isDark ? '#f1f5f9' : '#1e293b' };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose}/>
       <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         className="relative w-full max-w-md rounded-2xl p-5 space-y-4 overflow-y-auto max-h-[90vh]"
-        style={{ background: '#0f1f38', border: '1px solid rgba(148,163,184,0.12)' }}>
+        style={{ background: isDark ? '#0f1f38' : '#ffffff', border: `1px solid ${isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0'}` }}>
 
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-blue-500">Yeni İş Emri</p>
-            <h3 className="text-sm font-bold text-white mt-0.5">Atölye Üretim Talebi</h3>
+            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#3b82f6' }}>Yeni İş Emri</p>
+            <h3 className="text-sm font-bold mt-0.5" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>Atölye Üretim Talebi</h3>
           </div>
-          <button onClick={onClose}><X size={16} className="text-slate-500"/></button>
+          <button onClick={onClose}><X size={16} style={{ color: '#94a3b8' }}/></button>
         </div>
 
         {/* Ürün */}
         <div className="relative">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Üretilecek Ürün *</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: '#64748b' }}>Üretilecek Ürün *</p>
           <div onClick={() => setItemOpen(v => !v)}
             className="flex items-center justify-between px-3 py-2 rounded-xl cursor-pointer"
-            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)' }}>
-            <span className={`text-sm ${selectedItem ? 'text-slate-100' : 'text-slate-500'}`}>
+            style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}` }}>
+            <span className="text-sm" style={{ color: selectedItem ? (isDark ? '#f1f5f9' : '#1e293b') : '#94a3b8' }}>
               {selectedItem?.name || 'Mamül seç...'}
             </span>
-            <ChevronDown size={14} className="text-slate-500"/>
+            <ChevronDown size={14} style={{ color: '#94a3b8' }}/>
           </div>
           <AnimatePresence>
             {itemOpen && (
               <motion.div initial={{ opacity:0, y:-4 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0 }}
                 className="absolute z-40 w-full mt-1 rounded-xl overflow-hidden"
-                style={{ background: '#0c1a2e', border: '1px solid rgba(148,163,184,0.15)', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}>
+                style={{ background: isDark ? '#0c1a2e' : '#ffffff', border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`, boxShadow: '0 20px 40px rgba(0,0,0,0.3)' }}>
                 <div className="p-2">
                   <input autoFocus value={itemQ} onChange={e => setItemQ(e.target.value)}
                     placeholder="Ara..." className="w-full px-3 py-1.5 rounded-lg text-sm outline-none"
@@ -214,6 +214,8 @@ function WorkOrderForm({ items, orders, allRecipes, onClose, onSaved, currentCol
 
 // ── İş Emri Kartı ─────────────────────────────────────────────────────────────
 function WorkOrderCard({ wo, items, orders, onStatusChange, onDelete, currentColor }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
   const [changing, setChanging] = useState(false);
   const item  = items.find(i => i.id === wo.item_id);
   const order = orders.find(o => o.id === wo.order_id);
@@ -303,7 +305,7 @@ function WorkOrderCard({ wo, items, orders, onStatusChange, onDelete, currentCol
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
       className="rounded-2xl p-4 space-y-3"
-      style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${s.color}25` }}>
+      style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#fafbfc', border: `1px solid ${s.color}25` }}>
 
       {/* Başlık */}
       <div className="flex items-start justify-between gap-3">
@@ -317,13 +319,13 @@ function WorkOrderCard({ wo, items, orders, onStatusChange, onDelete, currentCol
               <span className="text-[10px] text-blue-400 animate-pulse font-bold">⚡ AKTİF</span>
             )}
           </div>
-          <p className="text-sm font-bold text-slate-100 truncate">{item?.name || 'Bilinmeyen Ürün'}</p>
-          <p className="text-[11px] text-slate-500">
+          <p className="text-sm font-bold truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{item?.name || 'Bilinmeyen Ürün'}</p>
+          <p className="text-[11px]" style={{ color: '#64748b' }}>
             {fmt(wo.quantity)} {item?.unit || 'Adet'} üretim
           </p>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-xs text-slate-500 font-mono">#{wo.id?.slice(0, 6).toUpperCase()}</p>
+          <p className="text-xs font-mono" style={{ color: '#64748b' }}>#{wo.id?.slice(0, 6).toUpperCase()}</p>
         </div>
       </div>
 
@@ -332,13 +334,13 @@ function WorkOrderCard({ wo, items, orders, onStatusChange, onDelete, currentCol
         {order && (
           <div className="flex items-center gap-1.5 col-span-2 px-2 py-1.5 rounded-lg"
             style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.15)' }}>
-            <User size={10} className="text-blue-400 shrink-0"/>
-            <span className="text-blue-300 font-semibold truncate">
+            <User size={10} style={{ color: '#3b82f6' }} className="shrink-0"/>
+            <span className="font-semibold truncate" style={{ color: isDark ? '#93c5fd' : '#2563eb' }}>
               #{order.order_number} · {order.customer_name}
             </span>
           </div>
         )}
-        <div className="flex items-center gap-1.5 text-slate-500">
+        <div className="flex items-center gap-1.5" style={{ color: '#64748b' }}>
           <Calendar size={10} className="shrink-0"/>
           <span>Başlangıç: {fmtD(wo.started_at)}</span>
         </div>
@@ -351,7 +353,7 @@ function WorkOrderCard({ wo, items, orders, onStatusChange, onDelete, currentCol
       </div>
 
       {wo.notes && (
-        <p className="text-[11px] text-slate-500 bg-black/20 rounded-lg px-2 py-1.5 italic">
+        <p className="text-[11px] rounded-lg px-2 py-1.5 italic" style={{ color: '#64748b', background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.03)' }}>
           {wo.notes}
         </p>
       )}
@@ -451,11 +453,11 @@ export default function IsEmri() {
             </div>
             <div>
               <h1 className="text-lg font-bold">İş Emirleri</h1>
-              <p className="text-xs text-slate-500">Atölye Üretim Takibi</p>
+              <p className="text-xs" style={{ color: '#64748b' }}>Atölye Üretim Takibi</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={loadAll} className="p-2 rounded-xl text-slate-500 hover:bg-white/05 transition-colors">
+            <button onClick={loadAll} className="p-2 rounded-xl transition-colors" style={{ color: '#94a3b8' }}>
               <RefreshCw size={15}/>
             </button>
             <button onClick={() => setShowForm(true)}
@@ -472,23 +474,24 @@ export default function IsEmri() {
             <button key={k} onClick={() => setFilter(filter === k ? 'all' : k)}
               className="rounded-xl px-3 py-2 text-left transition-all"
               style={{
-                background: filter === k ? v.bg : 'rgba(255,255,255,0.03)',
-                border: `1px solid ${filter === k ? v.color + '40' : 'rgba(148,163,184,0.08)'}`,
+                background: filter === k ? v.bg : (isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc'),
+                border: `1px solid ${filter === k ? v.color + '40' : (isDark ? 'rgba(148,163,184,0.08)' : '#e2e8f0')}`,
               }}>
               <p className="text-xs font-bold" style={{ color: v.color }}>{counts[k] || 0}</p>
-              <p className="text-[10px] text-slate-500 mt-0.5">{v.label}</p>
+              <p className="text-[10px] mt-0.5" style={{ color: '#64748b' }}>{v.label}</p>
             </button>
           ))}
         </div>
 
         {/* Arama */}
         <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
-          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(148,163,184,0.1)' }}>
-          <Search size={13} className="text-slate-500 shrink-0"/>
-          <input className="flex-1 bg-transparent text-sm outline-none placeholder-slate-600"
+          style={{ background: isDark ? 'rgba(255,255,255,0.04)' : '#f1f5f9', border: `1px solid ${isDark ? 'rgba(148,163,184,0.1)' : '#e2e8f0'}` }}>
+          <Search size={13} style={{ color: '#94a3b8' }} className="shrink-0"/>
+          <input className="flex-1 bg-transparent text-sm outline-none"
+            style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}
             placeholder="Ürün adı veya müşteri ara…"
             value={search} onChange={e => setSearch(e.target.value)}/>
-          {search && <button onClick={() => setSearch('')}><X size={12} className="text-slate-500"/></button>}
+          {search && <button onClick={() => setSearch('')}><X size={12} style={{ color: '#94a3b8' }}/></button>}
         </div>
       </div>
 
@@ -497,14 +500,14 @@ export default function IsEmri() {
         {loading && (
           <div className="flex items-center justify-center py-16 gap-2">
             <Loader2 size={20} className="animate-spin" style={{ color: currentColor }}/>
-            <span className="text-sm text-slate-400">Yükleniyor…</span>
+            <span className="text-sm" style={{ color: '#64748b' }}>Yükleniyor…</span>
           </div>
         )}
 
         {!loading && filtered.length === 0 && (
           <div className="text-center py-16">
-            <Hammer size={38} className="mx-auto mb-3 opacity-20 text-slate-400"/>
-            <p className="text-sm text-slate-500">
+            <Hammer size={38} className="mx-auto mb-3 opacity-20" style={{ color: '#94a3b8' }}/>
+            <p className="text-sm" style={{ color: '#64748b' }}>
               {filter !== 'all' ? `${STATUS[filter]?.label} iş emri yok` : 'Henüz iş emri bulunmuyor'}
             </p>
             <button onClick={() => setShowForm(true)}
@@ -527,7 +530,7 @@ export default function IsEmri() {
       {showForm && (
         <WorkOrderForm
           items={items} orders={orders} allRecipes={allRecipes}
-          currentColor={currentColor}
+          currentColor={currentColor} isDark={isDark}
           onClose={() => setShowForm(false)}
           onSaved={loadAll}/>
       )}

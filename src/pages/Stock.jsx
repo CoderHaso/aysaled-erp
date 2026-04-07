@@ -462,6 +462,53 @@ export default function Stock() {
             )}
           </AnimatePresence>
 
+          {/* Hızlı Düzenle Sticky Kaydet Barı */}
+          <AnimatePresence>
+            {quickEditMode && Object.keys(quickEdits).length > 0 && (
+              <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+                className="sticky top-0 z-[50] px-4 py-2.5 flex items-center justify-between rounded-xl mb-2"
+                style={{ background: isDark ? '#1a2744' : '#fffbeb', border: '1.5px solid rgba(245,158,11,0.3)', boxShadow: '0 4px 20px rgba(0,0,0,0.15)' }}>
+                <span className="text-xs font-bold" style={{ color: '#f59e0b' }}>
+                  ✏️ {Object.keys(quickEdits).length} kayıt değiştirildi
+                </span>
+                <div className="flex gap-2">
+                  <button onClick={() => setQuickEdits({})}
+                    className="px-3 py-1.5 rounded-xl text-xs font-semibold"
+                    style={{ color: c.muted, border: `1px solid ${c.border}` }}>
+                    İptal
+                  </button>
+                  <button
+                    disabled={quickSaving}
+                    onClick={async () => {
+                      setQuickSaving(true);
+                      try {
+                        for (const [itemId, changes] of Object.entries(quickEdits)) {
+                          const patch = {};
+                          if (changes.unit !== undefined) patch.unit = changes.unit;
+                          if (changes.stock_count !== undefined) patch.stock_count = Number(changes.stock_count);
+                          if (changes.purchase_price !== undefined) patch.purchase_price = Number(changes.purchase_price);
+                          if (changes.sale_price !== undefined) patch.sale_price = Number(changes.sale_price);
+                          if (changes.base_currency !== undefined) patch.base_currency = changes.base_currency;
+                          if (Object.keys(patch).length > 0) {
+                            await supabase.from('items').update(patch).eq('id', itemId);
+                          }
+                        }
+                        showToast(`${Object.keys(quickEdits).length} kayıt güncellendi ✓`);
+                        setQuickEdits({});
+                        refetch();
+                      } catch (e) { showToast(e.message, 'error'); }
+                      finally { setQuickSaving(false); }
+                    }}
+                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-bold text-white"
+                    style={{ background: '#f59e0b', opacity: quickSaving ? 0.7 : 1 }}>
+                    {quickSaving ? <RefreshCcw size={12} className="animate-spin"/> : <Save size={12}/>}
+                    {quickSaving ? 'Kaydediliyor...' : 'Tümünü Kaydet'}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Arama barı */}
           <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl border"
             style={{ background: c.card, borderColor: c.border }}>
@@ -484,12 +531,13 @@ export default function Stock() {
                   <tr style={{ borderBottom: `1px solid ${c.border}` }}>
                     {[
                       { key: null,             label: '',         w: '32px'  },
-                      { key: 'sku',            label: 'SKU',      w: '100px' },
+                      { key: 'sku',            label: 'SKU',      w: '90px' },
                       { key: 'name',           label: activeTab === 'raw' ? 'Hammadde' : 'Mamül' },
-                      { key: 'unit',           label: 'Birim',    w: quickEditMode ? '90px' : '65px'  },
-                      { key: 'stock_count',    label: 'Stok',     w: quickEditMode ? '110px' : '150px' },
-                      { key: 'purchase_price', label: 'Alış (₺)', w: quickEditMode ? '110px' : '90px'  },
-                      { key: 'sale_price',     label: 'Satış (₺)', w: quickEditMode ? '110px' : '90px' },
+                      { key: 'unit',           label: 'Birim',    w: quickEditMode ? '85px' : '60px'  },
+                      { key: 'stock_count',    label: 'Stok',     w: quickEditMode ? '100px' : '140px' },
+                      { key: 'purchase_price', label: 'Alış',    w: quickEditMode ? '100px' : '85px'  },
+                      { key: 'sale_price',     label: 'Satış',   w: quickEditMode ? '100px' : '85px' },
+                      ...(quickEditMode ? [{ key: 'base_currency', label: 'Döviz', w: '75px' }] : []),
                       { key: null,             label: '',         w: '72px'  },
                     ].map((col, i) => (
                       <th key={i}
@@ -616,6 +664,17 @@ export default function Stock() {
                             </span>
                           )}
                         </td>
+                        {/* Döviz (sadece quick edit) */}
+                        {quickEditMode && (
+                          <td className="px-3 py-3.5" onClick={e => e.stopPropagation()}>
+                            <select value={ed.base_currency ?? item.base_currency ?? 'TRY'}
+                              onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), base_currency: e.target.value}}))}
+                              className="w-full px-1 py-1 text-xs rounded-lg outline-none"
+                              style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
+                              {['TRY','USD','EUR','GBP'].map(cu => <option key={cu} value={cu}>{cu}</option>)}
+                            </select>
+                          </td>
+                        )}
                         <td className="px-3 py-3.5" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-1">
                             <ABtn icon={Edit2}  color={currentColor} onClick={() => openForm(item, item.item_type)} />
@@ -694,48 +753,7 @@ export default function Stock() {
               })}
             </div>
 
-            {/* Hızlı Düzenle Kaydet Barı */}
-            {quickEditMode && Object.keys(quickEdits).length > 0 && (
-              <div className="px-4 py-3 flex items-center justify-between border-t"
-                style={{ borderColor: c.border, background: 'rgba(245,158,11,0.06)' }}>
-                <span className="text-xs font-semibold" style={{ color: '#f59e0b' }}>
-                  {Object.keys(quickEdits).length} kayıt değiştirildi
-                </span>
-                <div className="flex gap-2">
-                  <button onClick={() => setQuickEdits({})}
-                    className="px-3 py-1.5 rounded-xl text-xs font-semibold"
-                    style={{ color: c.muted, border: `1px solid ${c.border}` }}>
-                    İptal
-                  </button>
-                  <button
-                    disabled={quickSaving}
-                    onClick={async () => {
-                      setQuickSaving(true);
-                      try {
-                        for (const [itemId, changes] of Object.entries(quickEdits)) {
-                          const patch = {};
-                          if (changes.unit !== undefined) patch.unit = changes.unit;
-                          if (changes.stock_count !== undefined) patch.stock_count = Number(changes.stock_count);
-                          if (changes.purchase_price !== undefined) patch.purchase_price = Number(changes.purchase_price);
-                          if (changes.sale_price !== undefined) patch.sale_price = Number(changes.sale_price);
-                          if (Object.keys(patch).length > 0) {
-                            await supabase.from('items').update(patch).eq('id', itemId);
-                          }
-                        }
-                        showToast(`${Object.keys(quickEdits).length} kayıt güncellendi ✓`);
-                        setQuickEdits({});
-                        refetch();
-                      } catch (e) { showToast(e.message, 'error'); }
-                      finally { setQuickSaving(false); }
-                    }}
-                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-bold text-white"
-                    style={{ background: '#f59e0b', opacity: quickSaving ? 0.7 : 1 }}>
-                    {quickSaving ? <RefreshCcw size={12} className="animate-spin"/> : <Save size={12}/>}
-                    {quickSaving ? 'Kaydediliyor...' : 'Tümünü Kaydet'}
-                  </button>
-                </div>
-              </div>
-            )}
+            {/* Hızlı Düzenle: kaldırıldı, sticky bar üste taşındı */}
 
             {/* Footer */}
             {!loading && filtered.length > 0 && (
@@ -941,6 +959,7 @@ function BulkUpdateModal({ allItems, c, currentColor, isDark, supabase, onClose,
     updateRow(rowKey, 'purchase_price', String(item.purchase_price ?? ''));
     updateRow(rowKey, 'sale_price', String(item.sale_price ?? ''));
     updateRow(rowKey, 'unit', item.unit || 'Adet');
+    updateRow(rowKey, 'base_currency', item.base_currency || 'TRY');
     updateRow(rowKey, '_name', item.name);
     setSearchStates(p => ({ ...p, [rowKey]: '' }));
   };
@@ -956,6 +975,7 @@ function BulkUpdateModal({ allItems, c, currentColor, isDark, supabase, onClose,
         if (r.purchase_price !== '') patch.purchase_price = Number(r.purchase_price);
         if (r.sale_price !== '') patch.sale_price = Number(r.sale_price);
         if (r.unit) patch.unit = r.unit;
+        if (r.base_currency) patch.base_currency = r.base_currency;
         if (Object.keys(patch).length > 0) {
           await supabase.from('items').update(patch).eq('id', r.itemId);
         }
@@ -998,7 +1018,7 @@ function BulkUpdateModal({ allItems, c, currentColor, isDark, supabase, onClose,
         </div>
 
         {/* Tablo */}
-        <div className="flex-1 overflow-y-auto px-5 py-3 space-y-2">
+        <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3" style={{ overflowX: 'visible' }}>
           {rows.map((row, idx) => {
             const selectedItem = allItems.find(i => i.id === row.itemId);
             const sq = (searchStates[row._key] || '').toLowerCase();
@@ -1007,8 +1027,7 @@ function BulkUpdateModal({ allItems, c, currentColor, isDark, supabase, onClose,
             ).slice(0, 8) : [];
 
             return (
-              <div key={row._key} className="rounded-xl p-3 space-y-2"
-                style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', border: `1px solid ${c.border}` }}>
+              <div key={row._key} className="rounded-xl p-3 space-y-2" style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', border: `1px solid ${c.border}`, overflow: 'visible', position: 'relative', zIndex: rows.length - idx }}>
 
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center"
@@ -1035,11 +1054,13 @@ function BulkUpdateModal({ allItems, c, currentColor, isDark, supabase, onClose,
                           className="w-full px-2.5 py-1.5 text-xs rounded-lg outline-none"
                           style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}/>
                         {results.length > 0 && (
-                          <div className="absolute top-8 left-0 right-0 z-50 rounded-xl overflow-hidden shadow-2xl"
-                            style={{ background: isDark ? '#0f1e36' : '#fff', border: `1px solid ${c.border}`, maxHeight: 200, overflowY: 'auto' }}>
+                          <div className="absolute left-0 right-0 z-[100] rounded-xl shadow-2xl"
+                            style={{ background: isDark ? '#0f1e36' : '#fff', border: `1px solid ${c.border}`, maxHeight: 220, overflowY: 'auto', top: '100%', marginTop: 4 }}>
                             {results.map(item => (
                               <button key={item.id} onClick={() => selectItem(row._key, item)}
-                                className="w-full text-left px-3 py-2 text-xs transition-colors hover:bg-white/5"
+                                className="w-full text-left px-3 py-2.5 text-xs transition-colors"
+                                onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'}
+                                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                                 style={{ borderBottom: `1px solid ${c.border}`, color: c.text }}>
                                 <span className="font-semibold">{item.name}</span>
                                 <span className="ml-2 text-[10px]" style={{ color: c.muted }}>{item.unit} · Stok: {item.stock_count ?? '—'}</span>
@@ -1061,7 +1082,7 @@ function BulkUpdateModal({ allItems, c, currentColor, isDark, supabase, onClose,
 
                 {/* Alanlar */}
                 {row.itemId && (
-                  <div className="grid grid-cols-4 gap-2 pl-7">
+                  <div className="grid grid-cols-5 gap-2 pl-7">
                     <div>
                       <p className="text-[10px] font-bold mb-0.5" style={{ color: c.muted }}>Stok</p>
                       <input type="number" step="0.01" value={row.stock_count}
@@ -1070,14 +1091,14 @@ function BulkUpdateModal({ allItems, c, currentColor, isDark, supabase, onClose,
                         style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: '#10b981' }}/>
                     </div>
                     <div>
-                      <p className="text-[10px] font-bold mb-0.5" style={{ color: c.muted }}>Alış (₺)</p>
+                      <p className="text-[10px] font-bold mb-0.5" style={{ color: c.muted }}>Alış</p>
                       <input type="number" step="0.01" value={row.purchase_price}
                         onChange={e => updateRow(row._key, 'purchase_price', e.target.value)}
                         className="w-full px-2 py-1 text-xs font-bold rounded-lg outline-none"
                         style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: '#f59e0b' }}/>
                     </div>
                     <div>
-                      <p className="text-[10px] font-bold mb-0.5" style={{ color: c.muted }}>Satış (₺)</p>
+                      <p className="text-[10px] font-bold mb-0.5" style={{ color: c.muted }}>Satış</p>
                       <input type="number" step="0.01" value={row.sale_price}
                         onChange={e => updateRow(row._key, 'sale_price', e.target.value)}
                         className="w-full px-2 py-1 text-xs font-bold rounded-lg outline-none"
@@ -1091,6 +1112,17 @@ function BulkUpdateModal({ allItems, c, currentColor, isDark, supabase, onClose,
                         style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
                         {['Adet','Metre','cm','mm','Kg','g','Litre','ml','m²','Rulo','Paket','Kutu','Set','Takım'].map(u =>
                           <option key={u} value={u}>{u}</option>
+                        )}
+                      </select>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold mb-0.5" style={{ color: c.muted }}>Döviz</p>
+                      <select value={row.base_currency || 'TRY'}
+                        onChange={e => updateRow(row._key, 'base_currency', e.target.value)}
+                        className="w-full px-2 py-1 text-xs rounded-lg outline-none"
+                        style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
+                        {['TRY','USD','EUR','GBP'].map(cu =>
+                          <option key={cu} value={cu}>{cu}</option>
                         )}
                       </select>
                     </div>
