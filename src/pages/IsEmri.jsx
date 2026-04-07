@@ -218,7 +218,8 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
 
       const recipeQuery = supabase.from('product_recipes').select('id, recipe_items(item_id, quantity)').eq('product_id', wo.item_id);
       if (recipeId) recipeQuery.eq('id', recipeId); else recipeQuery.limit(1);
-      const { data: recipeData } = await recipeQuery.single().catch(() => ({ data: null }));
+      let recipeData = null;
+      try { const res = await recipeQuery.maybeSingle(); recipeData = res.data; } catch (_) {}
 
       for (const ri of (recipeData?.recipe_items || [])) {
         if (!ri.item_id) continue;

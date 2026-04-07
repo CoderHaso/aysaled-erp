@@ -498,6 +498,7 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
         subtotal:         Math.round(subtotal   * 100) / 100,
         tax_total:        Math.round(taxTotal   * 100) / 100,
         grand_total:      Math.round(grandTotal * 100) / 100,
+        is_invoiced:      invoiceToggle ? true : false,
         // quote_id — tekliften gelen siparişlerde bağlantı kurulur
         ...(quoteId ? { quote_id: quoteId } : {}),
       };
@@ -1060,21 +1061,23 @@ function OrderSummaryModal({ order, onConfirm, onCancel, c, currentColor, isDark
 }
 
 // ─── Sipariş Detay Drawer ─────────────────────────────────────────────────────
-function OrderDetailDrawer({ order, onClose, onEdit, onSendToWorkOrders, onStatusChange, onRefund, c, currentColor, isDark, tab }) {
+function OrderDetailDrawer({ order, onClose, onEdit, onSendToWorkOrders, onStatusChange, onRefund, allRecipes, c, currentColor, isDark, tab }) {
   const urgent = isUrgent(order);
-  const recipeLines = (order.items || []).filter(l => l.recipe_note || l.recipe_key);
-  const hasRecipe = recipeLines.length > 0;
-  const sentToWO = order.work_orders_sent;
-  const allWOsDone = order.allWOsDone && sentToWO;
   const isHistory = tab === 'history';
   const isCancelled = order.status === 'cancelled';
   const isRefunded = order.status === 'refunded';
+  const [expandedRecipe, setExpandedRecipe] = useState(null);
+
+  // Reçete detaylarını bul
+  const recipeMap = {};
+  (allRecipes || []).forEach(r => { recipeMap[r.id] = r; });
 
   return (
-    <div className="fixed inset-0 z-[300] flex justify-end">
+    <div className="fixed inset-0 z-[300] flex justify-end" style={{ pointerEvents: 'auto' }}>
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose}/>
-      <motion.div initial={{ x: 380 }} animate={{ x: 0 }} exit={{ x: 380 }}
-        transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+      <motion.div
+        initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
+        transition={{ type: 'tween', duration: 0.22, ease: 'easeInOut' }}
         className="relative w-full max-w-md h-full overflow-y-auto flex flex-col shadow-2xl"
         style={{ background: isDark ? '#0b1729' : '#f8fafc', borderLeft: `1px solid ${c.border}` }}>
         {/* Header */}
@@ -1095,6 +1098,7 @@ function OrderDetailDrawer({ order, onClose, onEdit, onSendToWorkOrders, onStatu
             <button onClick={onClose} className="p-1.5 rounded-lg" style={{ color: c.muted }}><X size={16}/></button>
           </div>
         </div>
+
         {/* Status + Invoice badge */}
         <div className="px-5 py-3 flex items-center gap-2 flex-shrink-0" style={{ borderBottom: `1px solid ${c.border}` }}>
           <StatusBadge status={order.status} urgent={urgent}/>
@@ -1105,6 +1109,7 @@ function OrderDetailDrawer({ order, onClose, onEdit, onSendToWorkOrders, onStatu
           </span>
           {urgent && <span className="text-xs font-bold text-red-400">⚡ ACİL</span>}
         </div>
+
         {/* Meta */}
         <div className="px-5 py-3 grid grid-cols-2 gap-2 flex-shrink-0" style={{ borderBottom: `1px solid ${c.border}` }}>
           {[['Toplam', fmt(order.grand_total, order.currency), '#10b981'],
@@ -1117,37 +1122,73 @@ function OrderDetailDrawer({ order, onClose, onEdit, onSendToWorkOrders, onStatu
             </div>
           ))}
         </div>
-        {/* Items */}
-        <div className="flex-1 px-5 py-3 overflow-y-auto">
-          <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: c.muted }}>Kalemler</p>
-          <div className="space-y-2">
-            {(order.items || []).map((l, i) => (
-              <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl"
+
+        {/* Kalemler + Reçete accordion */}
+        <div className="flex-1 px-5 py-3 overflow-y-auto space-y-2">
+          <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: c.muted }}>Kalemler</p>
+          {(order.items || []).map((l, i) => {
+            const recipeObj = l.recipe_id ? recipeMap[l.recipe_id] : null;
+            const isExpanded = expandedRecipe === i;
+            return (
+              <div key={i} className="rounded-xl overflow-hidden"
                 style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#ffffff', border: `1px solid ${c.border}` }}>
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                  style={{ background: (l.recipe_note||l.recipe_key) ? 'rgba(139,92,246,0.1)' : `${currentColor}10` }}>
-                  {(l.recipe_note||l.recipe_key) ? <FlaskConical size={14} color="#a78bfa"/> : <Package size={14} style={{ color: currentColor }}/>}
+                <div className="flex items-center gap-3 p-2.5">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                    style={{ background: (l.recipe_note||l.recipe_key||l.recipe_id) ? 'rgba(139,92,246,0.1)' : `${currentColor}10` }}>
+                    {(l.recipe_note||l.recipe_key||l.recipe_id) ? <FlaskConical size={14} color="#a78bfa"/> : <Package size={14} style={{ color: currentColor }}/>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold truncate" style={{ color: c.text }}>{l.item_name || 'Ürün'}</p>
+                    {(l.recipe_key || l.recipe_note) && (
+                      <button className="flex items-center gap-1 text-[10px] font-semibold" style={{ color: '#a78bfa' }}
+                        onClick={() => setExpandedRecipe(isExpanded ? null : i)}>
+                        📋 {l.recipe_key || l.recipe_note}
+                        {recipeObj && (isExpanded ? <ChevronRight size={9} style={{ transform:'rotate(90deg)' }}/> : <ChevronRight size={9}/>)}
+                      </button>
+                    )}
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-xs font-bold tabular-nums" style={{ color: '#10b981' }}>{fmt(Number(l.quantity||1)*Number(l.unit_price||0), order.currency)}</p>
+                    <p className="text-[10px]" style={{ color: c.muted }}>{l.quantity} {l.unit}</p>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold truncate" style={{ color: c.text }}>{l.item_name || 'Ürün'}</p>
-                  {(l.recipe_note || l.recipe_key) && (
-                    <p className="text-[10px] truncate" style={{ color: '#a78bfa' }}>📋 {l.recipe_key || l.recipe_note}</p>
-                  )}
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <p className="text-xs font-bold tabular-nums" style={{ color: '#10b981' }}>{fmt(Number(l.quantity||1)*Number(l.unit_price||0), order.currency)}</p>
-                  <p className="text-[10px]" style={{ color: c.muted }}>{l.quantity} {l.unit}</p>
-                </div>
+                {/* Reçete içeriği accordion */}
+                {isExpanded && recipeObj && (
+                  <div className="px-4 pb-3 pt-1 space-y-1" style={{ borderTop: `1px solid rgba(139,92,246,0.15)`, background: 'rgba(139,92,246,0.04)' }}>
+                    <p className="text-[9px] font-bold uppercase" style={{ color: '#a78bfa' }}>Reçete İçeriği</p>
+                    {(recipeObj.recipe_items || []).map((ri, j) => (
+                      <div key={j} className="flex items-center justify-between text-[10px]" style={{ color: c.muted }}>
+                        <span>• {ri.item_name}</span>
+                        <span className="font-bold">{ri.quantity} {ri.unit}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            ))}
-          </div>
+            );
+          })}
+
+          {/* İş emri notları */}
+          {order.woNotes && (
+            <div className="p-3 rounded-xl" style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)' }}>
+              <p className="text-[9px] font-bold uppercase mb-1" style={{ color: '#10b981' }}>🏭 Üretim Notları</p>
+              <p className="text-[11px]" style={{ color: c.text }}>{order.woNotes}</p>
+            </div>
+          )}
+          {order.woRecipeChanges && (
+            <div className="p-3 rounded-xl" style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)' }}>
+              <p className="text-[9px] font-bold uppercase mb-1" style={{ color: '#f59e0b' }}>🔄 Reçete Değişiklikleri</p>
+              <p className="text-[11px]" style={{ color: c.text }}>{order.woRecipeChanges}</p>
+            </div>
+          )}
           {order.notes && (
-            <div className="mt-3 p-3 rounded-xl" style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#fff', border: `1px solid ${c.border}` }}>
-              <p className="text-[10px] font-bold uppercase" style={{ color: c.muted }}>Not</p>
+            <div className="p-3 rounded-xl" style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#fff', border: `1px solid ${c.border}` }}>
+              <p className="text-[9px] font-bold uppercase" style={{ color: c.muted }}>Sipariş Notu</p>
               <p className="text-xs mt-1" style={{ color: c.text }}>{order.notes}</p>
             </div>
           )}
         </div>
+
         {/* Actions footer */}
         {isCancelled && !isRefunded && (
           <div className="px-5 py-4 flex-shrink-0" style={{ borderTop: `1px solid ${c.border}` }}>
@@ -1413,13 +1454,15 @@ export default function Sales() {
       supabase.from('customers').select('id, name, vkntckn, tax_office, phone, email, address, city').order('name'),
       supabase.from('items').select('id, name, item_type, unit, sale_price, purchase_price, stock_count, sku, base_currency, vat_rate, category').order('name'),
       supabase.from('product_recipes').select('id, product_id, name, tags, recipe_items(id, item_id, item_name, quantity, unit)').order('name'),
-      supabase.from('work_orders').select('id, order_id, status').order('created_at', { ascending: false }),
+      supabase.from('work_orders').select('id, order_id, status, production_note, recipe_id, recipe_change_note').order('created_at', { ascending: false }),
     ]);
     const allWOs = woRes.data || [];
     setOrders((ordRes.data || []).map(o => {
       const orderWOs = allWOs.filter(w => w.order_id === o.id);
       const allWOsDone = orderWOs.length > 0 && orderWOs.every(w => w.status === 'completed');
-      return { ...o, items: o.order_items || [], orderWOs, allWOsDone };
+      const woNotes = orderWOs.filter(w => w.production_note).map(w => w.production_note).join(' | ');
+      const woRecipeChanges = orderWOs.filter(w => w.recipe_change_note).map(w => w.recipe_change_note).join(' | ');
+      return { ...o, items: o.order_items || [], orderWOs, allWOsDone, woNotes, woRecipeChanges };
     }));
     setCustomers(custRes.data || []);
     setAllItems(itemRes.data || []);
@@ -1545,7 +1588,7 @@ export default function Sales() {
         return;
     }
 
-    // ── Tamamlandı: satılan ürünlerin stoktan düş ──────────────────────────
+    // ── Tamamlandı: sadece reçetesiz ürünlerin stoğunu düş (reçeteliler iş emrinde halledildi)
     if (status === 'completed') {
       const patch = { status, completed_at: new Date().toISOString() };
       await supabase.from('orders').update(patch).eq('id', orderId);
@@ -1599,13 +1642,13 @@ export default function Sales() {
     }
     if (tab === 'current')  return list.filter(o => o.status === 'pending' || o.status === 'processing');
     if (tab === 'urgent')   return list.filter(o => isUrgent(o));
-    if (tab === 'history')  return list.filter(o => o.status === 'cancelled' || o.status === 'refunded');
+    if (tab === 'history')  return list.filter(o => o.status === 'completed' || o.status === 'cancelled' || o.status === 'refunded');
     return list;
   }, [orders, tab, search]);
 
   const urgentCount  = orders.filter(isUrgent).length;
   const currentCount = orders.filter(o => o.status === 'pending' || o.status === 'processing').length;
-  const historyCount = orders.filter(o => o.status === 'cancelled' || o.status === 'refunded').length;
+  const historyCount = orders.filter(o => o.status === 'completed' || o.status === 'cancelled' || o.status === 'refunded').length;
 
   // Sipariş tamamlama onayı
   const confirmComplete = async (order) => {
@@ -1793,7 +1836,7 @@ export default function Sales() {
       </AnimatePresence>
 
       {/* Sipariş Detay Drawer */}
-      <AnimatePresence>
+      <AnimatePresence mode="wait">
         {detailOrder && (
           <OrderDetailDrawer
             order={detailOrder}
@@ -1801,6 +1844,7 @@ export default function Sales() {
             c={c}
             isDark={isDark}
             currentColor={currentColor}
+            allRecipes={allRecipes}
             onClose={() => setDetailOrder(null)}
             onEdit={openEdit}
             onSendToWorkOrders={sendToWorkOrders}

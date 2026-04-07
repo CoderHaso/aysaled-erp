@@ -874,7 +874,7 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}/>
       <motion.div
         initial={{ x: 340 }} animate={{ x: 0 }} exit={{ x: 340 }}
-        transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+        transition={{ type: 'tween', duration: 0.22, ease: 'easeInOut' }}
         className="relative w-full max-w-sm h-full overflow-hidden flex flex-col shadow-2xl"
         style={{ background: isDark ? '#0b1729' : '#f8fafc', borderLeft: `1px solid ${c.border}` }}>
 

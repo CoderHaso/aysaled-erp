@@ -121,7 +121,7 @@ export default function StockDrawer({ item, defaultType, onClose, onSave, onDele
       {/* Drawer */}
       <motion.div
         initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
-        transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+        transition={{ type: 'tween', duration: 0.22, ease: 'easeInOut' }}
         className="fixed top-0 right-0 h-full z-50 flex flex-col shadow-2xl"
         style={{
           width: 'min(720px, 100vw)',
