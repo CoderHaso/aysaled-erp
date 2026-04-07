@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
+import { pageCache } from '../lib/pageCache';
 import RecipePickerModal from '../components/RecipePickerModal';
 
 const STATUS = {
@@ -286,6 +287,7 @@ function WorkOrderCard({ wo, items, orders, onStatusChange, onDelete, currentCol
       }
     }
 
+    pageCache.invalidate('items'); // Stock sayfası cache'ini temizle
     onStatusChange();
     setChanging(false);
   };

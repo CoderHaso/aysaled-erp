@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
+import { pageCache } from '../lib/pageCache';
 import InvoicePreviewModal from '../components/InvoicePreviewModal';
 import CustomDialog from '../components/CustomDialog';
 import RecipePickerModal from '../components/RecipePickerModal';
@@ -1336,6 +1337,7 @@ export default function Sales() {
       }
 
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...patch } : o));
+      pageCache.invalidate('items');  // Stock sayfası cache'ini temizle — otomatik yenilenir
       showToast('Sipariş tamamlandı — stoklar güncellendi ✓');
       return;
     }

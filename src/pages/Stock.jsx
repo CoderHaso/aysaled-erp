@@ -4,10 +4,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
 import {
   Plus, Search, AlertTriangle, RefreshCcw, AlertCircle,
-  Zap, TrendingUp, Boxes, Package, ChevronUp, ChevronDown,
+  Zap, TrendingUp, TrendingDown, Boxes, Package, ChevronUp, ChevronDown,
   Edit2, Trash2, Upload, Download, FileJson, FileSpreadsheet,
   X, CheckCircle2, AlertOctagon, FolderDown, Eye, Save,
   Layers, ArrowRight, DollarSign, Hash, MapPin, Ruler, Tag,
+  Clock, ArrowUpCircle, ArrowDownCircle, Wrench, ShoppingCart, FileText,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useStock } from '../hooks/useStock';
@@ -828,17 +829,44 @@ function ABtn({ icon: Icon, color, onClick }) {
 function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
   const clr = stockColor(item.stock_count, item.critical_limit);
   const sym = CURRENCY_SYM[item.base_currency] || '₺';
+  const [tab, setTab] = React.useState('detail');
+  const [movements, setMovements] = React.useState([]);
+  const [mvLoading, setMvLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    if (tab !== 'history') return;
+    setMvLoading(true);
+    supabase
+      .from('stock_movements')
+      .select('*')
+      .eq('item_id', item.id)
+      .order('created_at', { ascending: false })
+      .limit(60)
+      .then(({ data }) => { setMovements(data || []); setMvLoading(false); });
+  }, [tab, item.id]);
+
+  const srcIcon = (src) => {
+    if (src === 'work_order' || src === 'production' || src === 'production_raw') return <Wrench size={11} />;
+    if (src === 'sale')       return <ShoppingCart size={11} />;
+    if (src?.startsWith('invoice')) return <FileText size={11} />;
+    return <Package size={11} />;
+  };
+  const srcLabel = (src) => ({
+    work_order: 'İş Emri', production: 'İş Emri (Üretim)', production_raw: 'İş Emri (Hammadde)',
+    sale: 'Satış', invoice_in: 'Fatura Girişi', invoice_out: 'Fatura Çıkışı',
+    invoice: 'Fatura', manual: 'Manuel', 'toplu güncelleme': 'Toplu Güncelleme',
+  })[src] || src || 'Manuel';
 
   const rows = [
-    { icon: Tag,        label: 'Tür',            value: item.item_type === 'product' ? 'Mamül Ürün' : 'Hammadde' },
-    { icon: Hash,       label: 'SKU',            value: item.sku || '—' },
-    { icon: Ruler,      label: 'Birim',          value: item.unit },
-    { icon: Boxes,      label: 'Stok',           value: `${item.stock_count} ${item.unit}`, color: clr },
-    { icon: AlertTriangle, label: 'Kritik Limit', value: item.critical_limit > 0 ? `${item.critical_limit} ${item.unit}` : '—' },
-    { icon: DollarSign, label: 'Alış Fiyatı',    value: item.purchase_price > 0 ? `${sym}${item.purchase_price}` : '—', color: '#10b981' },
-    { icon: DollarSign, label: 'Satış Fiyatı',   value: item.sale_price > 0 ? `₺${item.sale_price}` : '—', color: '#3b82f6' },
-    { icon: MapPin,     label: 'Konum',          value: item.location || '—' },
-    { icon: Package,    label: 'Tedarikçi',      value: item.supplier_name || '—' },
+    { icon: Tag,           label: 'Tür',           value: item.item_type === 'product' ? 'Mamül Ürün' : 'Hammadde' },
+    { icon: Hash,          label: 'SKU',            value: item.sku || '—' },
+    { icon: Ruler,         label: 'Birim',          value: item.unit },
+    { icon: Boxes,         label: 'Stok',           value: `${item.stock_count} ${item.unit}`, color: clr },
+    { icon: AlertTriangle, label: 'Kritik Limit',   value: item.critical_limit > 0 ? `${item.critical_limit} ${item.unit}` : '—' },
+    { icon: DollarSign,    label: 'Alış Fiyatı',    value: item.purchase_price > 0 ? `${sym}${item.purchase_price}` : '—', color: '#10b981' },
+    { icon: DollarSign,    label: 'Satış Fiyatı',   value: item.sale_price > 0 ? `₺${item.sale_price}` : '—', color: '#3b82f6' },
+    { icon: MapPin,        label: 'Konum',          value: item.location || '—' },
+    { icon: Package,       label: 'Tedarikçi',      value: item.supplier_name || '—' },
   ];
 
   return (
@@ -846,8 +874,8 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}/>
       <motion.div
         initial={{ x: 340 }} animate={{ x: 0 }} exit={{ x: 340 }}
-        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-        className="relative w-full max-w-sm h-full overflow-y-auto flex flex-col shadow-2xl"
+        transition={{ type: 'spring', damping: 28, stiffness: 280 }}
+        className="relative w-full max-w-sm h-full overflow-hidden flex flex-col shadow-2xl"
         style={{ background: isDark ? '#0b1729' : '#f8fafc', borderLeft: `1px solid ${c.border}` }}>
 
         {/* Header */}
@@ -892,40 +920,106 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
           )}
         </div>
 
-        {/* Detay Satırları */}
-        <div className="flex-1 px-5 py-3 space-y-1">
-          {rows.map((r, i) => (
-            <div key={i} className="flex items-center justify-between py-2"
-              style={{ borderBottom: i < rows.length - 1 ? `1px solid ${c.border}` : 'none' }}>
-              <div className="flex items-center gap-2 min-w-0">
-                <r.icon size={12} style={{ color: c.muted, flexShrink: 0 }}/>
-                <span className="text-xs font-semibold" style={{ color: c.muted }}>{r.label}</span>
-              </div>
-              <span className="text-xs font-bold text-right truncate ml-2" style={{ color: r.color || c.text }}>
-                {r.value}
-              </span>
-            </div>
+        {/* Tab Bar */}
+        <div className="flex gap-1 px-4 py-2.5 flex-shrink-0" style={{ borderBottom: `1px solid ${c.border}`, background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.02)' }}>
+          {[{ id: 'detail', label: 'Detay', icon: Package }, { id: 'history', label: 'Geçmiş', icon: Clock }].map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+              style={{ background: tab === t.id ? currentColor : 'transparent', color: tab === t.id ? '#fff' : c.muted }}>
+              <t.icon size={11}/>{t.label}
+            </button>
           ))}
         </div>
 
-        {/* Kategori, notlar */}
-        {(item.category || item.notes) && (
-          <div className="px-5 py-3 space-y-2 flex-shrink-0" style={{ borderTop: `1px solid ${c.border}` }}>
-            {item.category && (
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: c.muted }}>Kategori</p>
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-lg"
-                  style={{ background: `${currentColor}15`, color: currentColor }}>{item.category}</span>
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto">
+          {tab === 'detail' && (
+            <>
+              <div className="px-5 py-3 space-y-1">
+                {rows.map((r, i) => (
+                  <div key={i} className="flex items-center justify-between py-2"
+                    style={{ borderBottom: i < rows.length - 1 ? `1px solid ${c.border}` : 'none' }}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <r.icon size={12} style={{ color: c.muted, flexShrink: 0 }}/>
+                      <span className="text-xs font-semibold" style={{ color: c.muted }}>{r.label}</span>
+                    </div>
+                    <span className="text-xs font-bold text-right truncate ml-2" style={{ color: r.color || c.text }}>
+                      {r.value}
+                    </span>
+                  </div>
+                ))}
               </div>
-            )}
-            {item.notes && (
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: c.muted }}>Notlar</p>
-                <p className="text-xs leading-relaxed" style={{ color: c.text }}>{item.notes}</p>
-              </div>
-            )}
-          </div>
-        )}
+              {(item.category || item.notes) && (
+                <div className="px-5 py-3 space-y-2" style={{ borderTop: `1px solid ${c.border}` }}>
+                  {item.category && (
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: c.muted }}>Kategori</p>
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-lg"
+                        style={{ background: `${currentColor}15`, color: currentColor }}>{item.category}</span>
+                    </div>
+                  )}
+                  {item.notes && (
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: c.muted }}>Notlar</p>
+                      <p className="text-xs leading-relaxed" style={{ color: c.text }}>{item.notes}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
+          {tab === 'history' && (
+            <div className="px-4 py-3 space-y-2">
+              {mvLoading && (
+                <div className="flex items-center justify-center py-12">
+                  <RefreshCcw size={20} className="animate-spin" style={{ color: currentColor }}/>
+                </div>
+              )}
+              {!mvLoading && movements.length === 0 && (
+                <div className="text-center py-12">
+                  <Clock size={32} className="mx-auto mb-2 opacity-20" style={{ color: c.muted }}/>
+                  <p className="text-xs" style={{ color: c.muted }}>Henüz stok hareketi yok</p>
+                </div>
+              )}
+              {!mvLoading && movements.map((mv, i) => {
+                const isIn = mv.delta > 0;
+                const dt = new Date(mv.created_at);
+                const dateStr = dt.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: '2-digit' });
+                const timeStr = dt.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+                return (
+                  <div key={mv.id || i} className="flex items-start gap-3 rounded-xl p-3"
+                    style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#ffffff', border: `1px solid ${isDark ? 'rgba(148,163,184,0.08)': '#e2e8f0'}` }}>
+                    <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
+                      style={{ background: isIn ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)' }}>
+                      {isIn
+                        ? <ArrowUpCircle size={14} style={{ color: '#10b981' }}/>
+                        : <ArrowDownCircle size={14} style={{ color: '#ef4444' }}/>}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold" style={{ color: isIn ? '#10b981' : '#ef4444' }}>
+                          {isIn ? '+' : ''}{mv.delta} {item.unit}
+                        </span>
+                        <span className="text-[10px] flex-shrink-0" style={{ color: c.muted }}>{dateStr} {timeStr}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <span style={{ color: c.muted }}>{srcIcon(mv.source)}</span>
+                        <span className="text-[10px] font-semibold" style={{ color: c.muted }}>{srcLabel(mv.source)}</span>
+                        {mv.stock_after != null && (
+                          <span className="text-[10px] ml-auto" style={{ color: c.muted }}>→ {mv.stock_after} {item.unit}</span>
+                        )}
+                      </div>
+                      {mv.note && (
+                        <p className="text-[10px] mt-1 truncate" style={{ color: c.muted }}>{mv.note}</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {/* Alt butonlar */}
         <div className="px-5 py-4 flex gap-2 flex-shrink-0" style={{ borderTop: `1px solid ${c.border}` }}>
