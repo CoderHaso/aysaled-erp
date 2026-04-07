@@ -104,19 +104,19 @@ function WorkOrderForm({ items, orders, allRecipes, onClose, onSaved, currentCol
                 <div className="p-2">
                   <input autoFocus value={itemQ} onChange={e => setItemQ(e.target.value)}
                     placeholder="Ara..." className="w-full px-3 py-1.5 rounded-lg text-sm outline-none"
-                    style={{ background: 'rgba(255,255,255,0.07)', color: '#f1f5f9' }}/>
+                    style={{ background: isDark ? 'rgba(255,255,255,0.07)' : '#f1f5f9', color: isDark ? '#f1f5f9' : '#1e293b' }}/>
                 </div>
                 <div className="max-h-40 overflow-y-auto">
                   {itemMatches.map(i => (
                     <div key={i.id} onClick={() => { setForm(f => ({ ...f, item_id: i.id, recipe_id: '' })); setItemOpen(false); setItemQ(''); }}
                       className="px-4 py-2.5 cursor-pointer transition-colors"
-                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                      onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                      <p className="text-sm text-slate-100 font-semibold">{i.name}</p>
-                      <p className="text-[10px] text-slate-500">Stok: {fmt(i.stock_count)} {i.unit}</p>
+                      <p className="text-sm font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{i.name}</p>
+                      <p className="text-[10px]" style={{ color: '#64748b' }}>Stok: {fmt(i.stock_count)} {i.unit}</p>
                     </div>
                   ))}
-                  {itemMatches.length === 0 && <p className="px-4 py-3 text-xs text-slate-500">Sonuç yok</p>}
+                  {itemMatches.length === 0 && <p className="px-4 py-3 text-xs" style={{ color: '#64748b' }}>Sonuç yok</p>}
                 </div>
               </motion.div>
             )}
@@ -126,13 +126,13 @@ function WorkOrderForm({ items, orders, allRecipes, onClose, onSaved, currentCol
         {/* Reçete — RecipePickerModal */}
         {hasRecipe && (
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Reçete</p>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: '#64748b' }}>Reçete</p>
             <button onClick={() => setShowRecipePicker(true)}
               className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-all"
               style={{
-                background: form.recipe_note ? 'rgba(139,92,246,0.1)' : 'rgba(255,255,255,0.05)',
-                border: `1px solid ${form.recipe_note ? 'rgba(139,92,246,0.35)' : 'rgba(139,92,246,0.2)'}`,
-                color: form.recipe_note ? '#c4b5fd' : '#64748b',
+                background: form.recipe_note ? 'rgba(139,92,246,0.1)' : (isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9'),
+                border: `1px solid ${form.recipe_note ? 'rgba(139,92,246,0.35)' : (isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0')}`,
+                color: form.recipe_note ? '#c4b5fd' : (isDark ? '#cbd5e1' : '#475569'),
               }}>
               <span className="flex items-center gap-2 truncate">
                 <FlaskConical size={13} style={{ color: '#a78bfa', flexShrink: 0 }}/>
@@ -141,7 +141,7 @@ function WorkOrderForm({ items, orders, allRecipes, onClose, onSaved, currentCol
               <BookOpen size={12} style={{ color: '#a78bfa' }}/>
             </button>
             {form.recipe_note && (
-              <p className="text-[10px] text-slate-600 mt-1 px-1 truncate">{form.recipe_note}</p>
+              <p className="text-[10px] mt-1 px-1 truncate" style={{ color: '#64748b' }}>{form.recipe_note}</p>
             )}
           </div>
         )}
@@ -196,15 +196,13 @@ function WorkOrderForm({ items, orders, allRecipes, onClose, onSaved, currentCol
         {err && <p className="text-xs text-red-400 flex items-center gap-1"><AlertCircle size={12}/>{err}</p>}
 
         <div className="flex gap-2 pt-1">
-          <button onClick={onClose} className="flex-1 py-2 rounded-xl text-sm text-slate-400"
-            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)' }}>
+          <button onClick={onClose} className="flex-1 py-2 rounded-xl text-sm"
+            style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`, color: isDark ? '#94a3b8' : '#64748b' }}>
             İptal
           </button>
-          <button onClick={handleSave} disabled={saving}
-            className="flex-1 py-2 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
-            style={{ background: currentColor, opacity: saving ? 0.7 : 1 }}>
-            {saving ? <Loader2 size={14} className="animate-spin"/> : <Check size={14}/>}
-            Oluştur
+          <button onClick={handleSave} disabled={saving} className="flex-1 py-2 rounded-xl text-sm font-bold text-white transition-all shadow-lg"
+            style={{ background: currentColor, boxShadow: `0 8px 20px ${currentColor}30` }}>
+            {saving ? <Loader2 size={16} className="animate-spin mx-auto"/> : 'Emri Kaydet'}
           </button>
         </div>
       </motion.div>
@@ -234,8 +232,7 @@ function WorkOrderCard({ wo, items, orders, onStatusChange, onDelete, currentCol
       const woQty    = Number(wo.quantity || 1);
       const woNote   = `İş emri #${wo.id?.slice(0,8)} tamamlandı`;
 
-      // ── 1. Mamül ürünün stok sayısını ARTIR ────────────────────────────
-      await supabase.rpc('increment_stock', {
+      const { error: incErr } = await supabase.rpc('increment_stock', {
         p_item_id:   wo.item_id,
         p_qty:       woQty,
         p_source:    'work_order',
@@ -243,6 +240,10 @@ function WorkOrderCard({ wo, items, orders, onStatusChange, onDelete, currentCol
         p_recipe_id: recipeId,
         p_note:      woNote,
       });
+      if (incErr) {
+        const { data: itm } = await supabase.from('items').select('stock_count').eq('id', wo.item_id).single();
+        await supabase.from('items').update({ stock_count: (itm?.stock_count || 0) + woQty }).eq('id', wo.item_id);
+      }
 
       // ── 2. Hammadde stoklarını DÜŞÜR (recipe_items üzerinden) ──────────
       // Önce wo.recipe_id varsa o reçeteyi, yoksa ilk reçeteyi kullan
@@ -259,22 +260,18 @@ function WorkOrderCard({ wo, items, orders, onStatusChange, onDelete, currentCol
       for (const ri of recipeItems) {
         if (!ri.item_id) continue;
         const qty = Number(ri.quantity || 1) * woQty;
-        await supabase.rpc('decrement_stock', {
+        const { error: rpcErr } = await supabase.rpc('decrement_stock', {
           p_item_id:   ri.item_id,
           p_qty:       qty,
           p_source:    'work_order',
           p_source_id: wo.id,
           p_note:      `${woNote} — hammadde`,
-        }).catch(() => {
-          // RPC yoksa direkt güncelle (fallback)
-          return supabase.from('items')
-            .select('stock_count').eq('id', ri.item_id).single()
-            .then(({ data }) =>
-              supabase.from('items')
-                .update({ stock_count: (data?.stock_count || 0) - qty })
-                .eq('id', ri.item_id)
-            );
         });
+        if (rpcErr) {
+          // RPC yoksa direkt güncelle (fallback)
+          const { data: itm } = await supabase.from('items').select('stock_count').eq('id', ri.item_id).single();
+          await supabase.from('items').update({ stock_count: (itm?.stock_count || 0) - qty }).eq('id', ri.item_id);
+        }
       }
 
       // ── 3. Sipariş bağlıysa tüm WO'ları kontrol et ────────────────────

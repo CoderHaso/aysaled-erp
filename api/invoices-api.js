@@ -240,9 +240,11 @@ async function handleCreate(body, res) {
   // Eger body'den invoice_id geldiyse onu kullan; yoksa yeni uret
   let invoice_id = body.invoice_id;
   if (!invoice_id) {
-    // MAX ile paralel istek guvenli
+    // MAX ile paralel istek guvenli. Iptalleri atla.
     const { data: seqRows } = await supabase.from('invoices')
-      .select('invoice_id').ilike('invoice_id', `${prefix}%`)
+      .select('invoice_id')
+      .ilike('invoice_id', `${prefix}%`)
+      .not('status', 'in', '("Cancelled","Canceled")')
       .order('invoice_id', { ascending: false }).limit(20);
     let maxSeq = 0;
     (seqRows || []).forEach(r => {
@@ -252,11 +254,15 @@ async function handleCreate(body, res) {
     invoice_id = `${prefix}${String(maxSeq + 1).padStart(9, '0')}`;
   }
 
-  // Ayni invoice_id zaten varsa (ornegin sync'ten geldiyse) direkt donus
+  // Ayni invoice_id zaten varsa kontrol et
   const { data: existing } = await supabase.from('invoices')
-    .select('invoice_id').eq('invoice_id', invoice_id).eq('type', type).maybeSingle();
+    .select('invoice_id, status').eq('invoice_id', invoice_id).eq('type', type).maybeSingle();
   if (existing) {
-    return res.json({ success: true, invoice_id, already_exists: true });
+    if (existing.status !== 'Draft' && existing.status !== 'Cancelled' && existing.status !== 'Canceled') {
+      // Gonderilmis veya resmilesmis ise degistirme
+      return res.json({ success: true, invoice_id, already_exists: true });
+    }
+    // Eger Cancelled veya Draft ise upsert ile uzerine yazacagiz
   }
 
   const lineItems = lines.map((l, i) => ({

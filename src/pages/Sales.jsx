@@ -629,7 +629,7 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
             {isEdit ? 'Sipariş Düzenle' : 'Yeni Sipariş'}
           </p>
-          <h2 className="text-base font-bold text-slate-100 font-mono mt-0.5">
+          <h2 className="text-base font-bold font-mono mt-0.5" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
             {form.order_number || '—'}
           </h2>
         </div>
@@ -1320,18 +1320,19 @@ export default function Sales() {
         const qty  = Number(line.quantity || 1);
         const note = `Sipariş #${order.order_number} tamamlandı — satış stok düşümü`;
         // Önce reçete bazlı stok düş, yoksa genel stok
-        await supabase.rpc('decrement_stock', {
+        const { error: rpcErr } = await supabase.rpc('decrement_stock', {
           p_item_id:   line.item_id,
           p_qty:       qty,
           p_source:    'sale',
           p_source_id: orderId,
           p_recipe_id: line.recipe_id || null,
           p_note:      note,
-        }).catch(async () => {
-          // RPC henüz çalışmıyorsa direkt güncelle
+        });
+        if (rpcErr) {
+          // RPC hata verirse manuel fallback
           const { data: itm } = await supabase.from('items').select('stock_count').eq('id', line.item_id).single();
           await supabase.from('items').update({ stock_count: (itm?.stock_count || 0) - qty }).eq('id', line.item_id);
-        });
+        }
       }
 
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...patch } : o));

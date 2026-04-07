@@ -5,6 +5,7 @@ import {
   ChevronRight, ArrowLeftRight, Search, AlertCircle,
   ShoppingBag, DollarSign, Tag,
 } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
 
 /**
  * RecipePickerModal
@@ -28,6 +29,9 @@ export default function RecipePickerModal({
   productId, productName, allRecipes, allItems = [],
   onSelect, onClose, currentColor = '#8b5cf6',
 }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
+
   const productRecipes = useMemo(
     () => (allRecipes || []).filter(r => r.product_id === productId),
     [allRecipes, productId]
@@ -140,9 +144,9 @@ export default function RecipePickerModal({
         className="relative w-full flex flex-col rounded-3xl overflow-hidden shadow-2xl"
         style={{
           maxWidth: 780, maxHeight: '92vh',
-          background: 'linear-gradient(145deg, #0d1b2e 0%, #0a1628 100%)',
-          border: '1px solid rgba(139,92,246,0.2)',
-          boxShadow: `0 0 60px rgba(139,92,246,0.12), 0 25px 50px rgba(0,0,0,0.5)`,
+          background: isDark ? 'linear-gradient(145deg, #0d1b2e 0%, #0a1628 100%)' : '#ffffff',
+          border: `1px solid ${isDark ? 'rgba(139,92,246,0.2)' : '#e2e8f0'}`,
+          boxShadow: `0 0 60px ${isDark ? 'rgba(139,92,246,0.12)' : 'rgba(0,0,0,0.1)'}, 0 25px 50px rgba(0,0,0,0.5)`,
         }}>
 
         {/* ═══ HEADER ═══ */}
@@ -157,7 +161,7 @@ export default function RecipePickerModal({
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-purple-400">Reçete Seç & Düzenle</p>
-            <h3 className="text-sm font-bold text-white truncate mt-0.5">{productName}</h3>
+            <h3 className="text-sm font-bold truncate mt-0.5" style={{ color: isDark ? '#ffffff' : '#1e293b' }}>{productName}</h3>
           </div>
           {changed && (
             <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-full"
@@ -177,11 +181,11 @@ export default function RecipePickerModal({
         {productRecipes.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center py-16 px-8 text-center">
             <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
-              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(148,163,184,0.1)' }}>
-              <Package size={24} className="text-slate-700"/>
+              style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#f1f5f9', border: `1px solid ${isDark ? 'rgba(148,163,184,0.1)' : '#e2e8f0'}` }}>
+              <Package size={24} className="text-slate-500"/>
             </div>
-            <p className="text-sm font-semibold text-slate-400">Bu ürün için reçete tanımlanmamış</p>
-            <p className="text-[11px] text-slate-600 mt-2">Stok → Mamül → Reçeteler sekmesinden ekleyebilirsiniz</p>
+            <p className="text-sm font-semibold" style={{ color: isDark ? '#94a3b8' : '#475569' }}>Bu ürün için reçete tanımlanmamış</p>
+            <p className="text-[11px] mt-2" style={{ color: '#64748b' }}>Stok → Mamül → Reçeteler sekmesinden ekleyebilirsiniz</p>
           </div>
         ) : (
           <div className="flex flex-1 min-h-0">
@@ -222,10 +226,10 @@ export default function RecipePickerModal({
                         }}>
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-semibold truncate"
-                            style={{ color: active ? '#c4b5fd' : '#64748b' }}>
+                            style={{ color: active ? (isDark ? '#c4b5fd' : '#8b5cf6') : (isDark ? '#94a3b8' : '#64748b') }}>
                             {r.name}
                           </p>
-                          <p className="text-[10px] mt-0.5 flex items-center gap-1" style={{ color: '#334155'}}>
+                          <p className="text-[10px] mt-0.5 flex items-center gap-1" style={{ color: isDark ? '#475569' : '#94a3b8'}}>
                             <Package size={8}/> {(r.recipe_items || []).length} malzeme
                           </p>
                         </div>
@@ -310,18 +314,19 @@ export default function RecipePickerModal({
                           {/* Ad + stock bilgisi */}
                           <div className="min-w-0 flex items-center gap-2">
                             <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
-                              style={{ background: it.item_id ? `${currentColor}18` : 'rgba(255,255,255,0.05)' }}>
+                              style={{ background: it.item_id ? `${currentColor}18` : (isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9') }}>
                               <ShoppingBag size={10}
                                 style={{ color: it.item_id ? currentColor : '#475569' }}/>
                             </div>
                             <div className="flex-1 min-w-0">
-                              <input
+                               <input
                                 value={it.item_name || ''}
                                 onChange={e => updateItem(idx, 'item_name', e.target.value)}
                                 placeholder="Malzeme adı..."
-                                className="w-full bg-transparent outline-none text-xs font-semibold text-slate-200 placeholder-slate-700"/>
+                                className="w-full bg-transparent outline-none text-xs font-semibold"
+                                style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}/>
                               {stockItem && (
-                                <p className="text-[9px] text-slate-600 truncate">
+                                <p className="text-[9px] truncate" style={{ color: '#64748b' }}>
                                   Stok: {stockItem.stock_count} {stockItem.unit}
                                 </p>
                               )}
@@ -332,15 +337,15 @@ export default function RecipePickerModal({
                           <input type="number" min="0" step="0.01"
                             value={it.quantity}
                             onChange={e => updateItem(idx, 'quantity', e.target.value)}
-                            className="w-full bg-transparent outline-none text-xs text-center font-bold text-slate-200 rounded-lg px-1 py-1"
-                            style={{ border: '1px solid rgba(148,163,184,0.12)' }}/>
+                            className="w-full bg-transparent outline-none text-xs text-center font-bold rounded-lg px-1 py-1"
+                            style={{ color: isDark ? '#e2e8f0' : '#1e293b', border: `1px solid ${isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0'}` }}/>
 
                           {/* Birim */}
                           <select value={it.unit || 'Adet'}
                             onChange={e => updateItem(idx, 'unit', e.target.value)}
-                            className="bg-transparent outline-none text-[11px] text-center text-slate-400 rounded-lg px-1 py-1 w-full"
-                            style={{ border: '1px solid rgba(148,163,184,0.12)', background: 'rgba(15,23,42,0.5)' }}>
-                            {UNITS.map(u => <option key={u} value={u} style={{ background: '#0d1b2e' }}>{u}</option>)}
+                            className="bg-transparent outline-none text-[11px] text-center rounded-lg px-1 py-1 w-full"
+                            style={{ color: '#94a3b8', border: `1px solid ${isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0'}`, background: isDark ? 'rgba(15,23,42,0.5)' : '#f8fafc' }}>
+                            {UNITS.map(u => <option key={u} value={u} style={{ background: isDark ? '#0d1b2e' : '#ffffff' }}>{u}</option>)}
                           </select>
 
                           {/* Birim Fiyat */}
@@ -450,6 +455,8 @@ export default function RecipePickerModal({
    ItemPickerModal — Ayrı tam modal: stok araması + kayıtsız seçim
 ═══════════════════════════════════════════════════════════════ */
 function ItemPickerModal({ allItems, onPick, onClose, currentColor, isSwap }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
   const [search, setSearch] = useState('');
 
   const filtered = useMemo(() => {
@@ -473,8 +480,8 @@ function ItemPickerModal({ allItems, onPick, onClose, currentColor, isSwap }) {
         exit={{ scale: 0.95, opacity: 0, y: 8 }}
         className="relative w-full max-w-md rounded-2xl overflow-hidden flex flex-col"
         style={{
-          background: '#0c1829',
-          border: '1px solid rgba(139,92,246,0.25)',
+          background: isDark ? '#0c1829' : '#ffffff',
+          border: `1px solid ${isDark ? 'rgba(139,92,246,0.25)' : '#e2e8f0'}`,
           boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
           maxHeight: '80vh',
         }}>
@@ -495,13 +502,14 @@ function ItemPickerModal({ allItems, onPick, onClose, currentColor, isSwap }) {
 
         {/* Arama */}
         <div className="px-4 py-3 flex-shrink-0"
-          style={{ borderBottom: '1px solid rgba(148,163,184,0.08)' }}>
+          style={{ borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.08)' : '#e2e8f0'}` }}>
           <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl"
-            style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${currentColor}30` }}>
+            style={{ background: isDark ? 'rgba(255,255,255,0.04)' : '#f1f5f9', border: `1px solid ${isDark ? `${currentColor}30` : '#e2e8f0'}` }}>
             <Search size={12} style={{ color: '#64748b' }}/>
             <input autoFocus value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Ad veya SKU ile ara..."
-              className="flex-1 bg-transparent outline-none text-sm text-slate-200 placeholder-slate-600"/>
+              className="flex-1 bg-transparent outline-none text-sm"
+              style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}/>
             {search && (
               <button onClick={() => setSearch('')} className="text-slate-500 hover:text-slate-300">
                 <X size={12}/>
@@ -543,9 +551,10 @@ function ItemPickerModal({ allItems, onPick, onClose, currentColor, isSwap }) {
                 <Package size={12} style={{ color: currentColor }}/>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold text-slate-200 truncate group-hover:text-white">{item.name}</p>
+                <p className="text-xs font-semibold truncate group-hover:text-amber-500 transition-colors"
+                   style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}>{item.name}</p>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-[10px] text-slate-600">{item.unit}</span>
+                  <span className="text-[10px]" style={{ color: '#64748b' }}>{item.unit}</span>
                   {item.sku && <span className="text-[10px] text-slate-700">· #{item.sku}</span>}
                   {item.stock_count != null && (
                     <span className="text-[10px]"
