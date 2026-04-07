@@ -18,7 +18,7 @@ import {
   X, Search, Check, Package, AlertCircle, Loader2,
   ArrowRight, DollarSign, Plus, Info,
 } from 'lucide-react';
-import { useTheme } from '../../contexts/ThemeContext';
+import { useTheme } from '../contexts/ThemeContext';
 
 const fmt = (n) =>
   n != null ? Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
