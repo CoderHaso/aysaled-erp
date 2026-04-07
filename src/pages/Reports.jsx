@@ -34,14 +34,16 @@ function topN(items, nameKey, valueKey, n = 5) {
 
 // ─── Period Selector ─────────────────────────────────────────────────────────
 function PeriodSelector({ value, onChange }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
   return (
     <div className="flex gap-2">
       {[6, 12, 24].map(n => (
         <button key={n} onClick={() => onChange(n)}
           className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
           style={{
-            background: value === n ? 'var(--color-primary)' : 'rgba(255,255,255,0.06)',
-            color: value === n ? '#fff' : '#94a3b8',
+            background: value === n ? 'var(--color-primary)' : (isDark ? 'rgba(255,255,255,0.06)' : '#f1f5f9'),
+            color: value === n ? '#fff' : (isDark ? '#94a3b8' : '#64748b'),
           }}>
           {n === 6 ? '6 Ay' : n === 12 ? '12 Ay' : '2 Yil'}
         </button>
@@ -52,14 +54,16 @@ function PeriodSelector({ value, onChange }) {
 
 // ─── Sub-tab bar ─────────────────────────────────────────────────────────────
 function SubTabs({ tabs, active, onChange }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
   return (
-    <div className="flex gap-1 border-b mb-4" style={{ borderColor: 'rgba(148,163,184,0.1)' }}>
+    <div className="flex gap-1 border-b mb-4" style={{ borderColor: isDark ? 'rgba(148,163,184,0.1)' : '#e2e8f0' }}>
       {tabs.map(t => (
         <button key={t} onClick={() => onChange(t)}
           className="px-3 py-1.5 text-xs font-semibold transition-all rounded-t-lg"
           style={{
-            color: active === t ? '#fff' : '#64748b',
-            background: active === t ? 'rgba(255,255,255,0.08)' : 'transparent',
+            color: active === t ? (isDark ? '#fff' : '#1e293b') : '#64748b',
+            background: active === t ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)') : 'transparent',
             borderBottom: active === t ? '2px solid var(--color-primary)' : '2px solid transparent',
           }}>{t}</button>
       ))}
@@ -71,7 +75,8 @@ function SubTabs({ tabs, active, onChange }) {
 // ANA SAYFA
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function Reports() {
-  const { currentColor } = useTheme();
+  const { currentColor, effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
   const [period, setPeriod]       = useState(12);
   const [loading, setLoading]     = useState(true);
   const [activeTab, setActiveTab] = useState('genel');
@@ -216,27 +221,27 @@ export default function Reports() {
             <BarChart2 size={20} style={{ color: currentColor }} />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-slate-100">Raporlar</h1>
+            <h1 className="text-xl font-bold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>Raporlar</h1>
             <p className="text-xs text-slate-500">Finansal analitik ve is zekasi</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <PeriodSelector value={period} onChange={setPeriod} />
-          <button onClick={load} className="p-2 rounded-xl text-slate-500 hover:text-slate-200"
-            style={{ background: 'rgba(255,255,255,0.06)' }}>
+          <button onClick={load} className="p-2 rounded-xl transition-colors"
+            style={{ color: '#64748b', background: isDark ? 'rgba(255,255,255,0.06)' : '#f1f5f9' }}>
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>
       </div>
 
       {/* Tab Bar */}
-      <div className="flex gap-1 p-1 rounded-2xl overflow-x-auto" style={{ background: 'rgba(255,255,255,0.04)' }}>
+      <div className="flex gap-1 p-1 rounded-2xl overflow-x-auto" style={{ background: isDark ? 'rgba(255,255,255,0.04)' : '#f1f5f9' }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)}
             className="flex items-center gap-1.5 flex-shrink-0 px-3 py-2 rounded-xl text-xs font-semibold transition-all"
             style={{
               background: activeTab === t.id ? currentColor : 'transparent',
-              color: activeTab === t.id ? '#fff' : '#94a3b8',
+              color: activeTab === t.id ? '#fff' : (isDark ? '#94a3b8' : '#64748b'),
             }}>
             <t.icon size={12} />{t.label}
           </button>
@@ -560,7 +565,7 @@ function CariTab({ currentColor, customers, normalCust, fatCust, orders, quotes,
               <div key={c.id} className="flex items-center justify-between p-3 rounded-xl mb-2"
                 style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)' }}>
                 <div>
-                  <p className="text-sm font-semibold text-slate-200">{c.name}</p>
+                  <p className="text-sm font-semibold" style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}>{c.name}</p>
                   <p className="text-[10px] text-slate-500">{cOrders.length} siparis</p>
                 </div>
                 <p className="text-sm font-bold text-amber-400">TL {fmtK(cAmt)}</p>
@@ -608,7 +613,7 @@ function TedarikTab({ currentColor, suppliers, normalSupp, fatSupp, inbox }) {
           {fatSupp.map(s => (
             <div key={s.id} className="flex items-center justify-between p-3 rounded-xl mb-2"
               style={{ background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.15)' }}>
-              <p className="text-sm font-semibold text-slate-200">{s.name}</p>
+              <p className="text-sm font-semibold" style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}>{s.name}</p>
               <span className="text-[10px] font-bold px-2 py-1 rounded-full"
                 style={{ background: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>Faturasiz</span>
             </div>

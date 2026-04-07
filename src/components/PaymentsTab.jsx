@@ -67,6 +67,8 @@ const daysLeft = (due) => {
 
 // ─── Ödeme Satırı ─────────────────────────────────────────────────────────────
 function PaymentRow({ payment, onEdit, onDelete, onMarkPaid, color }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
   const st = STATUS_CFG[payment.status] || STATUS_CFG.pending;
   const days = daysLeft(payment.due_date);
   const isPaid = payment.status === 'paid';
@@ -78,7 +80,7 @@ function PaymentRow({ payment, onEdit, onDelete, onMarkPaid, color }) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.97 }}
       className="rounded-2xl p-4 group transition-all"
-      style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${isPaid ? 'rgba(16,185,129,0.15)' : st.color + '25'}` }}
+      style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', border: `1px solid ${isPaid ? 'rgba(16,185,129,0.15)' : st.color + '25'}` }}
     >
       <div className="flex items-start justify-between gap-3">
         {/* Sol */}
@@ -91,7 +93,7 @@ function PaymentRow({ payment, onEdit, onDelete, onMarkPaid, color }) {
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <p className="text-sm font-semibold text-slate-100">
+              <p className="text-sm font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
                 {payment.description || (payment.direction === 'receivable' ? 'Alacak' : 'Borç')}
               </p>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: st.bg, color: st.color }}>
@@ -151,13 +153,13 @@ function PaymentRow({ payment, onEdit, onDelete, onMarkPaid, color }) {
           </button>
         )}
         <button onClick={() => onEdit(payment)}
-          className="p-1.5 rounded-lg transition-colors text-slate-500 hover:text-slate-200"
-          style={{ background: 'rgba(255,255,255,0.05)' }}>
+          className="p-1.5 rounded-lg transition-colors"
+          style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', color: '#64748b' }}>
           <Edit3 size={12} />
         </button>
         <button onClick={() => onDelete(payment.id)}
-          className="p-1.5 rounded-lg transition-colors text-slate-500 hover:text-red-400"
-          style={{ background: 'rgba(255,255,255,0.05)' }}>
+          className="p-1.5 rounded-lg transition-colors"
+          style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', color: '#64748b' }}>
           <Trash2 size={12} />
         </button>
       </div>
@@ -167,6 +169,9 @@ function PaymentRow({ payment, onEdit, onDelete, onMarkPaid, color }) {
 
 // ─── Yeni/Düzenle Modal ───────────────────────────────────────────────────────
 function PaymentFormModal({ payment, entityId, entityName, entityType, invoices, onSave, onClose, color }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
+
   const [form, setForm] = useState(payment || {
     direction:  entityType === 'customer' ? 'receivable' : 'payable',
     amount:     '',
@@ -289,14 +294,10 @@ function PaymentFormModal({ payment, entityId, entityName, entityType, invoices,
   };
 
   const inp = {
-    background: 'rgba(255,255,255,0.05)',
-    border: '1px solid rgba(148,163,184,0.15)',
-    borderRadius: 10,
-    color: '#f1f5f9',
-    padding: '8px 12px',
-    fontSize: 13,
-    outline: 'none',
-    width: '100%',
+    background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9',
+    border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`,
+    borderRadius: 10, color: isDark ? '#f1f5f9' : '#1e293b',
+    padding: '8px 12px', fontSize: 13, outline: 'none', width: '100%',
   };
 
   return (
@@ -304,15 +305,19 @@ function PaymentFormModal({ payment, entityId, entityName, entityType, invoices,
       style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}>
       <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
         className="w-full max-w-lg rounded-3xl overflow-hidden"
-        style={{ background: '#0c1526', border: '1px solid rgba(148,163,184,0.12)', maxHeight: '90vh', overflowY: 'auto' }}>
+        style={{
+          background: isDark ? '#0c1526' : '#ffffff',
+          border: `1px solid ${isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0'}`,
+          maxHeight: '90vh', overflowY: 'auto'
+        }}>
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5"
           style={{ borderBottom: '1px solid rgba(148,163,184,0.08)' }}>
-          <h2 className="text-base font-bold text-slate-100">
+          <h2 className="text-base font-bold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
             {payment?.id ? 'Ödeme Düzenle' : 'Yeni Ödeme Ekle'}
           </h2>
-          <button onClick={onClose} className="p-2 rounded-xl text-slate-500 hover:text-white">
+          <button onClick={onClose} className="p-2 rounded-xl transition-colors" style={{ color: '#94a3b8' }}>
             <X size={16} />
           </button>
         </div>
@@ -467,6 +472,8 @@ function PaymentFormModal({ payment, entityId, entityName, entityType, invoices,
 
 // ─── Mark Paid Modal ──────────────────────────────────────────────────────────
 function MarkPaidModal({ payment, onConfirm, onClose, color }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
   const [paidAmt, setPaidAmt] = useState(String(payment.amount));
   const [paidAt, setPaidAt]   = useState(new Date().toISOString().split('T')[0]);
   const [saving, setSaving]   = useState(false);
@@ -483,11 +490,11 @@ function MarkPaidModal({ payment, onConfirm, onClose, color }) {
       style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)' }}>
       <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
         className="w-full max-w-sm rounded-3xl overflow-hidden"
-        style={{ background: '#0c1526', border: '1px solid rgba(148,163,184,0.12)' }}>
+        style={{ background: isDark ? '#0c1526' : '#ffffff', border: `1px solid ${isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0'}` }}>
         <div className="flex items-center justify-between px-6 py-5"
-          style={{ borderBottom: '1px solid rgba(148,163,184,0.08)' }}>
-          <h2 className="text-sm font-bold text-slate-100">Ödeme Kaydet</h2>
-          <button onClick={onClose} className="p-1.5 rounded-xl text-slate-500 hover:text-white"><X size={15} /></button>
+          style={{ borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.08)' : '#e2e8f0'}` }}>
+          <h2 className="text-sm font-bold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>Ödeme Kaydet</h2>
+          <button onClick={onClose} className="p-1.5 rounded-xl transition-colors" style={{ color: '#94a3b8' }}><X size={15} /></button>
         </div>
         <div className="px-6 py-5 space-y-4">
           <div>

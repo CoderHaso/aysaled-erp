@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Download, Printer, Loader2, AlertCircle, RefreshCw, ExternalLink } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
 
 /**
  * InvoicePreviewModal
@@ -17,6 +18,8 @@ import { X, Download, Printer, Loader2, AlertCircle, RefreshCw, ExternalLink } f
  *   onClose     – fn
  */
 export default function InvoicePreviewModal({ invoiceId, documentId, type = 'outbox', previewHtml, onClose }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
   const [html,       setHtml]       = useState(previewHtml || null);
   const [pdfBase64,  setPdfBase64]  = useState(null);
   const [loading,    setLoading]    = useState(!previewHtml);
@@ -128,8 +131,8 @@ export default function InvoicePreviewModal({ invoiceId, documentId, type = 'out
           className="relative w-full max-w-5xl flex flex-col rounded-3xl overflow-hidden"
           style={{
             height: 'calc(100vh - 4rem)',
-            background: '#0c1526',
-            border: '1px solid rgba(148,163,184,0.12)',
+            background: isDark ? '#0c1526' : '#ffffff',
+            border: `1px solid ${isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0'}`,
             boxShadow: '0 40px 80px rgba(0,0,0,0.7)',
           }}
           initial={{ scale: 0.93, y: 24 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.93, y: 24 }}
@@ -137,12 +140,12 @@ export default function InvoicePreviewModal({ invoiceId, documentId, type = 'out
 
           {/* ── Header ── */}
           <div className="flex items-center justify-between px-5 py-4 flex-shrink-0"
-            style={{ borderBottom: '1px solid rgba(148,163,184,0.08)', background: 'rgba(0,0,0,0.3)' }}>
+            style={{ borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.08)' : '#e2e8f0'}`, background: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.02)' }}>
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
                 {previewHtml ? 'Taslak Önizleme' : 'Fatura Görüntüle'}
               </p>
-              <h3 className="text-sm font-bold text-slate-100 font-mono mt-0.5">{invoiceId || 'TASLAK'}</h3>
+              <h3 className="text-sm font-bold font-mono mt-0.5" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{invoiceId || 'TASLAK'}</h3>
             </div>
 
             <div className="flex items-center gap-2">
@@ -166,14 +169,14 @@ export default function InvoicePreviewModal({ invoiceId, documentId, type = 'out
               {/* Yenile — gerçek fatura */}
               {!previewHtml && (
                 <button onClick={fetchHtml}
-                  className="p-2 rounded-xl transition-all text-slate-400 hover:text-white"
-                  style={{ background: 'rgba(255,255,255,0.05)' }}>
+                  className="p-2 rounded-xl transition-all"
+                  style={{ color: '#94a3b8', background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9' }}>
                   <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
                 </button>
               )}
 
               <button onClick={onClose}
-                className="p-2 rounded-xl text-slate-500 hover:text-white transition-colors">
+                className="p-2 rounded-xl transition-colors" style={{ color: '#94a3b8' }}>
                 <X size={18} />
               </button>
             </div>
@@ -184,20 +187,20 @@ export default function InvoicePreviewModal({ invoiceId, documentId, type = 'out
             {/* Yükleniyor */}
             {loading && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3"
-                style={{ background: '#0c1526', zIndex: 10 }}>
+                style={{ background: isDark ? '#0c1526' : '#f8fafc', zIndex: 10 }}>
                 <div className="w-16 h-16 rounded-3xl flex items-center justify-center"
                   style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)' }}>
                   <Loader2 size={28} className="animate-spin text-blue-400" />
                 </div>
-                <p className="text-sm text-slate-300 font-semibold">Fatura yükleniyor...</p>
-                <p className="text-xs text-slate-500">Uyumsoft'tan HTML görünümü alınıyor</p>
+                <p className="text-sm font-semibold" style={{ color: isDark ? '#cbd5e1' : '#475569' }}>Fatura yükleniyor...</p>
+                <p className="text-xs" style={{ color: '#64748b' }}>Uyumsoft'tan HTML görünümü alınıyor</p>
               </div>
             )}
 
             {/* Hata */}
             {!loading && error && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6"
-                style={{ background: '#0c1526' }}>
+                style={{ background: isDark ? '#0c1526' : '#f8fafc' }}>
                 <div className="w-16 h-16 rounded-3xl flex items-center justify-center"
                   style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
                   <AlertCircle size={28} className="text-red-400" />

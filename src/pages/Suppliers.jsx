@@ -39,7 +39,8 @@ function StatusDot({ status }) {
 
 // ─── Supplier Detail Drawer ────────────────────────────────────────────────────
 function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
-  const { currentColor } = useTheme();
+  const { currentColor, effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
   const navigate = useNavigate();
   const [invoices, setInvoices]     = useState([]);
   const [loadingInv, setLoadingInv] = useState(true);
@@ -131,13 +132,13 @@ function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
         <motion.div className="relative w-full max-w-xl h-full overflow-y-auto"
-          style={{ background: '#0c1526', borderLeft: '1px solid rgba(148,163,184,0.1)' }}
+          style={{ background: isDark ? '#0c1526' : '#ffffff', borderLeft: `1px solid ${isDark ? 'rgba(148,163,184,0.1)' : '#e2e8f0'}` }}
           initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
           transition={{ type: 'spring', damping: 28, stiffness: 250 }}>
 
           {/* Header */}
           <div className="sticky top-0 z-10 px-5 py-4"
-            style={{ background: 'rgba(12,21,38,0.97)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(148,163,184,0.08)' }}>
+            style={{ background: isDark ? 'rgba(12,21,38,0.97)' : 'rgba(255,255,255,0.97)', backdropFilter: 'blur(12px)', borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.08)' : '#e2e8f0'}` }}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-white font-bold text-base"
@@ -146,7 +147,7 @@ function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
                 </div>
                 <div>
                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Tedarikçi</p>
-                  <h2 className="text-sm font-bold text-slate-100 leading-tight max-w-[220px] truncate">
+                  <h2 className="text-sm font-bold leading-tight max-w-[220px] truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
                     {form.name || 'Yeni Tedarikçi'}
                   </h2>
                 </div>
@@ -159,7 +160,7 @@ function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
                     <Edit3 size={15} style={{ color: editing ? ACCENT : undefined }} />
                   </button>
                 )}
-                <button onClick={onClose} className="p-2 rounded-xl text-slate-500 hover:text-white">
+                <button onClick={onClose} className="p-2 rounded-xl transition-colors" style={{ color: '#94a3b8' }}>
                   <X size={18} />
                 </button>
               </div>
@@ -177,7 +178,7 @@ function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
                   { label: 'Son Fatura',  value: fmtD(lastInvoice?.issue_date), color: '#f59e0b' },
                 ].map((s, i) => (
                   <div key={i} className="rounded-xl p-2.5 text-center"
-                    style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${hasOverdue && i===1 ? 'rgba(239,68,68,0.3)' : 'rgba(148,163,184,0.08)'}` }}>
+                    style={{ background: isDark ? 'rgba(255,255,255,0.04)' : '#f8fafc', border: `1px solid ${hasOverdue && i===1 ? 'rgba(239,68,68,0.3)' : (isDark ? 'rgba(148,163,184,0.08)' : '#e2e8f0')}` }}>
                     <p className="text-sm font-bold" style={{ color: s.color }}>{s.value}</p>
                     <p className="text-[10px] text-slate-500 mt-0.5">{s.label}</p>
                     {hasOverdue && i === 1 && (
@@ -189,11 +190,11 @@ function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
             )}
 
             {!isNew && (
-              <div className="flex gap-1 mt-3 p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)' }}>
+              <div className="flex gap-1 mt-3 p-1 rounded-xl" style={{ background: isDark ? 'rgba(255,255,255,0.04)' : '#f1f5f9' }}>
                 {TABS.map(t => (
                   <button key={t.id} onClick={() => setTab(t.id)}
                     className="flex items-center gap-1.5 flex-1 justify-center py-1.5 rounded-lg text-[11px] font-semibold transition-all"
-                    style={{ background: tab === t.id ? ACCENT : 'transparent', color: tab === t.id ? '#fff' : '#94a3b8' }}>
+                    style={{ background: tab === t.id ? ACCENT : 'transparent', color: tab === t.id ? '#fff' : (isDark ? '#94a3b8' : '#64748b') }}>
                     <t.icon size={11} />{t.label}
                   </button>
                 ))}
@@ -240,12 +241,12 @@ function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
                     <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">{l}</p>
                     {(editing || isNew) ? (
                       <input className="w-full rounded-xl px-3 py-2 text-sm outline-none"
-                        style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)', color: '#f1f5f9' }}
+                        style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`, color: isDark ? '#f1f5f9' : '#1e293b' }}
                         placeholder={ph} value={form[k] || ''}
                         onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} />
                     ) : (
                       <p className={`text-sm px-3 py-2 rounded-xl ${k === 'vkntckn' ? 'font-mono' : ''}`}
-                        style={{ background: 'rgba(255,255,255,0.03)', color: form[k] ? '#f1f5f9' : '#475569' }}>
+                        style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', color: form[k] ? (isDark ? '#f1f5f9' : '#1e293b') : '#475569' }}>
                         {form[k] || <span className="text-slate-600 italic">—</span>}
                       </p>
                     )}
@@ -367,7 +368,7 @@ function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
                       </div>
                       <div className="flex items-center gap-2">
                         <div className="text-right">
-                          <p className="text-sm font-bold text-slate-100">{fmt(inv.amount)} <span className="text-[10px] text-slate-500">{inv.currency}</span></p>
+                          <p className="text-sm font-bold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{fmt(inv.amount)} <span className="text-[10px] text-slate-500">{inv.currency}</span></p>
                           <StatusDot status={inv.status} />
                         </div>
                         <ExternalLink size={12} className="text-slate-600 group-hover:text-orange-400 transition-colors flex-shrink-0" />
@@ -595,8 +596,8 @@ export default function Suppliers() {
             <button key={f.id} onClick={() => setFilterSource(f.id)}
               className="px-3 py-1 rounded-lg text-xs font-semibold transition-all"
               style={{
-                background: filterSource === f.id ? ACCENT : 'rgba(255,255,255,0.06)',
-                color: filterSource === f.id ? '#fff' : '#94a3b8',
+                background: filterSource === f.id ? ACCENT : (isDark ? 'rgba(255,255,255,0.06)' : '#f1f5f9'),
+                color: filterSource === f.id ? '#fff' : (isDark ? '#94a3b8' : '#64748b'),
               }}>{f.label}</button>
           ))}
         </div>

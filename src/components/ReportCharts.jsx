@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTheme } from '../contexts/ThemeContext';
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
 export const fmt  = (n) => n != null ? Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : '0';
@@ -8,7 +9,7 @@ export const fmtK = (n) => {
   if (n >= 1000)      return `${(n / 1000).toFixed(1)}K`;
   return fmt(n);
 };
-export const MONTH_NAMES = ['Oca', 'Sub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Agu', 'Eyl', 'Eki', 'Kas', 'Ara'];
+export const MONTH_NAMES = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
 export const monthKey   = (d) => d?.substring(0, 7);
 export const lastNMonths = (n) => {
   const res = [];
@@ -27,7 +28,10 @@ export const monthLabel = (key) => {
 // ─── Interactive Bar Chart ────────────────────────────────────────────────────
 export function BarChart({ data = [], color = '#10b981', color2, label1 = 'Deger 1', label2 = 'Deger 2', height = 160, unit = '' }) {
   const [tooltip, setTooltip] = useState(null);
-  if (!data.length) return <p className="text-xs text-slate-600 text-center py-8">Veri yok</p>;
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
+
+  if (!data.length) return <p className="text-xs text-center py-8" style={{ color: '#64748b' }}>Veri yok</p>;
 
   const max = Math.max(...data.map(d => Math.max(d.v1 || 0, d.v2 || 0)), 1);
   const BAR_W = color2 ? 14 : 28;
@@ -66,7 +70,7 @@ export function BarChart({ data = [], color = '#10b981', color2, label1 = 'Deger
                 )}
                 {/* X Label */}
                 <text x={x + (color2 ? BAR_W + GAP / 2 : BAR_W / 2)} y={height + 14}
-                  fontSize={9} fill="#64748b" textAnchor="middle">{d.label}</text>
+                  fontSize={9} fill={isDark ? '#64748b' : '#94a3b8'} textAnchor="middle">{d.label}</text>
               </g>
             );
           })}
@@ -76,10 +80,10 @@ export function BarChart({ data = [], color = '#10b981', color2, label1 = 'Deger
       {/* Lejant */}
       {color2 && (
         <div className="flex gap-4 justify-center mt-2">
-          <span className="flex items-center gap-1 text-[11px] text-slate-400">
+          <span className="flex items-center gap-1 text-[11px]" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
             <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: color }} />{label1}
           </span>
-          <span className="flex items-center gap-1 text-[11px] text-slate-400">
+          <span className="flex items-center gap-1 text-[11px]" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
             <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: color2 }} />{label2}
           </span>
         </div>
@@ -89,8 +93,13 @@ export function BarChart({ data = [], color = '#10b981', color2, label1 = 'Deger
       {tooltip && (
         <div className="fixed z-[999] pointer-events-none" style={{ left: tooltip.x + 12, top: tooltip.y - 8 }}>
           <div className="rounded-xl px-3 py-2 text-xs shadow-2xl"
-            style={{ background: '#0c1526', border: '1px solid rgba(148,163,184,0.2)', minWidth: 110 }}>
-            <p className="font-bold text-slate-200 mb-1">{tooltip.label}</p>
+            style={{
+              background: isDark ? '#0c1526' : '#ffffff',
+              border: `1px solid ${isDark ? 'rgba(148,163,184,0.2)' : '#e2e8f0'}`,
+              minWidth: 110,
+              boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+            }}>
+            <p className="font-bold mb-1" style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}>{tooltip.label}</p>
             <p style={{ color }}>{label1}: {unit}{fmtK(tooltip.v1)}</p>
             {color2 && <p style={{ color: color2 }}>{label2}: {unit}{fmtK(tooltip.v2)}</p>}
           </div>
@@ -103,6 +112,9 @@ export function BarChart({ data = [], color = '#10b981', color2, label1 = 'Deger
 // ─── Donut Chart ─────────────────────────────────────────────────────────────
 export function DonutChart({ slices = [], size = 110 }) {
   const [hovered, setHovered] = useState(null);
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
+
   const total = slices.reduce((s, sl) => s + (sl.value || 0), 0) || 1;
   let cum = -90;
   const polar = (angle, r) => ({
@@ -126,8 +138,8 @@ export function DonutChart({ slices = [], size = 110 }) {
               onMouseLeave={() => setHovered(null)} />
           );
         })}
-        <circle cx="60" cy="60" r="29" fill="#0c1526" />
-        <text x="60" y="56" textAnchor="middle" fontSize="11" fill="#f1f5f9" fontWeight="bold">
+        <circle cx="60" cy="60" r="29" fill={isDark ? '#0c1526' : '#f8fafc'} />
+        <text x="60" y="56" textAnchor="middle" fontSize="11" fill={isDark ? '#f1f5f9' : '#1e293b'} fontWeight="bold">
           {hovered !== null ? fmtK(slices[hovered]?.value) : fmtK(total)}
         </text>
         <text x="60" y="67" textAnchor="middle" fontSize="7" fill="#64748b">
@@ -141,10 +153,10 @@ export function DonutChart({ slices = [], size = 110 }) {
             style={{ opacity: hovered === null || hovered === i ? 1 : 0.5, transition: 'opacity 0.15s' }}>
             <div className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: sl.color }} />
-              <span className="text-[11px] text-slate-400 truncate">{sl.label}</span>
+              <span className="text-[11px] truncate" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>{sl.label}</span>
             </div>
-            <span className="text-[11px] font-bold text-slate-300 flex-shrink-0">
-              {fmt(sl.value)} <span className="text-slate-600 font-normal">({((sl.value / total) * 100).toFixed(0)}%)</span>
+            <span className="text-[11px] font-bold flex-shrink-0" style={{ color: isDark ? '#cbd5e1' : '#475569' }}>
+              {fmt(sl.value)} <span style={{ color: '#64748b', fontWeight: 'normal' }}>({((sl.value / total) * 100).toFixed(0)}%)</span>
             </span>
           </div>
         ))}
@@ -155,6 +167,8 @@ export function DonutChart({ slices = [], size = 110 }) {
 
 // ─── KPI Card ────────────────────────────────────────────────────────────────
 export function KpiCard({ label, value, sub, icon: Icon, color, trend, delay = 0 }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
   return (
     <div className="glass-card p-4">
       <div className="flex items-start justify-between gap-2">
@@ -167,23 +181,25 @@ export function KpiCard({ label, value, sub, icon: Icon, color, trend, delay = 0
           </span>
         )}
       </div>
-      <p className="text-lg font-bold mt-3 text-slate-100 leading-tight">{value}</p>
-      <p className="text-[10px] font-bold uppercase tracking-widest mt-0.5 text-slate-500">{label}</p>
-      {sub && <p className="text-[11px] text-slate-500 mt-0.5">{sub}</p>}
+      <p className="text-lg font-bold mt-3 leading-tight" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{value}</p>
+      <p className="text-[10px] font-bold uppercase tracking-widest mt-0.5" style={{ color: '#64748b' }}>{label}</p>
+      {sub && <p className="text-[11px] mt-0.5" style={{ color: '#64748b' }}>{sub}</p>}
     </div>
   );
 }
 
 // ─── Section Title ───────────────────────────────────────────────────────────
 export function SectionTitle({ icon: Icon, title, sub, color }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
   return (
     <div className="flex items-center gap-3 mb-4">
       <div className="p-2 rounded-xl flex-shrink-0" style={{ background: `${color}18` }}>
         <Icon size={14} style={{ color }} />
       </div>
       <div>
-        <h2 className="text-sm font-bold text-slate-100">{title}</h2>
-        {sub && <p className="text-[11px] text-slate-500 mt-0.5">{sub}</p>}
+        <h2 className="text-sm font-bold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{title}</h2>
+        {sub && <p className="text-[11px] mt-0.5" style={{ color: '#64748b' }}>{sub}</p>}
       </div>
     </div>
   );
@@ -191,17 +207,19 @@ export function SectionTitle({ icon: Icon, title, sub, color }) {
 
 // ─── Top 5 List ──────────────────────────────────────────────────────────────
 export function TopList({ items = [], color, unit = '' }) {
-  if (!items.length) return <p className="text-xs text-slate-600 text-center py-6">Veri yok</p>;
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
+  if (!items.length) return <p className="text-xs text-center py-6" style={{ color: '#64748b' }}>Veri yok</p>;
   const max = items[0]?.value || 1;
   return (
     <div className="space-y-2">
       {items.map(({ label, value }, i) => (
         <div key={i}>
           <div className="flex items-center justify-between mb-0.5">
-            <span className="text-[11px] text-slate-300 truncate flex-1 mr-2">{label}</span>
+            <span className="text-[11px] truncate flex-1 mr-2" style={{ color: isDark ? '#cbd5e1' : '#475569' }}>{label}</span>
             <span className="text-[11px] font-bold flex-shrink-0" style={{ color }}>{unit}{fmtK(value)}</span>
           </div>
-          <div className="h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.06)' }}>
+          <div className="h-1 rounded-full overflow-hidden" style={{ background: isDark ? 'rgba(255,255,255,0.06)' : '#e2e8f0' }}>
             <div className="h-full rounded-full transition-all" style={{ width: `${(value / max) * 100}%`, background: color }} />
           </div>
         </div>

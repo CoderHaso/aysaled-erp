@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertCircle, X, Check, HelpCircle } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
 
 export default function CustomDialog({ 
   open, 
@@ -13,6 +14,9 @@ export default function CustomDialog({
   cancelText = 'İptal',
   loading = false
 }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
+
   if (!open) return null;
 
   const iconMap = {
@@ -45,15 +49,18 @@ export default function CustomDialog({
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.9, opacity: 0, y: 20 }}
           className="relative w-full max-w-sm rounded-3xl p-6 shadow-2xl overflow-hidden shadow-black/50"
-          style={{ background: '#1e293b', border: '1px solid rgba(148,163,184,0.15)' }}
+          style={{
+            background: isDark ? '#1e293b' : '#ffffff',
+            border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`,
+          }}
         >
           <div className="flex flex-col items-center text-center">
-            <div className="mb-4 p-3 rounded-2xl" style={{ background: 'rgba(255,255,255,0.03)' }}>
+            <div className="mb-4 p-3 rounded-2xl" style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#f1f5f9' }}>
               {iconMap[type]}
             </div>
             
-            <h3 className="text-lg font-bold text-slate-100 mb-2">{title}</h3>
-            <p className="text-sm text-slate-400 leading-relaxed mb-6 whitespace-pre-wrap">
+            <h3 className="text-lg font-bold mb-2" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{title}</h3>
+            <p className="text-sm leading-relaxed mb-6 whitespace-pre-wrap" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
               {message}
             </p>
 
@@ -62,7 +69,8 @@ export default function CustomDialog({
                 <button 
                   disabled={loading}
                   onClick={onClose}
-                  className="flex-1 py-3 rounded-xl text-sm font-semibold text-slate-300 hover:bg-white/5 transition-colors"
+                  className="flex-1 py-3 rounded-xl text-sm font-semibold transition-colors"
+                  style={{ color: isDark ? '#cbd5e1' : '#64748b', background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9' }}
                 >
                   {cancelText}
                 </button>
@@ -88,7 +96,7 @@ export default function CustomDialog({
           </div>
 
           {!loading && (
-             <button onClick={onClose} className="absolute top-4 right-4 text-slate-500 hover:text-slate-300">
+             <button onClick={onClose} className="absolute top-4 right-4 transition-colors" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>
                <X size={18} />
              </button>
           )}

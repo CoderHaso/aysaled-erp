@@ -53,6 +53,9 @@ function CatBadge({ catId }) {
 
 // ─── Form Drawer ──────────────────────────────────────────────────────────────
 function TxForm({ tx, onSave, onClose, color }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
+
   const initForm = () => ({
     direction:   tx?.direction   || 'out',
     amount:      tx?.amount      || '',
@@ -67,8 +70,10 @@ function TxForm({ tx, onSave, onClose, color }) {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const inp = {
-    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)',
-    borderRadius: 10, color: '#f1f5f9', padding: '8px 12px', fontSize: 13,
+    background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9',
+    border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`,
+    borderRadius: 10, color: isDark ? '#f1f5f9' : '#1e293b',
+    padding: '8px 12px', fontSize: 13,
     outline: 'none', width: '100%',
   };
 
@@ -103,15 +108,19 @@ function TxForm({ tx, onSave, onClose, color }) {
       style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}>
       <motion.div initial={{ opacity:0, scale:0.96 }} animate={{ opacity:1, scale:1 }}
         className="w-full max-w-md rounded-3xl overflow-y-auto"
-        style={{ background: '#0c1526', border: '1px solid rgba(148,163,184,0.12)', maxHeight: '90vh' }}>
+        style={{
+          background: isDark ? '#0c1526' : '#ffffff',
+          border: `1px solid ${isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0'}`,
+          maxHeight: '90vh'
+        }}>
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4"
-          style={{ borderBottom: '1px solid rgba(148,163,184,0.08)' }}>
-          <h2 className="text-sm font-bold text-slate-100">
+          style={{ borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.08)' : '#e2e8f0'}` }}>
+          <h2 className="text-sm font-bold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
             {tx?.id ? 'Kaydı Düzenle' : 'Yeni Kasa Kaydı'}
           </h2>
-          <button onClick={onClose} className="p-1.5 rounded-xl text-slate-500 hover:text-white"><X size={15} /></button>
+          <button onClick={onClose} className="p-1.5 rounded-xl transition-colors" style={{ color: '#94a3b8' }}><X size={15} /></button>
         </div>
 
         <div className="px-6 py-5 space-y-4">
@@ -185,7 +194,7 @@ function TxForm({ tx, onSave, onClose, color }) {
               {form.is_settled && <Check size={11} color="white" />}
             </div>
             <div>
-              <p className="text-xs font-semibold text-slate-300">Kapatıldı / Ödendi</p>
+              <p className="text-xs font-semibold" style={{ color: isDark ? '#cbd5e1' : '#475569' }}>Kapatıldı / Ödendi</p>
               <p className="text-[10px] text-slate-500">Bu kayıt hesaplaşıldı, aktif bakiyeyi etkilemesin</p>
             </div>
           </label>
@@ -441,13 +450,13 @@ export default function Kasa() {
                           <Check size={11} />{tx.is_settled ? 'Yeniden Aç' : 'Kapat / Ödendi'}
                         </button>
                         <button onClick={() => { setEditing(tx); setShowForm(true); }}
-                          className="p-1.5 rounded-lg transition-colors text-slate-500 hover:text-slate-200"
-                          style={{ background: 'rgba(255,255,255,0.05)' }}>
+                          className="p-1.5 rounded-lg transition-colors"
+                          style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', color: '#64748b' }}>
                           <Edit3 size={12} />
                         </button>
                         <button onClick={() => handleDelete(tx.id)}
-                          className="p-1.5 rounded-lg transition-colors text-slate-500 hover:text-red-400"
-                          style={{ background: 'rgba(255,255,255,0.05)' }}>
+                          className="p-1.5 rounded-lg transition-colors"
+                          style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', color: '#64748b' }}>
                           <Trash2 size={12} />
                         </button>
                       </div>

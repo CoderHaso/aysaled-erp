@@ -18,6 +18,7 @@ import {
   X, Search, Check, Package, AlertCircle, Loader2,
   ArrowRight, DollarSign, Plus, Info,
 } from 'lucide-react';
+import { useTheme } from '../../contexts/ThemeContext';
 
 const fmt = (n) =>
   n != null ? Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
@@ -25,6 +26,8 @@ const fmt = (n) =>
 export default function InvoiceStockModal({
   inv, allItems = [], supabase, onClose, onDone, currentColor = '#f59e0b',
 }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
   const lines = inv.line_items || [];
 
   // Her fatura kalemi için mapping state: { stockItemId, qtyOverride, updatePrice, priceVal }
@@ -137,7 +140,7 @@ export default function InvoiceStockModal({
         <div className="absolute inset-0 bg-black/70 backdrop-blur-sm"/>
         <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
           className="relative rounded-2xl p-8 text-center"
-          style={{ background: '#0d1b2e', border: '1px solid rgba(16,185,129,0.3)' }}>
+        style={{ background: isDark ? '#0d1b2e' : '#ffffff', border: `1px solid ${isDark ? 'rgba(16,185,129,0.3)' : '#e2e8f0'}` }}>
           <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4"
             style={{ background: 'rgba(16,185,129,0.15)' }}>
             <Check size={28} className="text-emerald-400"/>
@@ -155,7 +158,7 @@ export default function InvoiceStockModal({
         initial={{ scale: 0.93, opacity: 0, y: 10 }}
         animate={{ scale: 1, opacity: 1, y: 0 }}
         className="relative w-full max-w-2xl rounded-2xl overflow-hidden flex flex-col shadow-2xl"
-        style={{ background: '#0b1729', border: `1px solid ${currentColor}35`, maxHeight: '92vh' }}>
+        style={{ background: isDark ? '#0b1729' : '#ffffff', border: `1px solid ${currentColor}35`, maxHeight: '92vh' }}>
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 flex-shrink-0"
@@ -164,7 +167,7 @@ export default function InvoiceStockModal({
             <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: currentColor }}>
               {isInbox ? 'Gelen Fatura' : 'Giden Fatura'} → Stoğa İşle
             </p>
-            <h3 className="text-sm font-bold text-white mt-0.5">{inv.cari_name || inv.invoice_id}</h3>
+            <h3 className="text-sm font-bold mt-0.5" style={{ color: isDark ? '#ffffff' : '#1e293b' }}>{inv.cari_name || inv.invoice_id}</h3>
             <p className="text-xs text-slate-500">{fmt(inv.amount)} {currency} · {inv.issue_date?.slice(0,10)}</p>
           </div>
           <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/5 transition-colors">
@@ -208,7 +211,7 @@ export default function InvoiceStockModal({
 
                   {/* Fatura kalemi */}
                   <div className="min-w-0">
-                    <p className="text-xs font-semibold text-slate-200 truncate">{m.invoiceLine.name}</p>
+                    <p className="text-xs font-semibold truncate" style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}>{m.invoiceLine.name}</p>
                     <p className="text-[10px] text-slate-600">
                       {fmt(m.invoiceLine.quantity)} {m.invoiceLine.unit} · {fmt(m.invoiceLine.unit_price)} {currency}
                     </p>
@@ -237,14 +240,15 @@ export default function InvoiceStockModal({
                         <motion.div
                           initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
                           className="absolute left-0 top-9 z-50 w-72 rounded-xl overflow-hidden shadow-2xl"
-                          style={{ background: '#0f1e36', border: `1px solid ${currentColor}40` }}>
+                          style={{ background: isDark ? '#0f1e36' : '#ffffff', border: `1px solid ${currentColor}40` }}>
                           <div className="flex items-center gap-2 px-3 py-2"
                             style={{ borderBottom: '1px solid rgba(148,163,184,0.1)' }}>
                             <Search size={11} className="text-slate-500"/>
                             <input autoFocus value={searches[idx]}
                               onChange={e => setSearches(prev => prev.map((s, i) => i === idx ? e.target.value : s))}
                               placeholder="Stokta ara..."
-                              className="flex-1 bg-transparent outline-none text-xs text-slate-200 placeholder-slate-600"/>
+                              className="flex-1 bg-transparent outline-none text-xs"
+                              style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}/>
                           </div>
                           {/* Eşleştirme yok seçeneği */}
                           <button onClick={() => {
@@ -263,7 +267,7 @@ export default function InvoiceStockModal({
                                 }}
                                 className="w-full text-left px-3 py-2 flex items-center justify-between gap-2 transition-colors hover:bg-white/5">
                                 <div className="min-w-0">
-                                  <p className="text-xs font-semibold text-slate-200 truncate">{item.name}</p>
+                                  <p className="text-xs font-semibold truncate" style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}>{item.name}</p>
                                   <p className="text-[10px] text-slate-600">
                                     {item.unit} · Stok: {item.stock_count ?? '—'}
                                   </p>
@@ -282,8 +286,8 @@ export default function InvoiceStockModal({
                   {/* Miktar */}
                   <input type="number" min="0" step="0.001" value={m.qtyOverride}
                     onChange={e => updateMapping(idx, 'qtyOverride', e.target.value)}
-                    className="w-full px-2 py-1.5 rounded-lg text-xs text-right font-bold text-slate-200 outline-none bg-transparent"
-                    style={{ border: '1px solid rgba(148,163,184,0.12)' }}/>
+                    className="w-full px-2 py-1.5 rounded-lg text-xs text-right font-bold outline-none bg-transparent"
+                    style={{ color: isDark ? '#e2e8f0' : '#1e293b', border: `1px solid ${isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0'}` }}/>
 
                   {/* Fiyat */}
                   <input type="number" min="0" step="0.01" value={m.priceVal}
@@ -327,7 +331,7 @@ export default function InvoiceStockModal({
 
         {/* Footer */}
         <div className="flex items-center justify-between gap-3 px-5 py-3 flex-shrink-0"
-          style={{ borderTop: '1px solid rgba(148,163,184,0.1)', background: 'rgba(0,0,0,0.2)' }}>
+          style={{ borderTop: `1px solid ${isDark ? 'rgba(148,163,184,0.1)' : '#e2e8f0'}`, background: isDark ? 'rgba(0,0,0,0.2)' : '#f8fafc' }}>
           <div className="text-xs text-slate-500">
             {mappings.filter(m => m.stockItemId).length} / {mappings.length} kalem eşleştirildi
           </div>

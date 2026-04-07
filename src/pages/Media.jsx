@@ -133,17 +133,17 @@ export default function Media() {
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-slate-100">Medya Kütüphanesi</h1>
+            <h1 className="text-2xl font-bold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>Medya Kütpühanesi</h1>
             <p className="text-slate-400 text-sm mt-0.5">{items.length} dosya · Backblaze B2</p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={load} className="p-2 rounded-xl text-slate-400 hover:text-white transition-colors"
-              style={{ background: 'rgba(255,255,255,0.06)' }}>
+            <button onClick={load} className="p-2 rounded-xl transition-colors"
+              style={{ background: isDark ? 'rgba(255,255,255,0.06)' : '#f1f5f9', color: '#64748b' }}>
               <RefreshCw size={16} />
             </button>
             <button onClick={() => setViewMode(v => v === 'grid' ? 'list' : 'grid')}
-              className="p-2 rounded-xl text-slate-400 hover:text-white transition-colors"
-              style={{ background: 'rgba(255,255,255,0.06)' }}>
+              className="p-2 rounded-xl transition-colors"
+              style={{ background: isDark ? 'rgba(255,255,255,0.06)' : '#f1f5f9', color: '#64748b' }}>
               {viewMode === 'grid' ? <List size={16} /> : <Grid3X3 size={16} />}
             </button>
             <button onClick={() => fileRef.current?.click()}
@@ -162,8 +162,8 @@ export default function Media() {
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Dosya ara..."
-            className="w-full pl-9 pr-4 py-2.5 rounded-xl text-sm text-slate-100 placeholder-slate-500 outline-none focus:ring-2"
-            style={{ background: 'rgba(255,255,255,0.06)', border: `1px solid ${c.border}`, focusRingColor: currentColor }} />
+            className="w-full pl-9 pr-4 py-2.5 rounded-xl text-sm placeholder-slate-500 outline-none"
+            style={{ background: isDark ? 'rgba(255,255,255,0.06)' : '#f8fafc', border: `1px solid ${c.border}`, color: isDark ? '#f1f5f9' : '#1e293b' }} />
         </div>
 
         {/* Drop Zone */}
@@ -229,7 +229,7 @@ export default function Media() {
                 </div>
                 {/* Info */}
                 <div className="p-2">
-                  <p className="text-xs text-slate-300 font-medium truncate" title={item.name}>{item.name}</p>
+                  <p className="text-xs font-medium truncate" style={{ color: isDark ? '#cbd5e1' : '#475569' }} title={item.name}>{item.name}</p>
                   <p className="text-[10px] text-slate-500 mt-0.5">{fmtSize(item.size_bytes)}</p>
                 </div>
               </motion.div>
@@ -248,7 +248,7 @@ export default function Media() {
                     : <div className="w-full h-full flex items-center justify-center"><FileText size={18} className="text-slate-500" /></div>}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-slate-100 font-medium truncate">{item.name}</p>
+                  <p className="text-sm font-medium truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{item.name}</p>
                   <p className="text-[11px] text-slate-500">{fmtSize(item.size_bytes)} · {fmtDate(item.created_at)}</p>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
@@ -274,10 +274,10 @@ export default function Media() {
             onClick={() => setPreview(null)}>
             <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }}
               className="relative max-w-3xl max-h-[85vh] w-full rounded-2xl overflow-hidden"
-              style={{ background: '#1e293b' }}
+              style={{ background: isDark ? '#1e293b' : '#ffffff' }}
               onClick={e => e.stopPropagation()}>
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
-                <p className="text-sm font-semibold text-slate-100">{preview.name}</p>
+                <p className="text-sm font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{preview.name}</p>
                 <button onClick={() => setPreview(null)} className="text-slate-400 hover:text-white"><X size={18} /></button>
               </div>
               <div className="p-4 flex items-center justify-center min-h-[300px]">

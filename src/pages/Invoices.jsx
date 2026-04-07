@@ -165,6 +165,8 @@ const currSymbol = (c) => ({ USD:'$', EUR:'€', GBP:'£', TRY:'₺' }[c] || c |
 
 // ── İşle Wizard: Adım adım fatura işleme ──────────────────────────────────────
 function IsleWizard({ inv, allItems, supabase, onClose, onDone }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
   const fmtN = (n) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 });
   // outbox = giden fatura (biz kestik) → biz alacağız → Alacak (borc field)
   // inbox  = gelen fatura (bize kesildi) → biz vereceğiz → Verecek (alacak field)
@@ -222,7 +224,11 @@ function IsleWizard({ inv, allItems, supabase, onClose, onDone }) {
   };
 
   const inp = 'w-full px-3 py-2 text-sm rounded-xl outline-none';
-  const inpStyle = { background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(148,163,184,0.18)', color: '#f1f5f9' };
+  const inpStyle = {
+    background: isDark ? 'rgba(255,255,255,0.06)' : '#f1f5f9',
+    border: `1px solid ${isDark ? 'rgba(148,163,184,0.18)' : '#e2e8f0'}`,
+    color: isDark ? '#f1f5f9' : '#1e293b'
+  };
 
   return (
     <>
@@ -231,13 +237,13 @@ function IsleWizard({ inv, allItems, supabase, onClose, onDone }) {
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
         className="relative w-full max-w-sm rounded-2xl p-5 space-y-4"
-        style={{ background: '#0d1b2e', border: '1px solid rgba(245,158,11,0.25)' }}>
+        style={{ background: isDark ? '#0d1b2e' : '#ffffff', border: `1px solid ${isDark ? 'rgba(245,158,11,0.25)' : '#fde68a'}` }}>
 
         {/* Başlık */}
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Fatura İşle</p>
-            <h3 className="text-sm font-bold text-white mt-0.5 truncate">{inv.cari_name || inv.invoice_id}</h3>
+            <h3 className="text-sm font-bold mt-0.5 truncate" style={{ color: isDark ? '#ffffff' : '#1e293b' }}>{inv.cari_name || inv.invoice_id}</h3>
             <p className="text-xs text-slate-500 mt-0.5">
               {fmtN(inv.amount)} {inv.currency} · {inv.issue_date?.slice(0,10)}
             </p>
@@ -364,6 +370,8 @@ function IsleWizard({ inv, allItems, supabase, onClose, onDone }) {
 
 // ─── Gerçek Fatura Tablosu ────────────────────────────────────────────────────
 function InvoiceTable({ items, currency = 'TRY' }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
   const sym = currSymbol(currency);
   const hasDiscount = items.some(i => i.discount_rate || i.discount_amount);
   const hasItemCode = items.some(i => i.item_code);
@@ -409,7 +417,7 @@ function InvoiceTable({ items, currency = 'TRY' }) {
                   <td className="px-3 py-3 font-mono text-slate-400 whitespace-nowrap">{item.item_code || '-'}</td>
                 )}
                 <td className="px-3 py-3">
-                  <p className="font-semibold text-slate-100">{item.name}</p>
+                  <p className="font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{item.name}</p>
                   {item.note && <p className="text-slate-500 mt-0.5 italic text-[10px]">{item.note}</p>}
                 </td>
                 <td className="px-3 py-3 text-right text-slate-300 whitespace-nowrap">
@@ -429,7 +437,7 @@ function InvoiceTable({ items, currency = 'TRY' }) {
                 )}
                 <td className="px-3 py-3 text-right text-slate-300 whitespace-nowrap">%{item.tax_percent || 0}</td>
                 <td className="px-3 py-3 text-right text-slate-300 whitespace-nowrap">{fmt(item.tax_amount)} <span className="text-slate-500">{sym}</span></td>
-                <td className="px-3 py-3 text-right font-bold text-slate-100 whitespace-nowrap">{fmt(item.line_total)} <span className="text-slate-400 font-normal text-[10px]">{sym}</span></td>
+                <td className="px-3 py-3 text-right font-bold whitespace-nowrap" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{fmt(item.line_total)} <span className="text-slate-400 font-normal text-[10px]">{sym}</span></td>
               </tr>
             ))}
           </tbody>
@@ -479,7 +487,8 @@ function SumRow({ label, value, muted, bold, color, accent }) {
 function InvoiceDetailDrawer({ invoice, isInbox, onClose, onLineItemsLoaded }) {
   const [lineItems, setLineItems]   = useState(null);
   const [fetchState, setFetchState] = useState('loading');
-  const { currentColor } = useTheme();
+  const { currentColor, effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
 
   useEffect(() => {
     if (!invoice) return;
@@ -525,23 +534,23 @@ function InvoiceDetailDrawer({ invoice, isInbox, onClose, onLineItemsLoaded }) {
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
         <motion.div className="relative w-full max-w-3xl h-full overflow-y-auto"
-          style={{ background: '#0c1526', borderLeft: '1px solid rgba(148,163,184,0.1)' }}
+          style={{ background: isDark ? '#0c1526' : '#ffffff', borderLeft: `1px solid ${isDark ? 'rgba(148,163,184,0.1)' : '#e2e8f0'}` }}
           initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
           transition={{ type: 'spring', damping: 28, stiffness: 250 }}>
 
           {/* Başlık */}
           <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4"
-            style={{ background: 'rgba(12,21,38,0.97)', backdropFilter: 'blur(12px)', borderBottom: '1px solid rgba(148,163,184,0.08)' }}>
+            style={{ background: isDark ? 'rgba(12,21,38,0.97)' : 'rgba(255,255,255,0.97)', backdropFilter: 'blur(12px)', borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.08)' : '#e2e8f0'}` }}>
             <div>
               <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-0.5">
               {isInbox ? 'Gider Faturası' : 'Gelir Faturası'}
               </p>
-              <h2 className="text-base font-bold text-slate-100 font-mono">{invoice.invoice_id}</h2>
+              <h2 className="text-base font-bold font-mono" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{invoice.invoice_id}</h2>
             </div>
             <div className="flex items-center gap-3">
               <StatusBadge status={invoice.status} inv={invoice} />
               <button onClick={onClose}
-                className="p-2 rounded-xl text-slate-500 hover:text-white transition-colors">
+                className="p-2 rounded-xl transition-colors" style={{ color: '#94a3b8' }}>
                 <X size={18} />
               </button>
             </div>
@@ -553,14 +562,14 @@ function InvoiceDetailDrawer({ invoice, isInbox, onClose, onLineItemsLoaded }) {
             <div className="rounded-2xl p-5"
               style={{ background: `linear-gradient(135deg,${currentColor}18,${currentColor}08)`, border:`1px solid ${currentColor}28` }}>
               <p className="text-xs text-slate-400 mb-1">Ödenecek Toplam Tutar</p>
-              <p className="text-3xl font-bold text-white">
+              <p className="text-3xl font-bold" style={{ color: isDark ? '#ffffff' : '#1e293b' }}>
                 {fmt(invoice.amount)} <span className="text-base text-slate-400">{invoice.currency}</span>
               </p>
               <div className="flex flex-wrap gap-4 mt-2 text-sm">
-                <span className="text-slate-400">Matrah: <strong className="text-slate-200">{fmt(invoice.tax_exclusive_amount)}</strong></span>
-                <span className="text-slate-400">KDV: <strong className="text-slate-200">{fmt(invoice.tax_total)}</strong></span>
+                <span className="text-slate-400">Matrah: <strong style={{ color: isDark ? '#e2e8f0' : '#475569' }}>{fmt(invoice.tax_exclusive_amount)}</strong></span>
+                <span className="text-slate-400">KDV: <strong style={{ color: isDark ? '#e2e8f0' : '#475569' }}>{fmt(invoice.tax_total)}</strong></span>
                 {invoice.currency !== 'TRY' && (
-                  <span className="text-slate-400">Kur: <strong className="text-slate-200">{invoice.exchange_rate}</strong></span>
+                  <span className="text-slate-400">Kur: <strong style={{ color: isDark ? '#e2e8f0' : '#475569' }}>{invoice.exchange_rate}</strong></span>
                 )}
               </div>
             </div>
@@ -644,11 +653,14 @@ function InfoCard({ title, icon: Icon, children }) {
 }
 
 function DR({ label, value, mono, small }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
   if (!value && value !== 0) return null;
   return (
     <div className="flex justify-between items-start gap-2 py-1.5 border-b border-slate-700/20 last:border-0">
       <span className="text-[11px] text-slate-500 flex-shrink-0">{label}</span>
-      <span className={`text-right font-semibold text-slate-200 break-all ${mono ? 'font-mono' : ''} ${small ? 'text-[10px]' : 'text-xs'}`}>
+      <span className={`text-right font-semibold break-all ${mono ? 'font-mono' : ''} ${small ? 'text-[10px]' : 'text-xs'}`}
+        style={{ color: isDark ? '#e2e8f0' : '#475569' }}>
         {value}
       </span>
     </div>
