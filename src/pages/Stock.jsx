@@ -6,7 +6,8 @@ import {
   Plus, Search, AlertTriangle, RefreshCcw, AlertCircle,
   Zap, TrendingUp, Boxes, Package, ChevronUp, ChevronDown,
   Edit2, Trash2, Upload, Download, FileJson, FileSpreadsheet,
-  X, CheckCircle2, AlertOctagon, FolderDown,
+  X, CheckCircle2, AlertOctagon, FolderDown, Eye, Save,
+  Layers, ArrowRight, DollarSign, Hash, MapPin, Ruler, Tag,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useStock } from '../hooks/useStock';
@@ -58,7 +59,12 @@ export default function Stock() {
   const [sortKey,       setSortKey]       = useState('name');
   const [sortDir,       setSortDir]       = useState('asc');
   const [importing,     setImporting]     = useState(false);
-  const [importResult,  setImportResult]  = useState(null); // { added, skipped, errors }
+  const [importResult,  setImportResult]  = useState(null);
+  const [detailItem,    setDetailItem]    = useState(null);   // yan panel detay
+  const [quickEditMode, setQuickEditMode] = useState(false);  // hızlı düzenle modu
+  const [quickEdits,    setQuickEdits]    = useState({});      // {itemId: {field: val}}
+  const [quickSaving,   setQuickSaving]   = useState(false);
+  const [bulkModal,     setBulkModal]     = useState(false);  // toplu güncelle
 
   const c = {
     bg:       isDark ? '#0f172a' : '#f8fafc',
@@ -283,7 +289,7 @@ export default function Stock() {
             {(criticalRaw.length + criticalProd.length) > 0 && ` · ⚠ ${criticalRaw.length + criticalProd.length} kritik`}
           </p>
         </div>
-        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0 flex-wrap justify-end">
           <button onClick={refetch}
             className="p-2 rounded-xl border transition-all"
             style={{ borderColor: c.border, color: c.muted, background: c.inputBg }}>
@@ -294,6 +300,18 @@ export default function Stock() {
             style={{ borderColor: showIOPanel ? currentColor : c.border, color: showIOPanel ? currentColor : c.muted, background: c.inputBg }}>
             <Upload size={13} />
             <span className="hidden sm:inline">İçe/Dışa</span>
+          </button>
+          <button onClick={() => { setQuickEditMode(v => !v); setQuickEdits({}); }}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs sm:text-sm font-bold transition-all"
+            style={{ borderColor: quickEditMode ? '#f59e0b' : c.border, color: quickEditMode ? '#f59e0b' : c.muted, background: quickEditMode ? 'rgba(245,158,11,0.08)' : c.inputBg }}>
+            <Edit2 size={13} />
+            <span className="hidden sm:inline">{quickEditMode ? 'Düzenleniyor...' : 'Hızlı Düzenle'}</span>
+          </button>
+          <button onClick={() => setBulkModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs sm:text-sm font-bold transition-all"
+            style={{ borderColor: c.border, color: c.muted, background: c.inputBg }}>
+            <Layers size={13} style={{ color: '#3b82f6' }} />
+            <span className="hidden sm:inline">Toplu Güncelle</span>
           </button>
           <button onClick={() => setQuickAdd(true)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs sm:text-sm font-bold transition-all"
@@ -466,12 +484,12 @@ export default function Stock() {
                   <tr style={{ borderBottom: `1px solid ${c.border}` }}>
                     {[
                       { key: null,             label: '',         w: '32px'  },
-                      { key: 'sku',            label: 'SKU',      w: '110px' },
+                      { key: 'sku',            label: 'SKU',      w: '100px' },
                       { key: 'name',           label: activeTab === 'raw' ? 'Hammadde' : 'Mamül' },
-                      { key: 'supplier_name',  label: activeTab === 'raw' ? 'Tedarikçi' : 'Seri', w: '120px' },
-                      { key: 'unit',           label: 'Birim',    w: '65px'  },
-                      { key: 'stock_count',    label: 'Stok',     w: '150px' },
-                      { key: 'purchase_price', label: 'Alış',     w: '90px'  },
+                      { key: 'unit',           label: 'Birim',    w: quickEditMode ? '90px' : '65px'  },
+                      { key: 'stock_count',    label: 'Stok',     w: quickEditMode ? '110px' : '150px' },
+                      { key: 'purchase_price', label: 'Alış (₺)', w: quickEditMode ? '110px' : '90px'  },
+                      { key: 'sale_price',     label: 'Satış (₺)', w: quickEditMode ? '110px' : '90px' },
                       { key: null,             label: '',         w: '72px'  },
                     ].map((col, i) => (
                       <th key={i}
@@ -513,12 +531,13 @@ export default function Stock() {
                     const clr = stockColor(item.stock_count, item.critical_limit);
                     const pct = item.critical_limit > 0 ? Math.min(100, (item.stock_count / (item.critical_limit * 3)) * 100) : 80;
                     const sym = CURRENCY_SYM[item.base_currency] || '';
-                    const secondCol = activeTab === 'product' ? (item.specs?.series || '—') : (item.supplier_name || '—');
+                    const ed = quickEdits[item.id] || {};
+                    const UNITS = ['Adet','Metre','cm','mm','Kg','g','Litre','ml','m²','Rulo','Paket','Kutu','Set','Takım'];
                     return (
                       <motion.tr key={item.id}
                         initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: idx * 0.01 }}
                         style={{ borderBottom: `1px solid ${c.border}`, cursor: 'pointer' }}
-                        onClick={() => openForm(item, item.item_type)}
+                        onClick={() => !quickEditMode && setDetailItem(item)}
                         onMouseEnter={e => e.currentTarget.style.background = c.rowHover}
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                         <td className="px-3 py-3.5">
@@ -537,21 +556,65 @@ export default function Stock() {
                           <p className="font-semibold text-sm" style={{ color: c.text }}>{item.name}</p>
                           {item.location && <p className="text-[10px] mt-0.5" style={{ color: c.muted }}>📍 {item.location}</p>}
                         </td>
-                        <td className="px-3 py-3.5"><span className="text-xs" style={{ color: c.muted }}>{secondCol}</span></td>
-                        <td className="px-3 py-3.5"><span className="text-xs font-bold" style={{ color: c.text }}>{item.unit}</span></td>
-                        <td className="px-3 py-3.5">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold w-7 text-right" style={{ color: clr }}>{item.stock_count}</span>
-                            <div className="flex-1 h-1.5 rounded-full overflow-hidden min-w-[40px]" style={{ background: c.border }}>
-                              <div className="h-full rounded-full" style={{ width: `${pct}%`, background: clr }} />
-                            </div>
-                            {item.critical_limit > 0 && <span className="text-[10px]" style={{ color: c.muted }}>/{item.critical_limit}</span>}
-                          </div>
+                        {/* Birim */}
+                        <td className="px-3 py-3.5" onClick={e => quickEditMode && e.stopPropagation()}>
+                          {quickEditMode ? (
+                            <select value={ed.unit ?? item.unit} onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), unit: e.target.value}}))}
+                              className="w-full px-1.5 py-1 text-xs rounded-lg outline-none"
+                              style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
+                              {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                            </select>
+                          ) : (
+                            <span className="text-xs font-bold" style={{ color: c.text }}>{item.unit}</span>
+                          )}
                         </td>
-                        <td className="px-3 py-3.5">
-                          <span className="text-sm font-semibold" style={{ color: c.text }}>
-                            {item.purchase_price > 0 ? `${sym}${item.purchase_price}` : '—'}
-                          </span>
+                        {/* Stok */}
+                        <td className="px-3 py-3.5" onClick={e => quickEditMode && e.stopPropagation()}>
+                          {quickEditMode ? (
+                            <input type="number" step="0.01"
+                              value={ed.stock_count ?? item.stock_count}
+                              onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), stock_count: e.target.value}}))}
+                              className="w-full px-1.5 py-1 text-xs font-bold rounded-lg outline-none"
+                              style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: clr }}/>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-bold w-7 text-right" style={{ color: clr }}>{item.stock_count}</span>
+                              <div className="flex-1 h-1.5 rounded-full overflow-hidden min-w-[40px]" style={{ background: c.border }}>
+                                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: clr }} />
+                              </div>
+                              {item.critical_limit > 0 && <span className="text-[10px]" style={{ color: c.muted }}>/{item.critical_limit}</span>}
+                            </div>
+                          )}
+                        </td>
+                        {/* Alış Fiyatı */}
+                        <td className="px-3 py-3.5" onClick={e => quickEditMode && e.stopPropagation()}>
+                          {quickEditMode ? (
+                            <input type="number" step="0.01"
+                              value={ed.purchase_price ?? item.purchase_price ?? ''}
+                              onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), purchase_price: e.target.value}}))}
+                              placeholder="0.00"
+                              className="w-full px-1.5 py-1 text-xs font-bold rounded-lg outline-none"
+                              style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: '#10b981' }}/>
+                          ) : (
+                            <span className="text-sm font-semibold" style={{ color: c.text }}>
+                              {item.purchase_price > 0 ? `${sym}${item.purchase_price}` : '—'}
+                            </span>
+                          )}
+                        </td>
+                        {/* Satış Fiyatı */}
+                        <td className="px-3 py-3.5" onClick={e => quickEditMode && e.stopPropagation()}>
+                          {quickEditMode ? (
+                            <input type="number" step="0.01"
+                              value={ed.sale_price ?? item.sale_price ?? ''}
+                              onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), sale_price: e.target.value}}))}
+                              placeholder="0.00"
+                              className="w-full px-1.5 py-1 text-xs font-bold rounded-lg outline-none"
+                              style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: '#3b82f6' }}/>
+                          ) : (
+                            <span className="text-sm font-semibold" style={{ color: c.text }}>
+                              {item.sale_price > 0 ? `₺${item.sale_price}` : '—'}
+                            </span>
+                          )}
                         </td>
                         <td className="px-3 py-3.5" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-1">
@@ -591,13 +654,10 @@ export default function Stock() {
                 return (
                   <motion.div key={item.id}
                     initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.02 }}
-                    onClick={() => openForm(item, item.item_type)}
+                    onClick={() => setDetailItem(item)}
                     className="flex items-center gap-3 px-4 py-3.5 active:opacity-70 transition-opacity"
                     style={{ borderBottom: `1px solid ${c.border}`, cursor: 'pointer' }}>
-                    {/* Renk indikatörü */}
                     <div className="w-1 self-stretch rounded-full flex-shrink-0" style={{ background: clr }} />
-
-                    {/* Bilgi */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
                         <p className="font-semibold text-sm truncate" style={{ color: c.text }}>{item.name}</p>
@@ -609,7 +669,6 @@ export default function Stock() {
                         )}
                       </div>
                       <div className="flex items-center gap-2 mt-1">
-                        {/* Stok bar */}
                         <div className="flex items-center gap-1.5 flex-1 min-w-0">
                           <span className="text-xs font-bold flex-shrink-0" style={{ color: clr }}>{item.stock_count}</span>
                           <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: c.border }}>
@@ -617,21 +676,13 @@ export default function Stock() {
                           </div>
                           <span className="text-[10px] flex-shrink-0" style={{ color: c.muted }}>{item.unit}</span>
                         </div>
-                        {/* Fiyat */}
                         {item.purchase_price > 0 && (
                           <span className="text-xs font-semibold flex-shrink-0" style={{ color: c.muted }}>
                             {sym}{item.purchase_price}
                           </span>
                         )}
                       </div>
-                      {item.supplier_name && (
-                        <p className="text-[10px] mt-0.5 truncate" style={{ color: c.muted }}>
-                          🏢 {item.supplier_name}
-                        </p>
-                      )}
                     </div>
-
-                    {/* Aksiyon */}
                     <button
                       onClick={e => { e.stopPropagation(); openForm(item, item.item_type); }}
                       className="p-2 rounded-xl flex-shrink-0"
@@ -642,6 +693,49 @@ export default function Stock() {
                 );
               })}
             </div>
+
+            {/* Hızlı Düzenle Kaydet Barı */}
+            {quickEditMode && Object.keys(quickEdits).length > 0 && (
+              <div className="px-4 py-3 flex items-center justify-between border-t"
+                style={{ borderColor: c.border, background: 'rgba(245,158,11,0.06)' }}>
+                <span className="text-xs font-semibold" style={{ color: '#f59e0b' }}>
+                  {Object.keys(quickEdits).length} kayıt değiştirildi
+                </span>
+                <div className="flex gap-2">
+                  <button onClick={() => setQuickEdits({})}
+                    className="px-3 py-1.5 rounded-xl text-xs font-semibold"
+                    style={{ color: c.muted, border: `1px solid ${c.border}` }}>
+                    İptal
+                  </button>
+                  <button
+                    disabled={quickSaving}
+                    onClick={async () => {
+                      setQuickSaving(true);
+                      try {
+                        for (const [itemId, changes] of Object.entries(quickEdits)) {
+                          const patch = {};
+                          if (changes.unit !== undefined) patch.unit = changes.unit;
+                          if (changes.stock_count !== undefined) patch.stock_count = Number(changes.stock_count);
+                          if (changes.purchase_price !== undefined) patch.purchase_price = Number(changes.purchase_price);
+                          if (changes.sale_price !== undefined) patch.sale_price = Number(changes.sale_price);
+                          if (Object.keys(patch).length > 0) {
+                            await supabase.from('items').update(patch).eq('id', itemId);
+                          }
+                        }
+                        showToast(`${Object.keys(quickEdits).length} kayıt güncellendi ✓`);
+                        setQuickEdits({});
+                        refetch();
+                      } catch (e) { showToast(e.message, 'error'); }
+                      finally { setQuickSaving(false); }
+                    }}
+                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-bold text-white"
+                    style={{ background: '#f59e0b', opacity: quickSaving ? 0.7 : 1 }}>
+                    {quickSaving ? <RefreshCcw size={12} className="animate-spin"/> : <Save size={12}/>}
+                    {quickSaving ? 'Kaydediliyor...' : 'Tümünü Kaydet'}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Footer */}
             {!loading && filtered.length > 0 && (
@@ -659,6 +753,35 @@ export default function Stock() {
       {quickAdd && (
         <QuickAddModal onClose={() => setQuickAdd(false)} onSave={handleQuickSave} saving={saving} />
       )}
+
+      {/* ── Detay Yan Paneli ── */}
+      <AnimatePresence>
+        {detailItem && (
+          <ItemDetailPanel
+            item={detailItem}
+            c={c}
+            currentColor={currentColor}
+            isDark={isDark}
+            onClose={() => setDetailItem(null)}
+            onEdit={(item) => { setDetailItem(null); openForm(item, item.item_type); }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ── Toplu Güncelle Modalı ── */}
+      <AnimatePresence>
+        {bulkModal && (
+          <BulkUpdateModal
+            allItems={[...rawItems, ...productItems]}
+            c={c}
+            currentColor={currentColor}
+            isDark={isDark}
+            supabase={supabase}
+            onClose={() => setBulkModal(false)}
+            onDone={() => { setBulkModal(false); refetch(); showToast('Toplu güncelleme tamamlandı ✓'); }}
+          />
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {toast && (
@@ -680,6 +803,326 @@ function ABtn({ icon: Icon, color, onClick }) {
       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
       <Icon size={13} />
     </button>
+  );
+}
+
+// ─── Detay Yan Paneli ─────────────────────────────────────────────────────────
+function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
+  const clr = stockColor(item.stock_count, item.critical_limit);
+  const sym = CURRENCY_SYM[item.base_currency] || '₺';
+
+  const rows = [
+    { icon: Tag,        label: 'Tür',            value: item.item_type === 'product' ? 'Mamül Ürün' : 'Hammadde' },
+    { icon: Hash,       label: 'SKU',            value: item.sku || '—' },
+    { icon: Ruler,      label: 'Birim',          value: item.unit },
+    { icon: Boxes,      label: 'Stok',           value: `${item.stock_count} ${item.unit}`, color: clr },
+    { icon: AlertTriangle, label: 'Kritik Limit', value: item.critical_limit > 0 ? `${item.critical_limit} ${item.unit}` : '—' },
+    { icon: DollarSign, label: 'Alış Fiyatı',    value: item.purchase_price > 0 ? `${sym}${item.purchase_price}` : '—', color: '#10b981' },
+    { icon: DollarSign, label: 'Satış Fiyatı',   value: item.sale_price > 0 ? `₺${item.sale_price}` : '—', color: '#3b82f6' },
+    { icon: MapPin,     label: 'Konum',          value: item.location || '—' },
+    { icon: Package,    label: 'Tedarikçi',      value: item.supplier_name || '—' },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-[200] flex justify-end">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}/>
+      <motion.div
+        initial={{ x: 340 }} animate={{ x: 0 }} exit={{ x: 340 }}
+        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+        className="relative w-full max-w-sm h-full overflow-y-auto flex flex-col shadow-2xl"
+        style={{ background: isDark ? '#0b1729' : '#f8fafc', borderLeft: `1px solid ${c.border}` }}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 flex-shrink-0"
+          style={{ borderBottom: `1px solid ${c.border}`, background: `${currentColor}06` }}>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: currentColor }}>
+              {item.item_type === 'product' ? 'Mamül Detayı' : 'Hammadde Detayı'}
+            </p>
+            <h3 className="text-sm font-bold mt-0.5 truncate" style={{ color: c.text }}>{item.name}</h3>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-xl" style={{ color: c.muted }}>
+            <X size={15}/>
+          </button>
+        </div>
+
+        {/* Stok durumu büyük gösterge */}
+        <div className="px-5 py-4 flex-shrink-0" style={{ borderBottom: `1px solid ${c.border}` }}>
+          <div className="flex items-end gap-3">
+            <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
+              style={{ background: `${clr}15` }}>
+              <Package size={22} style={{ color: clr }}/>
+            </div>
+            <div>
+              <p className="text-2xl font-black" style={{ color: clr }}>{item.stock_count}</p>
+              <p className="text-[10px] font-semibold" style={{ color: c.muted }}>{item.unit} stokta</p>
+            </div>
+          </div>
+          {item.critical_limit > 0 && (
+            <div className="mt-3">
+              <div className="flex items-center justify-between text-[10px] mb-1">
+                <span style={{ color: c.muted }}>Kapasite</span>
+                <span style={{ color: clr }}>{item.stock_count} / {item.critical_limit * 3}</span>
+              </div>
+              <div className="h-2 rounded-full overflow-hidden" style={{ background: c.border }}>
+                <div className="h-full rounded-full transition-all" style={{
+                  width: `${Math.min(100, (item.stock_count / (item.critical_limit * 3)) * 100)}%`,
+                  background: clr,
+                }}/>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Detay Satırları */}
+        <div className="flex-1 px-5 py-3 space-y-1">
+          {rows.map((r, i) => (
+            <div key={i} className="flex items-center justify-between py-2"
+              style={{ borderBottom: i < rows.length - 1 ? `1px solid ${c.border}` : 'none' }}>
+              <div className="flex items-center gap-2 min-w-0">
+                <r.icon size={12} style={{ color: c.muted, flexShrink: 0 }}/>
+                <span className="text-xs font-semibold" style={{ color: c.muted }}>{r.label}</span>
+              </div>
+              <span className="text-xs font-bold text-right truncate ml-2" style={{ color: r.color || c.text }}>
+                {r.value}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* Kategori, notlar */}
+        {(item.category || item.notes) && (
+          <div className="px-5 py-3 space-y-2 flex-shrink-0" style={{ borderTop: `1px solid ${c.border}` }}>
+            {item.category && (
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: c.muted }}>Kategori</p>
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-lg"
+                  style={{ background: `${currentColor}15`, color: currentColor }}>{item.category}</span>
+              </div>
+            )}
+            {item.notes && (
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: c.muted }}>Notlar</p>
+                <p className="text-xs leading-relaxed" style={{ color: c.text }}>{item.notes}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Alt butonlar */}
+        <div className="px-5 py-4 flex gap-2 flex-shrink-0" style={{ borderTop: `1px solid ${c.border}` }}>
+          <button onClick={() => onEdit(item)}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white"
+            style={{ background: currentColor }}>
+            <Edit2 size={14}/> Düzenle
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// ─── Toplu Güncelle Modalı ────────────────────────────────────────────────────
+function BulkUpdateModal({ allItems, c, currentColor, isDark, supabase, onClose, onDone }) {
+  const EMPTY = () => ({ _key: Date.now() + Math.random(), itemId: '', stock_count: '', purchase_price: '', sale_price: '', unit: '' });
+  const [rows, setRows] = useState([EMPTY()]);
+  const [saving, setSaving] = useState(false);
+  const [searchStates, setSearchStates] = useState({});
+
+  const addRow = () => setRows(prev => [...prev, EMPTY()]);
+  const removeRow = (key) => setRows(prev => prev.filter(r => r._key !== key));
+
+  const updateRow = (key, field, val) =>
+    setRows(prev => prev.map(r => r._key === key ? { ...r, [field]: val } : r));
+
+  const selectItem = (rowKey, item) => {
+    updateRow(rowKey, 'itemId', item.id);
+    updateRow(rowKey, 'stock_count', String(item.stock_count ?? ''));
+    updateRow(rowKey, 'purchase_price', String(item.purchase_price ?? ''));
+    updateRow(rowKey, 'sale_price', String(item.sale_price ?? ''));
+    updateRow(rowKey, 'unit', item.unit || 'Adet');
+    updateRow(rowKey, '_name', item.name);
+    setSearchStates(p => ({ ...p, [rowKey]: '' }));
+  };
+
+  const handleSave = async () => {
+    const valid = rows.filter(r => r.itemId);
+    if (!valid.length) return;
+    setSaving(true);
+    try {
+      for (const r of valid) {
+        const patch = {};
+        if (r.stock_count !== '') patch.stock_count = Number(r.stock_count);
+        if (r.purchase_price !== '') patch.purchase_price = Number(r.purchase_price);
+        if (r.sale_price !== '') patch.sale_price = Number(r.sale_price);
+        if (r.unit) patch.unit = r.unit;
+        if (Object.keys(patch).length > 0) {
+          await supabase.from('items').update(patch).eq('id', r.itemId);
+        }
+      }
+      onDone();
+    } catch (e) {
+      alert(e.message);
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[210] flex items-center justify-center p-3">
+      <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={onClose}/>
+      <motion.div
+        initial={{ scale: 0.93, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.93, opacity: 0 }}
+        className="relative w-full max-w-3xl rounded-2xl overflow-hidden flex flex-col shadow-2xl"
+        style={{ background: isDark ? '#0b1729' : '#fff', border: `1px solid ${currentColor}30`, maxHeight: '90vh' }}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 flex-shrink-0"
+          style={{ borderBottom: `1px solid ${c.border}`, background: `${currentColor}06` }}>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: currentColor }}>
+              Toplu Stok Güncelleme
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: c.muted }}>
+              Birden fazla ürünü tek seferde güncelleyin
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={addRow}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold"
+              style={{ background: `${currentColor}15`, color: currentColor }}>
+              <Plus size={12}/> Satır Ekle
+            </button>
+            <button onClick={onClose} className="p-2 rounded-xl" style={{ color: c.muted }}>
+              <X size={15}/>
+            </button>
+          </div>
+        </div>
+
+        {/* Tablo */}
+        <div className="flex-1 overflow-y-auto px-5 py-3 space-y-2">
+          {rows.map((row, idx) => {
+            const selectedItem = allItems.find(i => i.id === row.itemId);
+            const sq = (searchStates[row._key] || '').toLowerCase();
+            const results = sq ? allItems.filter(i =>
+              i.name.toLowerCase().includes(sq) || (i.sku || '').toLowerCase().includes(sq)
+            ).slice(0, 8) : [];
+
+            return (
+              <div key={row._key} className="rounded-xl p-3 space-y-2"
+                style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', border: `1px solid ${c.border}` }}>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center"
+                    style={{ background: `${currentColor}20`, color: currentColor }}>{idx + 1}</span>
+
+                  {/* Ürün seçimi */}
+                  <div className="flex-1 relative">
+                    {selectedItem ? (
+                      <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg"
+                        style={{ background: `${currentColor}10`, border: `1px solid ${currentColor}30` }}>
+                        <Package size={11} style={{ color: currentColor }}/>
+                        <span className="text-xs font-bold truncate" style={{ color: c.text }}>{selectedItem.name}</span>
+                        <button onClick={() => updateRow(row._key, 'itemId', '')}
+                          className="ml-auto p-0.5 rounded" style={{ color: c.muted }}>
+                          <X size={10}/>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <input
+                          value={searchStates[row._key] || ''}
+                          onChange={e => setSearchStates(p => ({ ...p, [row._key]: e.target.value }))}
+                          placeholder="Ürün / hammadde ara..."
+                          className="w-full px-2.5 py-1.5 text-xs rounded-lg outline-none"
+                          style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}/>
+                        {results.length > 0 && (
+                          <div className="absolute top-8 left-0 right-0 z-50 rounded-xl overflow-hidden shadow-2xl"
+                            style={{ background: isDark ? '#0f1e36' : '#fff', border: `1px solid ${c.border}`, maxHeight: 200, overflowY: 'auto' }}>
+                            {results.map(item => (
+                              <button key={item.id} onClick={() => selectItem(row._key, item)}
+                                className="w-full text-left px-3 py-2 text-xs transition-colors hover:bg-white/5"
+                                style={{ borderBottom: `1px solid ${c.border}`, color: c.text }}>
+                                <span className="font-semibold">{item.name}</span>
+                                <span className="ml-2 text-[10px]" style={{ color: c.muted }}>{item.unit} · Stok: {item.stock_count ?? '—'}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {rows.length > 1 && (
+                    <button onClick={() => removeRow(row._key)}
+                      className="p-1.5 rounded-lg" style={{ color: '#ef4444' }}>
+                      <Trash2 size={12}/>
+                    </button>
+                  )}
+                </div>
+
+                {/* Alanlar */}
+                {row.itemId && (
+                  <div className="grid grid-cols-4 gap-2 pl-7">
+                    <div>
+                      <p className="text-[10px] font-bold mb-0.5" style={{ color: c.muted }}>Stok</p>
+                      <input type="number" step="0.01" value={row.stock_count}
+                        onChange={e => updateRow(row._key, 'stock_count', e.target.value)}
+                        className="w-full px-2 py-1 text-xs font-bold rounded-lg outline-none"
+                        style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: '#10b981' }}/>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold mb-0.5" style={{ color: c.muted }}>Alış (₺)</p>
+                      <input type="number" step="0.01" value={row.purchase_price}
+                        onChange={e => updateRow(row._key, 'purchase_price', e.target.value)}
+                        className="w-full px-2 py-1 text-xs font-bold rounded-lg outline-none"
+                        style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: '#f59e0b' }}/>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold mb-0.5" style={{ color: c.muted }}>Satış (₺)</p>
+                      <input type="number" step="0.01" value={row.sale_price}
+                        onChange={e => updateRow(row._key, 'sale_price', e.target.value)}
+                        className="w-full px-2 py-1 text-xs font-bold rounded-lg outline-none"
+                        style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: '#3b82f6' }}/>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold mb-0.5" style={{ color: c.muted }}>Birim</p>
+                      <select value={row.unit}
+                        onChange={e => updateRow(row._key, 'unit', e.target.value)}
+                        className="w-full px-2 py-1 text-xs rounded-lg outline-none"
+                        style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
+                        {['Adet','Metre','cm','mm','Kg','g','Litre','ml','m²','Rulo','Paket','Kutu','Set','Takım'].map(u =>
+                          <option key={u} value={u}>{u}</option>
+                        )}
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between gap-3 px-5 py-3.5 flex-shrink-0"
+          style={{ borderTop: `1px solid ${c.border}`, background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.02)' }}>
+          <p className="text-xs" style={{ color: c.muted }}>
+            {rows.filter(r => r.itemId).length} / {rows.length} satır seçili
+          </p>
+          <div className="flex gap-2">
+            <button onClick={onClose}
+              className="px-4 py-2 rounded-xl text-xs font-semibold"
+              style={{ color: c.muted, border: `1px solid ${c.border}` }}>
+              İptal
+            </button>
+            <button onClick={handleSave} disabled={saving || !rows.some(r => r.itemId)}
+              className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold text-white"
+              style={{ background: currentColor, opacity: saving ? 0.7 : 1 }}>
+              {saving ? <RefreshCcw size={14} className="animate-spin"/> : <Save size={14}/>}
+              {saving ? 'Kaydediliyor...' : 'Güncelle'}
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
   );
 }
 

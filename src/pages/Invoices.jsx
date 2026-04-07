@@ -302,6 +302,18 @@ function IsleWizard({ inv, allItems, supabase, onClose, onDone }) {
             </div>
           </label>
 
+          {/* Giden fatura stok uyarısı */}
+          {isOutbox && stokIsle && (
+            <div className="flex items-start gap-2 px-3 py-2 rounded-xl"
+              style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)' }}>
+              <AlertCircle size={12} className="text-red-400 shrink-0 mt-0.5"/>
+              <p className="text-[11px] text-red-300 leading-relaxed">
+                ⚠ <strong>Dikkat:</strong> Sipariş <strong>"Tamamlandı"</strong> olarak işaretlendiğinde stok otomatik düşülmüştür. 
+                Bu faturaya ait sipariş zaten tamamlandıysa <strong>"Stoğa İşle" seçeneğini işaretlemeyiniz!</strong>
+              </p>
+            </div>
+          )}
+
           <div className="p-2.5 rounded-xl text-[11px] text-slate-500"
             style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(148,163,184,0.07)' }}>
             ✓ Fatura <strong className="text-slate-300">"İşlendi"</strong> olarak işaretlenecek ve tekrar sorulmayacak.
@@ -772,18 +784,41 @@ export default function Invoices({ type = 'inbox' }) {
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
 
-  // API'den kalem gelince ilgili faturayı cache + state'de anında güncelle → ✓ tiki
   const handleLineItemsLoaded = useCallback((invoiceId, items) => {
     setInvoices(prev => {
       const updated = prev.map(inv =>
         inv.invoice_id === invoiceId ? { ...inv, line_items: items } : inv
       );
       invoiceCache.set(type, updated);
-      // selected'i da güncelle
       setSelected(s => s?.invoice_id === invoiceId ? { ...s, line_items: items } : s);
       return updated;
     });
   }, [type]);
+
+  // İşle butonuna tıklandığında — kalemler yüklenmemişse önce API'den çek
+  const handleIsle = useCallback(async (inv) => {
+    if (inv.line_items?.length > 0) {
+      setIsleModal(inv);
+      return;
+    }
+    try {
+      const r = await fetch('/api/invoices-api?action=detail', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ invoiceId: inv.invoice_id }),
+      });
+      const d = await r.json();
+      if (d.success) {
+        const items = d.line_items || [];
+        handleLineItemsLoaded(inv.invoice_id, items);
+        setIsleModal({ ...inv, line_items: items });
+      } else {
+        setIsleModal(inv); // yine de aç ama boş
+      }
+    } catch {
+      setIsleModal(inv);
+    }
+  }, [handleLineItemsLoaded]);
 
   const syncInvoices = async () => {
     setSyncing(true); setError(null);
@@ -1329,12 +1364,12 @@ export default function Invoices({ type = 'inbox' }) {
                               title={`İşlendi: ${inv.islendi_at ? new Date(inv.islendi_at).toLocaleDateString('tr-TR') : ''}`}>
                               <CheckCircle2 size={10}/> İşlendi
                             </span>
-                          ) : inv.is_islendi === false ? (
+                          ) : inv.is_islendi === false && !(inv.type === 'outbox' && ['Draft','Queued'].includes(inv.status)) ? (
                             <button
-                              onClick={e => { e.stopPropagation(); setIsleModal(inv); }}
+                              onClick={e => { e.stopPropagation(); handleIsle(inv); }}
                               className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap animate-pulse"
                               style={{ background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }}
-                              title="Bu faturayı işle (stok, cari hesap vb.)">
+                              title="Bu faturası işle (stok, cari hesap vb.)">
                               <CheckCheck size={11}/> İşle
                             </button>
                           ) : null}
