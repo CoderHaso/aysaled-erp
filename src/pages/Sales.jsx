@@ -96,6 +96,8 @@ function StatusBadge({ status, urgent }) {
 
 // ─── Ürün Satırı ──────────────────────────────────────────────────────────────
 function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove, c, exchangeRate, invoiceToggle }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
   const [open, setOpen]             = useState(false);
   const [q, setQ]                   = useState('');
   const [showRecipePicker, setShowRecipePicker] = useState(false);
@@ -124,17 +126,17 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
 
   return (
     <div className="rounded-xl p-3 space-y-2.5 relative"
-      style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${stockOk ? 'rgba(148,163,184,0.1)' : 'rgba(239,68,68,0.3)'}` }}>
+      style={{ background: isDark ? 'rgba(255,255,255,0.04)' : '#fafbfc', border: `1px solid ${stockOk ? (isDark ? 'rgba(148,163,184,0.1)' : '#e2e8f0') : 'rgba(239,68,68,0.3)'}` }}>
       {/* Ürün seç */}
       <div className="relative">
         <div onClick={() => setOpen(v => !v)}
           className="flex items-center justify-between px-3 py-2 rounded-xl cursor-pointer"
-          style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.12)' }}>
+          style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', border: `1px solid ${isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0'}` }}>
           <div>
             {line.item_name
-              ? <><p className="text-sm font-semibold text-slate-100">{line.item_name}</p>
-                  <p className="text-[10px] text-slate-500">{line.item_type === 'product' ? '⚡ Mamül' : '🔩 Hammadde'}</p></>
-              : <p className="text-sm text-slate-500">Ürün / Hammadde seç...</p>
+              ? <><p className="text-sm font-semibold truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{line.item_name}</p>
+                  <p className="text-[10px]" style={{ color: '#64748b' }}>{line.item_type === 'product' ? '⚡ Mamül' : '🔩 Hammadde'}</p></>
+              : <p className="text-sm" style={{ color: '#64748b' }}>Ürün / Hammadde seç...</p>
             }
           </div>
           <div className="flex items-center gap-2">
@@ -198,12 +200,12 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
                     setOpen(false); setQ('');
                   }}
                     className="flex items-center justify-between px-4 py-2.5 cursor-pointer transition-colors"
-                    style={{ borderBottom: '1px solid rgba(148,163,184,0.06)' }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                    style={{ borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.06)' : '#e2e8f0'}` }}
+                    onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                     <div>
-                      <p className="text-sm text-slate-100 font-semibold">{item.name}</p>
-                      <p className="text-[10px] text-slate-500">
+                      <p className="text-sm font-semibold truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{item.name}</p>
+                      <p className="text-[10px]" style={{ color: '#64748b' }}>
                         {item.item_type === 'product' ? '⚡' : '🔩'} {item.unit}
                         {item.sku ? ` · ${item.sku}` : ''}
                         {item.base_currency && item.base_currency !== 'TRY' ? (
@@ -212,7 +214,7 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xs font-bold text-slate-300">
+                      <p className="text-xs font-bold" style={{ color: isDark ? '#cbd5e1' : '#334155' }}>
                         {fmt(item.sale_price || item.purchase_price, item.base_currency || 'TRY')}
                       </p>
                       {item.base_currency && item.base_currency !== currency && (
@@ -235,19 +237,19 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
       {/* Reçete Seç butonu — sadece kayıtlı mamul ve BOM var ise */}
       {hasRecipe && (
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Reçete</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: '#64748b' }}>Reçete</p>
           <button onClick={() => setShowRecipePicker(true)}
             className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-all"
             style={{
-              background: line.recipe_note ? 'rgba(139,92,246,0.1)' : 'rgba(255,255,255,0.03)',
-              border: `1px solid ${line.recipe_note ? 'rgba(139,92,246,0.35)' : 'rgba(139,92,246,0.2)'}`,
-              color: line.recipe_note ? '#c4b5fd' : '#64748b',
+              background: line.recipe_note ? (isDark ? 'rgba(139,92,246,0.1)' : '#f3e8ff') : (isDark ? 'rgba(255,255,255,0.03)' : '#f1f5f9'),
+              border: `1px solid ${line.recipe_note ? 'rgba(139,92,246,0.35)' : (isDark ? 'rgba(139,92,246,0.2)' : '#e2e8f0')}`,
+              color: line.recipe_note ? '#a855f7' : '#64748b',
             }}>
             <span className="flex items-center gap-2 text-left truncate">
-              <FlaskConical size={13} className="shrink-0" style={{ color: '#a78bfa' }}/>
+              <FlaskConical size={13} className="shrink-0" style={{ color: '#a855f7' }}/>
               <span className="truncate">{line.recipe_note ? '✓ ' + line.recipe_key : 'Reçete Seç...'}</span>
             </span>
-            <BookOpen size={12} style={{ color: '#a78bfa', flexShrink: 0 }}/>
+            <BookOpen size={12} style={{ flexShrink: 0, color: '#a855f7' }}/>
           </button>
           {line.recipe_note && (
             <p className="text-[10px] text-slate-600 mt-1 truncate px-1">{line.recipe_note}</p>
@@ -316,6 +318,8 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
 }
 
 function Field({ label, type = 'text', value, onChange, suffix, placeholder }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
   return (
     <div>
       <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">{label}</p>
@@ -323,7 +327,7 @@ function Field({ label, type = 'text', value, onChange, suffix, placeholder }) {
         <input type={type} value={value ?? ''} onChange={e => onChange(e.target.value)}
           placeholder={placeholder}
           className="w-full px-3 py-2 rounded-xl text-sm outline-none"
-          style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)', color: '#f1f5f9', paddingRight: suffix ? '2.5rem' : undefined }} />
+          style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`, color: isDark ? '#f1f5f9' : '#1e293b', paddingRight: suffix ? '2.5rem' : undefined }} />
         {suffix && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">{suffix}</span>}
       </div>
     </div>
@@ -332,6 +336,8 @@ function Field({ label, type = 'text', value, onChange, suffix, placeholder }) {
 
 // ─── Sipariş Formu ────────────────────────────────────────────────────────────
 function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSaved, currentColor, quoteId, quoteRevertFn, markQuoteAccepted }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
   const isEdit = !!order?.id;
   // ── Local dialog state (OrderForm kendi dialogunu yönetir) ──
   const [dialog, setDialog] = useState({ open: false, title: '', message: '', type: 'confirm', onConfirm: null, loading: false });
@@ -613,12 +619,12 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
       <div className="absolute inset-0 z-0" onClick={onClose} />
       
       <motion.div className="relative w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-3xl shadow-2xl z-10"
-        style={{ background: '#0f172a', border: '1px solid rgba(148,163,184,0.15)' }}
+        style={{ background: isDark ? '#0f172a' : '#ffffff', border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}` }}
         initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}>
 
       {/* Header */}
       <div className="sticky top-0 z-20 flex items-center justify-between px-6 py-4"
-        style={{ background: 'rgba(15,23,42,0.97)', backdropFilter:'blur(14px)', borderBottom:'1px solid rgba(148,163,184,0.08)' }}>
+        style={{ background: isDark ? 'rgba(15,23,42,0.97)' : 'rgba(255,255,255,0.97)', backdropFilter:'blur(14px)', borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.08)' : '#e2e8f0'}` }}>
         <div>
           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
             {isEdit ? 'Sipariş Düzenle' : 'Yeni Sipariş'}
@@ -628,7 +634,7 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
           </h2>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={handleCancel} className="p-2 rounded-xl text-slate-500 hover:text-white transition-colors">
+          <button onClick={handleCancel} className="p-2 rounded-xl transition-colors" style={{ color: '#94a3b8' }}>
             <X size={18} />
           </button>
         </div>
@@ -644,8 +650,8 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Müşteri *</p>
               <div onClick={() => setCustOpen(v => !v)}
                 className="flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer"
-                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)' }}>
-                <span className={`text-sm ${form.customer_name ? 'text-slate-100' : 'text-slate-500'}`}>
+                style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}` }}>
+                <span className="text-sm" style={{ color: form.customer_name ? (isDark ? '#f1f5f9' : '#1e293b') : '#94a3b8' }}>
                   {form.customer_name || 'Müşteri seç veya yaz...'}
                 </span>
                 <ChevronDown size={14} className="text-slate-500" />
@@ -654,37 +660,37 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
                 {custOpen && (
                   <motion.div initial={{ opacity:0, y:-4 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0 }}
                     className="absolute z-40 w-full mt-1 rounded-xl overflow-hidden"
-                    style={{ background: '#0c1a2e', border:'1px solid rgba(148,163,184,0.15)', boxShadow:'0 20px 40px rgba(0,0,0,0.5)' }}>
+                    style={{ background: isDark ? '#0c1a2e' : '#ffffff', border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`, boxShadow:'0 20px 40px rgba(0,0,0,0.5)' }}>
                     <div className="p-2">
                       <input autoFocus value={custQ}
                         onChange={e => { setCustQ(e.target.value); setForm(f => ({ ...f, customer_name: e.target.value })); }}
                         placeholder="Ara veya yeni isim gir..."
                         className="w-full px-3 py-1.5 rounded-lg text-sm outline-none"
-                        style={{ background: 'rgba(255,255,255,0.07)', color: '#f1f5f9' }} />
+                        style={{ background: isDark ? 'rgba(255,255,255,0.07)' : '#f1f5f9', color: isDark ? '#f1f5f9' : '#1e293b' }} />
                     </div>
                     {filteredCusts.map(c => (
                       <div key={c.id} onClick={() => selectCustomer(c)}
                         className="px-4 py-2.5 cursor-pointer transition-colors"
-                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                        onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)'}
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                        <p className="text-sm text-slate-100 font-semibold">{c.name}</p>
-                        {c.vkntckn && <p className="text-[10px] text-slate-500 font-mono">{c.vkntckn}</p>}
+                        <p className="text-sm font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{c.name}</p>
+                        {c.vkntckn && <p className="text-[10px] font-mono" style={{ color: '#64748b' }}>{c.vkntckn}</p>}
                       </div>
                     ))}
                     {custQ && (
                       <>
                         {/* Kayıtsız devam et */}
                         <div className="px-4 py-2.5 cursor-pointer transition-colors border-t"
-                          style={{ borderColor: 'rgba(148,163,184,0.08)' }}
+                          style={{ borderColor: isDark ? 'rgba(148,163,184,0.08)' : '#e2e8f0' }}
                           onClick={async () => {
                             const num = await generateOrderNumber(custQ);
                             setForm(f => ({ ...f, customer_name: custQ, customer_id: null, order_number: isEdit ? f.order_number : num }));
                             setCustOpen(false);
                           }}
-                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(148,163,184,0.07)'}
+                          onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(148,163,184,0.07)' : 'rgba(0,0,0,0.03)'}
                           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                          <p className="text-sm text-slate-400">📋 <strong className="text-slate-300">&quot;{custQ}&quot;</strong> — Kayıtsız devam et</p>
-                          <p className="text-[10px] text-slate-600">Sisteme kayıt oluşturulmaz</p>
+                          <p className="text-sm" style={{ color: '#94a3b8' }}>📋 <strong style={{ color: isDark ? '#cbd5e1' : '#334155' }}>&quot;{custQ}&quot;</strong> — Kayıtsız devam et</p>
+                          <p className="text-[10px]" style={{ color: '#475569' }}>Sisteme kayıt oluşturulmaz</p>
                         </div>
                         {/* Yeni kayıt oluştur */}
                         <div className="px-4 py-2.5 cursor-pointer transition-colors"
@@ -714,7 +720,7 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
               <input type="date" value={form.due_date}
                 onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))}
                 className="w-full px-3 py-2 rounded-xl text-sm outline-none"
-                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)', color: '#f1f5f9' }} />
+                style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`, color: isDark ? '#f1f5f9' : '#1e293b' }} />
             </div>
 
             <div>
@@ -723,7 +729,7 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
                 {CURRENCIES.map(c => (
                   <button key={c} onClick={() => setForm(f => ({ ...f, currency: c }))}
                     className="flex-1 py-2 rounded-xl text-xs font-bold transition-all"
-                    style={{ background: form.currency === c ? `${currentColor}20` : 'rgba(255,255,255,0.04)', color: form.currency === c ? currentColor : '#64748b', border: `1px solid ${form.currency === c ? `${currentColor}40` : 'rgba(148,163,184,0.1)'}` }}>
+                    style={{ background: form.currency === c ? `${currentColor}20` : (isDark ? 'rgba(255,255,255,0.04)' : '#f1f5f9'), color: form.currency === c ? currentColor : '#64748b', border: `1px solid ${form.currency === c ? `${currentColor}40` : (isDark ? 'rgba(148,163,184,0.1)' : '#e2e8f0')}` }}>
                     {c}
                   </button>
                 ))}

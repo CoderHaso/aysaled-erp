@@ -177,6 +177,8 @@ function BalanceChip({ value, compact = false }) {
 
 // ── Tekil kişi satırı (accordion) ─────────────────────────────────────────────
 function ContactRow({ contact, contactType, color, preloadedBalance }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
   const [open, setOpen]       = useState(false);
   const [hareketler, setHar]  = useState([]);
   const [loading, setLoading] = useState(false);
