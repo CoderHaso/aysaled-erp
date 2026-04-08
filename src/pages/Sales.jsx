@@ -268,9 +268,22 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
           allItems={allItems || []}
           currentColor="#8b5cf6"
           selectedRecipeId={line.recipe_id || null}
+          customRecipeItems={line.custom_recipe_items || null}
           onClose={() => setShowRecipePicker(false)}
           onSelect={(recipeData) => {
-            onChange({ recipe_id: recipeData.recipe_id, recipe_key: recipeData.recipe_key, recipe_note: recipeData.recipe_note, recipe_components: recipeData.components });
+            const customItems = recipeData.components?.map(c => ({
+              item_id: c.item_id || null,
+              item_name: c.item_name || '',
+              quantity: Number(c.quantity) || 1,
+              unit: c.unit || 'Adet',
+            })) || null;
+            onChange({
+              recipe_id: recipeData.recipe_id,
+              recipe_key: recipeData.recipe_key,
+              recipe_note: recipeData.recipe_note,
+              recipe_components: recipeData.components,
+              custom_recipe_items: customItems,
+            });
             setShowRecipePicker(false);
           }}/>
       )}
@@ -533,6 +546,8 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
           recipe_id:   l.recipe_id   || null,
           recipe_key:  l.recipe_key  || null,
           recipe_note: l.recipe_note || null,
+          // Geçici reçete — özelleştirilmiş malzeme listesi
+          custom_recipe_items: l.custom_recipe_items || null,
         }));
         const { error: itemsErr } = await supabase.from('order_items').insert(items);
         if (itemsErr) console.warn('[order_items insert]', itemsErr.message);
@@ -1162,10 +1177,11 @@ function OrderDetailDrawer({ order, onClose, onEdit, onSendToWorkOrders, onStatu
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold truncate" style={{ color: c.text }}>{l.item_name || 'Ürün'}</p>
                     {(l.recipe_key || l.recipe_note) && (
-                      <button className="flex items-center gap-1 text-[10px] font-semibold" style={{ color: '#a78bfa' }}
+                      <button className="flex items-center gap-1 text-[10px] font-semibold" style={{ color: l.custom_recipe_items ? '#f59e0b' : '#a78bfa' }}
                         onClick={() => setExpandedRecipe(isExpanded ? null : i)}>
-                        📋 {l.recipe_key || l.recipe_note}
-                        {recipeObj && (isExpanded ? <ChevronRight size={9} style={{ transform:'rotate(90deg)' }}/> : <ChevronRight size={9}/>)}
+                        {l.custom_recipe_items ? '🔧' : '📋'} {l.recipe_key || l.recipe_note}
+                        {l.custom_recipe_items && <span className="text-[8px] ml-1 opacity-60">(özel)</span>}
+                        {isExpanded ? <ChevronRight size={9} style={{ transform:'rotate(90deg)' }}/> : <ChevronRight size={9}/>}
                       </button>
                     )}
                   </div>
@@ -1175,17 +1191,25 @@ function OrderDetailDrawer({ order, onClose, onEdit, onSendToWorkOrders, onStatu
                   </div>
                 </div>
                 {/* Reçete içeriği accordion */}
-                {isExpanded && recipeObj && (
-                  <div className="px-4 pb-3 pt-1 space-y-1" style={{ borderTop: `1px solid rgba(139,92,246,0.15)`, background: 'rgba(139,92,246,0.04)' }}>
-                    <p className="text-[9px] font-bold uppercase" style={{ color: '#a78bfa' }}>Reçete İçeriği</p>
-                    {(recipeObj.recipe_items || []).map((ri, j) => (
-                      <div key={j} className="flex items-center justify-between text-[10px]" style={{ color: c.muted }}>
-                        <span>• {ri.item_name}</span>
-                        <span className="font-bold">{ri.quantity} {ri.unit}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                {isExpanded && (() => {
+                  const customItems = l.custom_recipe_items;
+                  const hasCustom = customItems && Array.isArray(customItems) && customItems.length > 0;
+                  const displayItems = hasCustom ? customItems : (recipeObj?.recipe_items || []);
+                  if (displayItems.length === 0) return null;
+                  return (
+                    <div className="px-4 pb-3 pt-1 space-y-1" style={{ borderTop: `1px solid ${hasCustom ? 'rgba(245,158,11,0.2)' : 'rgba(139,92,246,0.15)'}`, background: hasCustom ? 'rgba(245,158,11,0.04)' : 'rgba(139,92,246,0.04)' }}>
+                      <p className="text-[9px] font-bold uppercase" style={{ color: hasCustom ? '#f59e0b' : '#a78bfa' }}>
+                        {hasCustom ? '🔧 Özel Reçete İçeriği' : 'Reçete İçeriği'}
+                      </p>
+                      {displayItems.map((ri, j) => (
+                        <div key={j} className="flex items-center justify-between text-[10px]" style={{ color: c.muted }}>
+                          <span>• {ri.item_name}</span>
+                          <span className="font-bold">{ri.quantity} {ri.unit}</span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}
@@ -1623,6 +1647,8 @@ export default function Sales() {
         if (!line.item_id) continue;
         const qty  = Number(line.quantity || 1);
         const note = `Sipariş #${order.order_number} tamamlandı — satış stok düşümü`;
+        const customItems = line.custom_recipe_items;
+        const hasCustom = customItems && Array.isArray(customItems) && customItems.length > 0;
         await supabase.rpc('decrement_stock', {
           p_item_id:   line.item_id,
           p_qty:       qty,
@@ -1630,6 +1656,7 @@ export default function Sales() {
           p_source_id: orderId,
           p_recipe_id: line.recipe_id || null,
           p_note:      note,
+          p_custom_recipe: hasCustom ? JSON.stringify(customItems) : null,
         });
       }
 
