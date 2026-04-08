@@ -63,6 +63,7 @@ ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS recipe_change_note TEXT;
 ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS recipe_id UUID;
 ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS custom_recipe_items JSONB;
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS custom_recipe_items JSONB;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS skip_work_order BOOLEAN DEFAULT FALSE;
 ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS custom_recipe_data JSONB;
 
 -- ============================================================

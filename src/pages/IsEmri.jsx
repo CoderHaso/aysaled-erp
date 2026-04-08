@@ -167,12 +167,12 @@ function WorkOrderForm({ items, orders, allRecipes, onClose, onSaved, currentCol
           customRecipeItems={form.custom_recipe_items || null}
           onClose={() => setShowRecipePicker(false)}
           onSelect={(rec) => {
-            const customItems = rec.components?.map(c => ({
+            const customItems = rec.changed ? rec.components?.map(c => ({
               item_id: c.item_id || null,
               item_name: c.item_name || '',
               quantity: Number(c.quantity) || 1,
               unit: c.unit || 'Adet',
-            })) || null;
+            })) : null;
             setForm(f => ({
               ...f,
               recipe_id: rec.recipe_id || '',
@@ -262,12 +262,12 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
   };
 
   const handleRecipeUpdate = async (rec) => {
-    const isCustom = rec.components && rec.components.length > 0;
+    const isCustom = rec.changed; // base reçeteden farklı mı (RecipePickerModal hesaplar)
     const changeNote = isCustom
       ? `Özel reçete: ${rec.recipe_key} (${rec.components.length} malzeme)`
       : `Reçete: ${rec.recipe_key || rec.recipe_id}`;
 
-    // custom_recipe_items JSONB olarak kaydet
+    // Sadece değiştirildiyse custom_recipe_items kaydet
     const customItems = isCustom ? rec.components.map(c => ({
       item_id: c.item_id || null,
       item_name: c.item_name || '',

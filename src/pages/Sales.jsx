@@ -254,7 +254,21 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
             <BookOpen size={12} style={{ flexShrink: 0, color: '#a855f7' }}/>
           </button>
           {line.recipe_note && (
-            <p className="text-[10px] text-slate-600 mt-1 truncate px-1">{line.recipe_note}</p>
+            <div className="flex items-center gap-2 mt-1 px-1">
+              <p className="text-[10px] text-slate-600 truncate flex-1">{line.recipe_note}</p>
+              {line.skip_work_order && (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
+                  style={{ background:'rgba(16,185,129,0.1)', color:'#10b981' }}>
+                  ✓ Stoktan
+                </span>
+              )}
+              {line.custom_recipe_items && (
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
+                  style={{ background:'rgba(245,158,11,0.1)', color:'#f59e0b' }}>
+                  🔧 Özel
+                </span>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -271,18 +285,20 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
           customRecipeItems={line.custom_recipe_items || null}
           onClose={() => setShowRecipePicker(false)}
           onSelect={(recipeData) => {
-            const customItems = recipeData.components?.map(c => ({
+            // Sadece reçete değiştirildiyse custom items kaydet
+            const customItems = recipeData.changed ? recipeData.components?.map(c => ({
               item_id: c.item_id || null,
               item_name: c.item_name || '',
               quantity: Number(c.quantity) || 1,
               unit: c.unit || 'Adet',
-            })) || null;
+            })) : null;
             onChange({
               recipe_id: recipeData.recipe_id,
               recipe_key: recipeData.recipe_key,
               recipe_note: recipeData.recipe_note,
               recipe_components: recipeData.components,
               custom_recipe_items: customItems,
+              skip_work_order: recipeData.skip_work_order || false,
             });
             setShowRecipePicker(false);
           }}/>
@@ -548,6 +564,8 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
           recipe_note: l.recipe_note || null,
           // Geçici reçete — özelleştirilmiş malzeme listesi
           custom_recipe_items: l.custom_recipe_items || null,
+          // Stoktan kullan — iş emrine gönderilmeyecek
+          skip_work_order: l.skip_work_order || false,
         }));
         const { error: itemsErr } = await supabase.from('order_items').insert(items);
         if (itemsErr) console.warn('[order_items insert]', itemsErr.message);
@@ -1454,7 +1472,13 @@ export default function Sales() {
 
   // İş emrine gönder
   const sendToWorkOrders = async (order) => {
-    const recipeLines = (order.items || []).filter(l => l.recipe_note || l.recipe_key);
+    // skip_work_order olanları iş emrine gönderme — stoktan doğrudan satılacak
+    const recipeLines = (order.items || []).filter(l => (l.recipe_note || l.recipe_key) && !l.skip_work_order);
+    const skippedLines = (order.items || []).filter(l => (l.recipe_note || l.recipe_key) && l.skip_work_order);
+    if (!recipeLines.length && skippedLines.length) {
+      showToast('Tüm reçeteli ürünler stoktan satılacak — iş emrine gerek yok ✓');
+      return;
+    }
     if (!recipeLines.length) return;
     try {
       const payload = recipeLines.map(line => ({
@@ -1466,11 +1490,16 @@ export default function Sales() {
         notes:     line.recipe_note || line.recipe_key || '',
         line_key:  String(line.id || ''),
         started_at: null,
+        // Geçici reçete varsa onu da iş emrine taşı
+        custom_recipe_items: line.custom_recipe_items || null,
       }));
       const { error } = await supabase.from('work_orders').insert(payload);
       if (error) throw error;
       await supabase.from('orders').update({ status: 'processing', work_orders_sent: true }).eq('id', order.id);
-      showToast(`${recipeLines.length} iş emri oluşturuldu!`);
+      const msg = skippedLines.length
+        ? `${recipeLines.length} iş emri oluşturuldu! (${skippedLines.length} ürün stoktan satılacak)`
+        : `${recipeLines.length} iş emri oluşturuldu!`;
+      showToast(msg);
       loadAll();
     } catch (e) { showToast(e.message, 'error'); }
   };

@@ -6,6 +6,7 @@ import {
   ShoppingBag, DollarSign, Tag,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
+import { supabase } from '../lib/supabaseClient';
 
 /**
  * RecipePickerModal
@@ -44,14 +45,28 @@ export default function RecipePickerModal({
     ? productRecipes.find(r => r.id === selectedRecipeId) || productRecipes[0]
     : productRecipes[0];
   const [selectedId, setSelectedId] = useState(() => initialRecipe?.id || null);
+
   // customRecipeItems varsa (geçici reçete), base yerine onu kullan
+  const hasCustomInit = customRecipeItems && Array.isArray(customRecipeItems) && customRecipeItems.length > 0;
   const [localItems, setLocalItems] = useState(() =>
-    customRecipeItems && customRecipeItems.length > 0
+    hasCustomInit
       ? cloneItems(customRecipeItems)
       : cloneItems(initialRecipe?.recipe_items || [])
   );
   // ItemPickerModal: 'add' | idx (swap) | null
   const [pickerTarget, setPickerTarget] = useState(null);
+
+  // Stok bilgisi: bu ürünün her reçetesinde kaç stok var
+  const [recipeStocks, setRecipeStocks] = useState([]);
+  const [skipWorkOrder, setSkipWorkOrder] = useState(false);
+  React.useEffect(() => {
+    if (productId) {
+      supabase.from('product_recipe_stock').select('*').eq('product_id', productId)
+        .then(({ data }) => setRecipeStocks(data || []));
+    }
+  }, [productId]);
+  const getRecipeStock = (recipeId) => recipeStocks.find(s => s.recipe_id === recipeId)?.stock_count || 0;
+  const activeStock = getRecipeStock(selectedId);
 
   /* ── Etiketler ─────────────────────────────────────────────── */
   const allTags = useMemo(() => {
@@ -74,7 +89,7 @@ export default function RecipePickerModal({
     return sum + Number(price) * Number(it.quantity || 1);
   }, 0), [localItems, allItems]);
 
-  /* ── Değişti mi? ───────────────────────────────────────────── */
+  /* ── Değişti mi? (localItems vs base recipe items) ──────────── */
   const changed = useMemo(() =>
     JSON.stringify(localItems.map(i => ({ n: i.item_name, q: String(i.quantity), u: i.unit }))) !==
     JSON.stringify((activeRecipe?.recipe_items || []).map(i => ({ n: i.item_name, q: String(i.quantity), u: i.unit }))),
@@ -84,8 +99,14 @@ export default function RecipePickerModal({
   /* ── Reçete seç ────────────────────────────────────────────── */
   const selectRecipe = useCallback(recipe => {
     setSelectedId(recipe.id);
-    setLocalItems(cloneItems(recipe.recipe_items || []));
-  }, []);
+    // Eğer seçilen reçete, ilk açılıştaki custom reçete ise custom items'ı koru
+    if (hasCustomInit && recipe.id === initialRecipe?.id) {
+      setLocalItems(cloneItems(customRecipeItems));
+    } else {
+      setLocalItems(cloneItems(recipe.recipe_items || []));
+    }
+    setSkipWorkOrder(false);
+  }, [hasCustomInit, initialRecipe, customRecipeItems]);
 
   /* ── CRUD ──────────────────────────────────────────────────── */
   const updateItem = (idx, key, val) =>
@@ -134,6 +155,9 @@ export default function RecipePickerModal({
       recipe_key:  activeRecipe.name,
       recipe_note: `${activeRecipe.name}: ${components.map(c => `${c.quantity}x ${c.item_name}`).join(', ')}`,
       components,
+      changed,                          // base reçeteden farklı mı
+      skip_work_order: skipWorkOrder,   // stoktan kullan (iş emrine gönderme)
+      recipe_stock: activeStock,        // mevcut stok bilgisi
     });
   };
 
@@ -227,6 +251,7 @@ export default function RecipePickerModal({
                 <div className="flex-1 overflow-y-auto">
                   {filteredRecipes.map(r => {
                     const active = (activeRecipe?.id === r.id);
+                    const rStock = getRecipeStock(r.id);
                     return (
                       <button key={r.id} onClick={() => selectRecipe(r)}
                         className="w-full text-left px-4 py-3 flex items-start gap-2 transition-all group"
@@ -243,7 +268,15 @@ export default function RecipePickerModal({
                             <Package size={8}/> {(r.recipe_items || []).length} malzeme
                           </p>
                         </div>
-                        {active && <ChevronRight size={11} style={{ color: currentColor, marginTop: 2, flexShrink: 0 }}/>}
+                        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                          {active && <ChevronRight size={11} style={{ color: currentColor }}/>}
+                          {rStock > 0 && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                              style={{ background:'rgba(16,185,129,0.12)', color:'#10b981' }}>
+                              {rStock} stokta
+                            </span>
+                          )}
+                        </div>
                       </button>
                     );
                   })}
@@ -411,18 +444,44 @@ export default function RecipePickerModal({
         {productRecipes.length > 0 && (
           <div className="flex items-center justify-between gap-3 px-5 py-3.5 flex-shrink-0"
             style={{ borderTop: '1px solid rgba(148,163,184,0.08)', background: 'rgba(0,0,0,0.2)' }}>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5">
-                <Package size={12} className="text-slate-600"/>
-                <span className="text-xs text-slate-500">{localItems.filter(i => i.item_name?.trim()).length} malzeme</span>
-              </div>
-              {totalCost > 0 && (
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg"
-                  style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)' }}>
-                  <DollarSign size={11} className="text-emerald-400"/>
-                  <span className="text-xs font-bold text-emerald-400">₺{totalCost.toFixed(2)}</span>
-                  <span className="text-[10px] text-emerald-600">toplam maliyet</span>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5">
+                  <Package size={12} className="text-slate-600"/>
+                  <span className="text-xs text-slate-500">{localItems.filter(i => i.item_name?.trim()).length} malzeme</span>
                 </div>
+                {totalCost > 0 && (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg"
+                    style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)' }}>
+                    <DollarSign size={11} className="text-emerald-400"/>
+                    <span className="text-xs font-bold text-emerald-400">₺{totalCost.toFixed(2)}</span>
+                    <span className="text-[10px] text-emerald-600">toplam maliyet</span>
+                  </div>
+                )}
+                {activeStock > 0 && (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg"
+                    style={{ background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)' }}>
+                    <ShoppingBag size={11} className="text-blue-400"/>
+                    <span className="text-xs font-bold text-blue-400">{activeStock} adet stokta</span>
+                  </div>
+                )}
+              </div>
+              {/* Stoktan kullan checkbox — sadece stok > 0 ise */}
+              {activeStock > 0 && (
+                <label className="flex items-center gap-2 cursor-pointer select-none px-2.5 py-2 rounded-xl transition-all"
+                  style={{ background: skipWorkOrder ? 'rgba(16,185,129,0.08)' : 'rgba(255,255,255,0.02)', border: `1px solid ${skipWorkOrder ? 'rgba(16,185,129,0.3)' : 'rgba(148,163,184,0.08)'}` }}>
+                  <input type="checkbox" checked={skipWorkOrder} onChange={e => setSkipWorkOrder(e.target.checked)}
+                    className="w-3.5 h-3.5 rounded accent-emerald-500"/>
+                  <span className="text-[11px] font-semibold" style={{ color: skipWorkOrder ? '#10b981' : '#94a3b8' }}>
+                    Stoktan kullan — İş emrine gönderme
+                  </span>
+                  {skipWorkOrder && (
+                    <span className="text-[9px] ml-auto px-2 py-0.5 rounded-full font-bold"
+                      style={{ background:'rgba(16,185,129,0.12)', color:'#10b981' }}>
+                      ✓ Doğrudan satış
+                    </span>
+                  )}
+                </label>
               )}
             </div>
             <div className="flex gap-2">
