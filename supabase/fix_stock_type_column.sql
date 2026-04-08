@@ -1,15 +1,12 @@
 -- ============================================================
--- MASTER FIX v3: stock_movements — tüm kolon ve constraint sorunları
+-- MASTER FIX v4: stock_movements + product_recipe_stock
 -- Supabase SQL Editör'den çalıştırın
 -- ============================================================
 
 -- ▶ 1. CHECK CONSTRAINT'i KALDIR
--- Bu constraint izin verilen type değerlerini kısıtlıyor ve
--- production, production_raw, invoice_in, invoice_out, sale gibi
--- yeni değerleri reddediyor.
 ALTER TABLE stock_movements DROP CONSTRAINT IF EXISTS stock_movements_type_check;
 
--- ▶ 2. Eski "quantity" kolonunu "delta" yap (varsa)
+-- ▶ 2. Eski "quantity" → "delta" (varsa)
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stock_movements' AND column_name='quantity')
@@ -19,7 +16,7 @@ BEGIN
   END IF;
 END $$;
 
--- ▶ 3. stock_after → quantity_after rename (varsa)
+-- ▶ 3. stock_after → quantity_after (varsa)
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stock_movements' AND column_name='stock_after')
@@ -34,7 +31,7 @@ BEGIN
   END IF;
 END $$;
 
--- ▶ 4. Tüm kolonları garanti et
+-- ▶ 4. Kolonları garanti et
 ALTER TABLE stock_movements
   ADD COLUMN IF NOT EXISTS delta NUMERIC(12,4) DEFAULT 0,
   ADD COLUMN IF NOT EXISTS quantity_before NUMERIC(12,4) DEFAULT 0,
@@ -45,39 +42,58 @@ ALTER TABLE stock_movements
   ADD COLUMN IF NOT EXISTS note TEXT,
   ADD COLUMN IF NOT EXISTS "type" TEXT DEFAULT 'manual';
 
--- ▶ 5. NULL kayıtları düzelt
+-- ▶ 5. NULL kayıtları düzelt + DEFAULT + NOT NULL kaldır
 UPDATE stock_movements SET quantity_before = 0 WHERE quantity_before IS NULL;
 UPDATE stock_movements SET quantity_after = 0 WHERE quantity_after IS NULL;
 UPDATE stock_movements SET delta = 0 WHERE delta IS NULL;
 UPDATE stock_movements SET "type" = 'manual' WHERE "type" IS NULL;
 UPDATE stock_movements SET source = 'manual' WHERE source IS NULL;
-
--- ▶ 6. DEFAULT ayarla
 ALTER TABLE stock_movements ALTER COLUMN quantity_before SET DEFAULT 0;
 ALTER TABLE stock_movements ALTER COLUMN quantity_after SET DEFAULT 0;
-ALTER TABLE stock_movements ALTER COLUMN delta SET DEFAULT 0;
 ALTER TABLE stock_movements ALTER COLUMN "type" SET DEFAULT 'manual';
-
--- ▶ 7. NOT NULL gereklilikleri kaldır (sorun çıkmaz)
--- type kolonundan NOT NULL'ı kaldır (eğer varsa)
 ALTER TABLE stock_movements ALTER COLUMN "type" DROP NOT NULL;
 ALTER TABLE stock_movements ALTER COLUMN quantity_before DROP NOT NULL;
 ALTER TABLE stock_movements ALTER COLUMN quantity_after DROP NOT NULL;
 
--- ▶ 8. orders tablosu
+-- ▶ 6. orders + work_orders ek kolonlar
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_invoiced BOOLEAN DEFAULT FALSE;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS refunded_at TIMESTAMPTZ;
-
--- ▶ 9. work_orders tablosu
 ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS production_note TEXT;
 ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS recipe_change_note TEXT;
 ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS recipe_id UUID;
 
 -- ============================================================
+-- ▶ 7. product_recipe_stock RLS
+-- ============================================================
+ALTER TABLE product_recipe_stock ENABLE ROW LEVEL SECURITY;
+
+-- Mevcut policy'leri temizle (idempotent)
+DROP POLICY IF EXISTS "prs_select" ON product_recipe_stock;
+DROP POLICY IF EXISTS "prs_insert" ON product_recipe_stock;
+DROP POLICY IF EXISTS "prs_update" ON product_recipe_stock;
+DROP POLICY IF EXISTS "prs_delete" ON product_recipe_stock;
+DROP POLICY IF EXISTS "prs_all" ON product_recipe_stock;
+
+-- Tüm authenticated kullanıcılara tam erişim
+CREATE POLICY "prs_all" ON product_recipe_stock
+  FOR ALL
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
+
+-- Service role (RPC'ler için) — anon da erişsin
+DROP POLICY IF EXISTS "prs_anon_all" ON product_recipe_stock;
+CREATE POLICY "prs_anon_all" ON product_recipe_stock
+  FOR ALL
+  TO anon
+  USING (true)
+  WITH CHECK (true);
+
+-- ============================================================
 -- RPC FONKSİYONLARI
 -- ============================================================
 
--- ▶ 10. increment_stock
+-- ▶ 8. increment_stock
 CREATE OR REPLACE FUNCTION increment_stock(
   p_item_id   UUID,
   p_qty       NUMERIC,
@@ -88,25 +104,22 @@ CREATE OR REPLACE FUNCTION increment_stock(
 )
 RETURNS NUMERIC
 LANGUAGE plpgsql
+SECURITY DEFINER  -- RLS bypass
 AS $$
 DECLARE
-  v_before    NUMERIC;
-  v_after     NUMERIC;
+  v_before NUMERIC;
+  v_after  NUMERIC;
 BEGIN
-  -- Mevcut stoğu al
   SELECT COALESCE(stock_count, 0) INTO v_before FROM items WHERE id = p_item_id;
   IF v_before IS NULL THEN v_before := 0; END IF;
 
-  -- Stoğu güncelle
   UPDATE items SET stock_count = v_before + p_qty WHERE id = p_item_id
   RETURNING stock_count INTO v_after;
   IF v_after IS NULL THEN v_after := v_before + p_qty; END IF;
 
-  -- Hareket logu
   INSERT INTO stock_movements(item_id, delta, quantity_before, quantity_after, source, source_id, recipe_id, note, "type")
-  VALUES (p_item_id, p_qty, v_before, v_after, p_source, p_source_id, p_recipe_id, p_note, COALESCE(p_source, 'manual'));
+  VALUES (p_item_id, p_qty, v_before, v_after, COALESCE(p_source,'manual'), p_source_id, p_recipe_id, p_note, COALESCE(p_source,'manual'));
 
-  -- Reçete bazlı stok
   IF p_recipe_id IS NOT NULL THEN
     INSERT INTO product_recipe_stock(product_id, recipe_id, stock_count)
     VALUES(p_item_id, p_recipe_id, p_qty)
@@ -118,7 +131,7 @@ BEGIN
 END;
 $$;
 
--- ▶ 11. decrement_stock
+-- ▶ 9. decrement_stock  (negatif stoka izin verir)
 CREATE OR REPLACE FUNCTION decrement_stock(
   p_item_id   UUID,
   p_qty       NUMERIC,
@@ -129,24 +142,26 @@ CREATE OR REPLACE FUNCTION decrement_stock(
 )
 RETURNS NUMERIC
 LANGUAGE plpgsql
+SECURITY DEFINER
 AS $$
 DECLARE
-  v_before    NUMERIC;
-  v_after     NUMERIC;
+  v_before NUMERIC;
+  v_after  NUMERIC;
 BEGIN
   SELECT COALESCE(stock_count, 0) INTO v_before FROM items WHERE id = p_item_id;
   IF v_before IS NULL THEN v_before := 0; END IF;
 
-  UPDATE items SET stock_count = GREATEST(0, v_before - p_qty) WHERE id = p_item_id
+  -- Negatif stoka izin ver (eksik stok takibi için gerekli)
+  UPDATE items SET stock_count = v_before - p_qty WHERE id = p_item_id
   RETURNING stock_count INTO v_after;
-  IF v_after IS NULL THEN v_after := GREATEST(0, v_before - p_qty); END IF;
+  IF v_after IS NULL THEN v_after := v_before - p_qty; END IF;
 
   INSERT INTO stock_movements(item_id, delta, quantity_before, quantity_after, source, source_id, recipe_id, note, "type")
-  VALUES (p_item_id, -p_qty, v_before, v_after, p_source, p_source_id, p_recipe_id, p_note, COALESCE(p_source, 'manual'));
+  VALUES (p_item_id, -p_qty, v_before, v_after, COALESCE(p_source,'manual'), p_source_id, p_recipe_id, p_note, COALESCE(p_source,'manual'));
 
   IF p_recipe_id IS NOT NULL THEN
     UPDATE product_recipe_stock
-    SET stock_count = GREATEST(0, stock_count - p_qty), updated_at = now()
+    SET stock_count = stock_count - p_qty, updated_at = now()
     WHERE product_id = p_item_id AND recipe_id = p_recipe_id;
   END IF;
 
@@ -154,40 +169,29 @@ BEGIN
 END;
 $$;
 
--- ▶ 12. log_stock_change
+-- ▶ 10. log_stock_change
 CREATE OR REPLACE FUNCTION log_stock_change(
-  p_item_id   UUID,
-  p_old_qty   NUMERIC,
-  p_new_qty   NUMERIC,
-  p_source    TEXT DEFAULT 'manual',
-  p_note      TEXT DEFAULT NULL
+  p_item_id UUID, p_old_qty NUMERIC, p_new_qty NUMERIC,
+  p_source TEXT DEFAULT 'manual', p_note TEXT DEFAULT NULL
 )
-RETURNS VOID
-LANGUAGE plpgsql
-AS $$
-DECLARE
-  v_delta NUMERIC;
+RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE v_delta NUMERIC;
 BEGIN
   v_delta := p_new_qty - p_old_qty;
   IF v_delta = 0 THEN RETURN; END IF;
-
   INSERT INTO stock_movements(item_id, delta, quantity_before, quantity_after, source, note, "type")
-  VALUES (p_item_id, v_delta, p_old_qty, p_new_qty, COALESCE(p_source, 'manual'), p_note, COALESCE(p_source, 'manual'));
+  VALUES (p_item_id, v_delta, p_old_qty, p_new_qty, COALESCE(p_source,'manual'), p_note, COALESCE(p_source,'manual'));
 END;
 $$;
 
--- ▶ 13. refund_order_stock
+-- ▶ 11. refund_order_stock
 CREATE OR REPLACE FUNCTION refund_order_stock(p_order_id UUID)
-RETURNS VOID
-LANGUAGE plpgsql
-AS $$
-DECLARE
-  r RECORD;
+RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE r RECORD;
 BEGIN
   FOR r IN
     SELECT oi.item_id, oi.quantity, oi.recipe_id
-    FROM order_items oi
-    WHERE oi.order_id = p_order_id AND oi.item_id IS NOT NULL
+    FROM order_items oi WHERE oi.order_id = p_order_id AND oi.item_id IS NOT NULL
   LOOP
     PERFORM increment_stock(r.item_id, r.quantity, 'refund', p_order_id, r.recipe_id, 'Sipariş iadesi — stok geri yüklendi');
   END LOOP;
@@ -195,6 +199,7 @@ BEGIN
 END;
 $$;
 
--- ▶ 14. İndexler
+-- ▶ 12. İndexler
 CREATE INDEX IF NOT EXISTS idx_stock_movements_item_time ON stock_movements(item_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_work_orders_recipe ON work_orders(recipe_id);
+CREATE INDEX IF NOT EXISTS idx_prs_product ON product_recipe_stock(product_id);

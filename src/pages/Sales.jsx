@@ -1615,9 +1615,11 @@ export default function Sales() {
       await supabase.from('orders').update(patch).eq('id', orderId);
 
       const orderItems = order.items || [];
-      // Sadece reçetesiz kalemlerin stoğunu düş — reçeteliler iş emrinde halledildi
-      const directLines = orderItems.filter(l => l.item_id && !l.recipe_id && !l.recipe_key);
-      for (const line of directLines) {
+      // İş emrine gönderilmiş VE tamamlanmış ürünlerin stoğu zaten iş emri
+      // tarafından artırıldı. Burada TÜM kalemlerin stoğunu düşüyoruz.
+      // Reçeteli de olsa reçetesiz de olsa stoktan düşülmeli.
+      for (const line of orderItems) {
+        if (!line.item_id) continue;
         const qty  = Number(line.quantity || 1);
         const note = `Sipariş #${order.order_number} tamamlandı — satış stok düşümü`;
         await supabase.rpc('decrement_stock', {
@@ -1625,6 +1627,7 @@ export default function Sales() {
           p_qty:       qty,
           p_source:    'sale',
           p_source_id: orderId,
+          p_recipe_id: line.recipe_id || null,
           p_note:      note,
         });
       }

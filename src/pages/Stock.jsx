@@ -9,6 +9,7 @@ import {
   X, CheckCircle2, AlertOctagon, FolderDown, Eye, Save,
   Layers, ArrowRight, DollarSign, Hash, MapPin, Ruler, Tag,
   Clock, ArrowUpCircle, ArrowDownCircle, Wrench, ShoppingCart, FileText,
+  FlaskConical,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useStock } from '../hooks/useStock';
@@ -832,17 +833,33 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
   const [tab, setTab] = React.useState('detail');
   const [movements, setMovements] = React.useState([]);
   const [mvLoading, setMvLoading] = React.useState(false);
+  const [recipes, setRecipes] = React.useState([]);
+  const [recipeStocks, setRecipeStocks] = React.useState([]);
+  const [rcpLoading, setRcpLoading] = React.useState(false);
+  const isProduct = item.item_type === 'product';
 
   React.useEffect(() => {
-    if (tab !== 'history') return;
-    setMvLoading(true);
-    supabase
-      .from('stock_movements')
-      .select('*')
-      .eq('item_id', item.id)
-      .order('created_at', { ascending: false })
-      .limit(60)
-      .then(({ data }) => { setMovements(data || []); setMvLoading(false); });
+    if (tab === 'history') {
+      setMvLoading(true);
+      supabase
+        .from('stock_movements')
+        .select('*')
+        .eq('item_id', item.id)
+        .order('created_at', { ascending: false })
+        .limit(60)
+        .then(({ data }) => { setMovements(data || []); setMvLoading(false); });
+    }
+    if (tab === 'recipes' && isProduct) {
+      setRcpLoading(true);
+      Promise.all([
+        supabase.from('product_recipes').select('id, name, tags, recipe_items(id, item_id, item_name, quantity, unit)').eq('product_id', item.id).order('name'),
+        supabase.from('product_recipe_stock').select('*').eq('product_id', item.id),
+      ]).then(([rRes, sRes]) => {
+        setRecipes(rRes.data || []);
+        setRecipeStocks(sRes.data || []);
+        setRcpLoading(false);
+      });
+    }
   }, [tab, item.id]);
 
   const srcIcon = (src) => {
@@ -922,7 +939,11 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
 
         {/* Tab Bar */}
         <div className="flex gap-1 px-4 py-2.5 flex-shrink-0" style={{ borderBottom: `1px solid ${c.border}`, background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.02)' }}>
-          {[{ id: 'detail', label: 'Detay', icon: Package }, { id: 'history', label: 'Geçmiş', icon: Clock }].map(t => (
+          {[
+            { id: 'detail', label: 'Detay', icon: Package },
+            ...(isProduct ? [{ id: 'recipes', label: 'Reçeteler', icon: FlaskConical }] : []),
+            { id: 'history', label: 'Geçmiş', icon: Clock },
+          ].map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
               style={{ background: tab === t.id ? currentColor : 'transparent', color: tab === t.id ? '#fff' : c.muted }}>
@@ -1017,6 +1038,77 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {/* Reçeteler tab — sadece mamül ürünlerde */}
+          {tab === 'recipes' && isProduct && (
+            <div className="px-4 py-3 space-y-3">
+              {rcpLoading && (
+                <div className="flex items-center justify-center py-12">
+                  <RefreshCcw size={20} className="animate-spin" style={{ color: currentColor }}/>
+                </div>
+              )}
+              {!rcpLoading && recipes.length === 0 && (
+                <div className="text-center py-12">
+                  <FlaskConical size={32} className="mx-auto mb-2 opacity-20" style={{ color: c.muted }}/>
+                  <p className="text-xs" style={{ color: c.muted }}>Henüz reçete tanımlanmamış</p>
+                </div>
+              )}
+              {!rcpLoading && recipes.map(r => {
+                const rs = recipeStocks.find(s => s.recipe_id === r.id);
+                const stk = rs?.stock_count || 0;
+                return (
+                  <div key={r.id} className="rounded-xl overflow-hidden"
+                    style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#fff', border: `1px solid ${isDark ? 'rgba(139,92,246,0.15)' : 'rgba(139,92,246,0.2)'}` }}>
+                    {/* Reçete başlığı */}
+                    <div className="flex items-center justify-between px-3 py-2.5">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FlaskConical size={13} style={{ color: '#a78bfa', flexShrink: 0 }}/>
+                        <span className="text-xs font-bold truncate" style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}>{r.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {stk > 0 && (
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full"
+                            style={{ background: 'rgba(16,185,129,0.12)', color: '#10b981' }}>
+                            {stk} stokta
+                          </span>
+                        )}
+                        {r.tags && r.tags.length > 0 && r.tags.map((t, i) => (
+                          <span key={i} className="text-[9px] px-1.5 py-0.5 rounded-full"
+                            style={{ background: `${currentColor}15`, color: currentColor }}>{t}</span>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Malzemeler */}
+                    <div className="px-3 pb-2.5 space-y-0.5" style={{ borderTop: '1px solid rgba(139,92,246,0.1)' }}>
+                      {(r.recipe_items || []).map((ri, j) => (
+                        <div key={j} className="flex items-center justify-between text-[10px] py-0.5" style={{ color: c.muted }}>
+                          <span>• {ri.item_name}</span>
+                          <span className="font-bold">{ri.quantity} {ri.unit}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+              {/* Bağımsız reçeteler (tek seferlik, product_recipe_stock'ta recipe_id product_recipes'ta yok) */}
+              {!rcpLoading && recipeStocks.filter(s => s.stock_count > 0 && !recipes.find(r => r.id === s.recipe_id)).map(s => (
+                <div key={s.id} className="rounded-xl px-3 py-2.5"
+                  style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)' }}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <FlaskConical size={12} style={{ color: '#f59e0b' }}/>
+                      <span className="text-[11px] font-bold" style={{ color: '#f59e0b' }}>Tek Seferlik Reçete</span>
+                    </div>
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full"
+                      style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>
+                      {s.stock_count} stokta
+                    </span>
+                  </div>
+                  <p className="text-[10px] mt-1" style={{ color: c.muted }}>ID: {s.recipe_id?.slice(0,8)}</p>
+                </div>
+              ))}
             </div>
           )}
         </div>
