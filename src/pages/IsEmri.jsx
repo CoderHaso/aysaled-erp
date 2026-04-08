@@ -162,6 +162,7 @@ function WorkOrderForm({ items, orders, allRecipes, onClose, onSaved, currentCol
       {showRecipePicker && (
         <RecipePickerModal productId={form.item_id} productName={selectedItem?.name||''}
           allRecipes={allRecipes} allItems={items} currentColor={currentColor}
+          selectedRecipeId={form.recipe_id || null}
           onClose={() => setShowRecipePicker(false)}
           onSelect={(rec) => { setForm(f => ({...f, recipe_id:rec.recipe_id||'', recipe_key:rec.recipe_key||'', recipe_note:rec.recipe_note||''})); setShowRecipePicker(false); }}/>
       )}
@@ -218,7 +219,7 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
       }
     }
 
-    pageCache.invalidate('items');
+    pageCache.invalidate('stock_items');
     onStatusChange();
     setChanging(false);
   };
@@ -367,6 +368,7 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
       {showRecipePicker && (
         <RecipePickerModal productId={wo.item_id} productName={item?.name||''}
           allRecipes={allRecipes||[]} allItems={items||[]} currentColor={currentColor}
+          selectedRecipeId={wo.recipe_id}
           onClose={() => setShowRecipePicker(false)} onSelect={handleRecipeUpdate}/>
       )}
     </motion.div>

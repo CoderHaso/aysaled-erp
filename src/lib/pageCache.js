@@ -7,7 +7,7 @@
  */
 
 const MEMORY = new Map(); // Aynı oturum içi hızlı cache
-const TTL_MS = 90 * 1000; // 90 saniye (eski: 5 dakika)
+const TTL_MS = 15 * 1000; // 15 saniye — stok değişiklikleri hızlı yansısın
 
 function cacheKey(key) {
   return `aERP_cache_${key}`;

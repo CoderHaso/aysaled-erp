@@ -267,6 +267,7 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
           allRecipes={allRecipes || []}
           allItems={allItems || []}
           currentColor="#8b5cf6"
+          selectedRecipeId={line.recipe_id || null}
           onClose={() => setShowRecipePicker(false)}
           onSelect={(recipeData) => {
             onChange({ recipe_id: recipeData.recipe_id, recipe_key: recipeData.recipe_key, recipe_note: recipeData.recipe_note, recipe_components: recipeData.components });
@@ -1633,7 +1634,7 @@ export default function Sales() {
       }
 
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...patch } : o));
-      pageCache.invalidate('items');  // Stock sayfası cache'ini temizle — otomatik yenilenir
+      pageCache.invalidate('stock_items');  // Stock sayfası cache'ini temizle — otomatik yenilenir
       showToast('Sipariş tamamlandı — stoklar güncellendi ✓');
       return;
     }
@@ -1682,7 +1683,7 @@ export default function Sales() {
     try {
       const { error } = await supabase.rpc('refund_order_stock', { p_order_id: order.id });
       if (error) throw error;
-      pageCache.invalidate('items');
+      pageCache.invalidate('stock_items');
       showToast('İade tamamlandı — stoklar geri yüklendi ✓');
       setDetailOrder(null);
       loadAll();

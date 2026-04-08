@@ -28,6 +28,7 @@ const UNITS = ['Adet','Metre','cm','mm','Kg','g','Litre','ml','m²','Rulo','Pake
 export default function RecipePickerModal({
   productId, productName, allRecipes, allItems = [],
   onSelect, onClose, currentColor = '#8b5cf6',
+  selectedRecipeId = null,
 }) {
   const { effectiveMode } = useTheme();
   const isDark = effectiveMode === 'dark';
@@ -38,8 +39,11 @@ export default function RecipePickerModal({
   );
 
   const [activeTag,  setActiveTag]  = useState('Tümü');
-  const [selectedId, setSelectedId] = useState(() => productRecipes[0]?.id || null);
-  const [localItems, setLocalItems] = useState(() => cloneItems(productRecipes[0]?.recipe_items || []));
+  const initialRecipe = selectedRecipeId
+    ? productRecipes.find(r => r.id === selectedRecipeId) || productRecipes[0]
+    : productRecipes[0];
+  const [selectedId, setSelectedId] = useState(() => initialRecipe?.id || null);
+  const [localItems, setLocalItems] = useState(() => cloneItems(initialRecipe?.recipe_items || []));
   // ItemPickerModal: 'add' | idx (swap) | null
   const [pickerTarget, setPickerTarget] = useState(null);
 
