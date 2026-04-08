@@ -52,6 +52,7 @@ function WorkOrderForm({ items, orders, allRecipes, onClose, onSaved, currentCol
       };
       if (form.order_id) payload.order_id = form.order_id;
       if (form.recipe_id) payload.recipe_id = form.recipe_id;
+      if (form.custom_recipe_items) payload.custom_recipe_items = form.custom_recipe_items;
       const { error } = await supabase.from('work_orders').insert(payload);
       if (error) throw error;
       onSaved(); onClose();
@@ -163,8 +164,24 @@ function WorkOrderForm({ items, orders, allRecipes, onClose, onSaved, currentCol
         <RecipePickerModal productId={form.item_id} productName={selectedItem?.name||''}
           allRecipes={allRecipes} allItems={items} currentColor={currentColor}
           selectedRecipeId={form.recipe_id || null}
+          customRecipeItems={form.custom_recipe_items || null}
           onClose={() => setShowRecipePicker(false)}
-          onSelect={(rec) => { setForm(f => ({...f, recipe_id:rec.recipe_id||'', recipe_key:rec.recipe_key||'', recipe_note:rec.recipe_note||''})); setShowRecipePicker(false); }}/>
+          onSelect={(rec) => {
+            const customItems = rec.components?.map(c => ({
+              item_id: c.item_id || null,
+              item_name: c.item_name || '',
+              quantity: Number(c.quantity) || 1,
+              unit: c.unit || 'Adet',
+            })) || null;
+            setForm(f => ({
+              ...f,
+              recipe_id: rec.recipe_id || '',
+              recipe_key: rec.recipe_key || '',
+              recipe_note: rec.recipe_note || '',
+              custom_recipe_items: customItems,
+            }));
+            setShowRecipePicker(false);
+          }}/>
       )}
     </div>
   );
@@ -271,7 +288,7 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
       await supabase.from('orders').update({ notes: prev ? `${prev} | ${changeNote}` : changeNote }).eq('id', wo.order_id);
     }
     setShowRecipePicker(false);
-    onStatusChange();
+    await onStatusChange(); // wo prop'un güncellenmesini bekle
   };
 
   const nextStatuses = ({ pending:['in_progress','cancelled'], in_progress:['completed','cancelled'], completed:[], cancelled:['pending'] }[wo.status] || []);

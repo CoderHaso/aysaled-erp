@@ -839,6 +839,13 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
   const isProduct = item.item_type === 'product';
 
   React.useEffect(() => {
+    // Reçeteleri her zaman yükle (geçmişte de lazım)
+    if (isProduct && recipes.length === 0) {
+      supabase.from('product_recipes')
+        .select('id, name, tags, recipe_items(id, item_id, item_name, quantity, unit)')
+        .eq('product_id', item.id).order('name')
+        .then(({ data }) => setRecipes(data || []));
+    }
     if (tab === 'history') {
       setMvLoading(true);
       supabase
@@ -851,14 +858,8 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
     }
     if (tab === 'recipes' && isProduct) {
       setRcpLoading(true);
-      Promise.all([
-        supabase.from('product_recipes').select('id, name, tags, recipe_items(id, item_id, item_name, quantity, unit)').eq('product_id', item.id).order('name'),
-        supabase.from('product_recipe_stock').select('*').eq('product_id', item.id),
-      ]).then(([rRes, sRes]) => {
-        setRecipes(rRes.data || []);
-        setRecipeStocks(sRes.data || []);
-        setRcpLoading(false);
-      });
+      supabase.from('product_recipe_stock').select('*').eq('product_id', item.id)
+        .then(({ data }) => { setRecipeStocks(data || []); setRcpLoading(false); });
     }
   }, [tab, item.id]);
 
@@ -1027,6 +1028,17 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
                       <div className="flex items-center gap-1.5 mt-1">
                         <span style={{ color: c.muted }}>{srcIcon(mv.source)}</span>
                         <span className="text-[10px] font-semibold" style={{ color: c.muted }}>{srcLabel(mv.source)}</span>
+                        {/* Reçete bilgisi */}
+                        {mv.recipe_id && (() => {
+                          const rcp = recipes.find(r => r.id === mv.recipe_id);
+                          const hasCustom = mv.custom_recipe_data;
+                          return (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                              style={{ background: hasCustom ? 'rgba(245,158,11,0.1)' : 'rgba(139,92,246,0.1)', color: hasCustom ? '#f59e0b' : '#a78bfa' }}>
+                              {hasCustom ? '🔧' : '📋'} {rcp?.name || 'Reçete'}
+                            </span>
+                          );
+                        })()}
                         {mv.quantity_after != null && (
                           <span className="text-[10px] ml-auto" style={{ color: c.muted }}>→ {mv.quantity_after} {item.unit}</span>
                         )}
