@@ -1034,6 +1034,19 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
                       {mv.note && (
                         <p className="text-[10px] mt-1 truncate" style={{ color: c.muted }}>{mv.note}</p>
                       )}
+                      {mv.custom_recipe_data && (() => {
+                        let crd = mv.custom_recipe_data;
+                        if (typeof crd === 'string') try { crd = JSON.parse(crd); } catch(_) { crd = null; }
+                        if (!Array.isArray(crd) || crd.length === 0) return null;
+                        return (
+                          <div className="mt-1.5 px-2 py-1.5 rounded-lg" style={{ background:'rgba(245,158,11,0.06)', border:'1px solid rgba(245,158,11,0.15)' }}>
+                            <p className="text-[9px] font-bold" style={{ color:'#f59e0b' }}>🔧 Özel Reçete ({crd.length} malzeme)</p>
+                            {crd.map((ri,j) => (
+                              <p key={j} className="text-[9px]" style={{ color: c.muted }}>• {ri.item_name} — {ri.quantity} {ri.unit}</p>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 );

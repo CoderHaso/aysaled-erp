@@ -198,23 +198,36 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
       const recipeId = wo.recipe_id || null;
       const woQty    = Number(wo.quantity || 1);
       const woNote   = `İş emri #${wo.id?.slice(0,8)} (${item?.name||''}) tamamlandı${noteInput.trim() ? ` | Not: ${noteInput.trim()}` : ''}`;
+      const customItems = wo.custom_recipe_items; // JSONB from DB
+      const isCustom = customItems && Array.isArray(customItems) && customItems.length > 0;
 
+      // Mamül stok artır + custom reçete bilgisini kaydet
       await supabase.rpc('increment_stock', {
         p_item_id: wo.item_id, p_qty: woQty, p_source: 'work_order',
         p_source_id: wo.id, p_recipe_id: recipeId, p_note: woNote,
+        p_custom_recipe: isCustom ? JSON.stringify(customItems) : null,
       });
 
-      const recipeQuery = supabase.from('product_recipes').select('id, recipe_items(item_id, quantity)').eq('product_id', wo.item_id);
-      if (recipeId) recipeQuery.eq('id', recipeId); else recipeQuery.limit(1);
-      let recipeData = null;
-      try { const res = await recipeQuery.maybeSingle(); recipeData = res?.data; } catch(_) {}
+      // Hammadde düş: custom reçete varsa onu, yoksa base reçeteyi kullan
+      let rawMaterials = [];
+      if (isCustom) {
+        rawMaterials = customItems.filter(ri => ri.item_id);
+      } else {
+        const recipeQuery = supabase.from('product_recipes').select('id, recipe_items(item_id, quantity)').eq('product_id', wo.item_id);
+        if (recipeId) recipeQuery.eq('id', recipeId); else recipeQuery.limit(1);
+        try {
+          const res = await recipeQuery.maybeSingle();
+          rawMaterials = res?.data?.recipe_items || [];
+        } catch(_) {}
+      }
 
-      for (const ri of (recipeData?.recipe_items || [])) {
+      for (const ri of rawMaterials) {
         if (!ri.item_id) continue;
         const qty = Number(ri.quantity || 1) * woQty;
         await supabase.rpc('decrement_stock', {
           p_item_id: ri.item_id, p_qty: qty, p_source: 'work_order',
           p_source_id: wo.id, p_note: `${woNote} — hammadde`,
+          p_custom_recipe: isCustom ? JSON.stringify(customItems) : null,
         });
       }
     }
@@ -232,8 +245,26 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
   };
 
   const handleRecipeUpdate = async (rec) => {
-    const changeNote = `Reçete: ${rec.recipe_key || rec.recipe_id}`;
-    await supabase.from('work_orders').update({ recipe_id: rec.recipe_id||null, recipe_change_note: changeNote }).eq('id', wo.id);
+    const isCustom = rec.components && rec.components.length > 0;
+    const changeNote = isCustom
+      ? `Özel reçete: ${rec.recipe_key} (${rec.components.length} malzeme)`
+      : `Reçete: ${rec.recipe_key || rec.recipe_id}`;
+
+    // custom_recipe_items JSONB olarak kaydet
+    const customItems = isCustom ? rec.components.map(c => ({
+      item_id: c.item_id || null,
+      item_name: c.item_name || '',
+      quantity: Number(c.quantity) || 1,
+      unit: c.unit || 'Adet',
+    })) : null;
+
+    await supabase.from('work_orders').update({
+      recipe_id: rec.recipe_id || null,
+      recipe_change_note: changeNote,
+      custom_recipe_items: customItems,
+    }).eq('id', wo.id);
+
+    // Siparişe de not düş
     if (wo.order_id) {
       const { data: ord } = await supabase.from('orders').select('notes').eq('id', wo.order_id).maybeSingle();
       const prev = ord?.notes || '';
@@ -251,6 +282,11 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
     boxShadow: `0 2px 6px ${col}18`, transition: 'all 0.15s ease',
   });
 
+  // Custom reçete items (accordion'da göster)
+  const hasCustomRecipe = wo.custom_recipe_items && Array.isArray(wo.custom_recipe_items) && wo.custom_recipe_items.length > 0;
+  const displayRecipeItems = hasCustomRecipe ? wo.custom_recipe_items : (recipe?.recipe_items || []);
+  const displayRecipeName = hasCustomRecipe ? `${recipe?.name || 'Reçete'} (Özel)` : recipe?.name;
+
   return (
     <motion.div initial={{ opacity:0,y:6 }} animate={{ opacity:1,y:0 }}
       className="rounded-2xl overflow-hidden"
@@ -263,6 +299,7 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold"
               style={{ background:s.bg, color:s.color }}><Icon size={10}/> {s.label}</span>
             {wo.status==='in_progress' && <span className="text-[10px] text-blue-400 animate-pulse font-bold">⚡ AKTİF</span>}
+            {hasCustomRecipe && <span className="text-[10px] text-amber-400 font-bold">🔧 Özel Reçete</span>}
           </div>
           <p className="text-sm font-bold truncate" style={{ color: isDark?'#f1f5f9':'#1e293b' }}>{item?.name||'Bilinmeyen Ürün'}</p>
           <p className="text-[11px]" style={{ color:'#64748b' }}>{fmt(wo.quantity)} {item?.unit||'Adet'} üretim</p>
@@ -275,7 +312,6 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
 
       {/* Meta */}
       <div className="px-4 pb-2 space-y-2">
-        {/* Tamamlanma tarihi */}
         {wo.completed_at && (
           <div className="flex items-center gap-1.5 text-[11px] text-emerald-500">
             <CheckCircle2 size={10} className="shrink-0"/>
@@ -283,7 +319,6 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
           </div>
         )}
 
-        {/* Üretim notu — tamamlananlar için göster */}
         {wo.status === 'completed' && wo.production_note && (
           <div className="flex items-start gap-2 px-3 py-2 rounded-xl"
             style={{ background:'rgba(16,185,129,0.06)', border:'1px solid rgba(16,185,129,0.15)' }}>
@@ -292,18 +327,18 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
           </div>
         )}
 
-        {/* Reçete accordion */}
-        {recipe && (
-          <div className="rounded-xl overflow-hidden" style={{ border:'1px solid rgba(139,92,246,0.2)' }}>
+        {/* Reçete accordion — custom veya base */}
+        {(recipe || hasCustomRecipe) && (
+          <div className="rounded-xl overflow-hidden" style={{ border:`1px solid ${hasCustomRecipe ? 'rgba(245,158,11,0.3)' : 'rgba(139,92,246,0.2)'}` }}>
             <button className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold"
-              style={{ background:'rgba(139,92,246,0.06)', color:'#a78bfa' }}
+              style={{ background: hasCustomRecipe ? 'rgba(245,158,11,0.08)' : 'rgba(139,92,246,0.06)', color: hasCustomRecipe ? '#f59e0b' : '#a78bfa' }}
               onClick={() => setRecipeOpen(v => !v)}>
-              <span className="flex items-center gap-1.5"><FlaskConical size={11}/> {recipe.name}</span>
+              <span className="flex items-center gap-1.5"><FlaskConical size={11}/> {displayRecipeName}</span>
               {recipeOpen ? <ChevronUp size={11}/> : <ChevronDown size={11}/>}
             </button>
             {recipeOpen && (
               <div className="px-3 py-2 space-y-1" style={{ background: isDark?'rgba(139,92,246,0.03)':'rgba(139,92,246,0.02)' }}>
-                {(recipe.recipe_items||[]).map((ri,i) => (
+                {displayRecipeItems.map((ri,i) => (
                   <div key={i} className="flex items-center justify-between text-[10px]" style={{ color:'#94a3b8' }}>
                     <span>• {ri.item_name}</span>
                     <span className="font-bold">{ri.quantity} {ri.unit}</span>
@@ -314,14 +349,12 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
           </div>
         )}
 
-        {/* Reçete değişiklik notu */}
         {wo.recipe_change_note && (
           <p className="text-[10px] px-2 py-1 rounded-lg" style={{ color:'#f59e0b', background:'rgba(245,158,11,0.08)' }}>
             🔄 {wo.recipe_change_note}
           </p>
         )}
 
-        {/* Üretim notu girişi (sadece üretimdeyken) */}
         {wo.status === 'in_progress' && (
           <div>
             <textarea value={noteInput} onChange={e => setNoteInput(e.target.value)} onBlur={saveNote}
@@ -369,6 +402,7 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
         <RecipePickerModal productId={wo.item_id} productName={item?.name||''}
           allRecipes={allRecipes||[]} allItems={items||[]} currentColor={currentColor}
           selectedRecipeId={wo.recipe_id}
+          customRecipeItems={wo.custom_recipe_items}
           onClose={() => setShowRecipePicker(false)} onSelect={handleRecipeUpdate}/>
       )}
     </motion.div>

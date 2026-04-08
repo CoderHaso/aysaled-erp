@@ -29,6 +29,7 @@ export default function RecipePickerModal({
   productId, productName, allRecipes, allItems = [],
   onSelect, onClose, currentColor = '#8b5cf6',
   selectedRecipeId = null,
+  customRecipeItems = null,
 }) {
   const { effectiveMode } = useTheme();
   const isDark = effectiveMode === 'dark';
@@ -43,7 +44,12 @@ export default function RecipePickerModal({
     ? productRecipes.find(r => r.id === selectedRecipeId) || productRecipes[0]
     : productRecipes[0];
   const [selectedId, setSelectedId] = useState(() => initialRecipe?.id || null);
-  const [localItems, setLocalItems] = useState(() => cloneItems(initialRecipe?.recipe_items || []));
+  // customRecipeItems varsa (geçici reçete), base yerine onu kullan
+  const [localItems, setLocalItems] = useState(() =>
+    customRecipeItems && customRecipeItems.length > 0
+      ? cloneItems(customRecipeItems)
+      : cloneItems(initialRecipe?.recipe_items || [])
+  );
   // ItemPickerModal: 'add' | idx (swap) | null
   const [pickerTarget, setPickerTarget] = useState(null);
 

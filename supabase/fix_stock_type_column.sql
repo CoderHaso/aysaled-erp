@@ -55,12 +55,15 @@ ALTER TABLE stock_movements ALTER COLUMN "type" DROP NOT NULL;
 ALTER TABLE stock_movements ALTER COLUMN quantity_before DROP NOT NULL;
 ALTER TABLE stock_movements ALTER COLUMN quantity_after DROP NOT NULL;
 
--- ▶ 6. orders + work_orders ek kolonlar
+-- ▶ 6. orders + work_orders + order_items ek kolonlar
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_invoiced BOOLEAN DEFAULT FALSE;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS refunded_at TIMESTAMPTZ;
 ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS production_note TEXT;
 ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS recipe_change_note TEXT;
 ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS recipe_id UUID;
+ALTER TABLE work_orders ADD COLUMN IF NOT EXISTS custom_recipe_items JSONB;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS custom_recipe_items JSONB;
+ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS custom_recipe_data JSONB;
 
 -- ============================================================
 -- ▶ 7. product_recipe_stock RLS
@@ -100,11 +103,12 @@ CREATE OR REPLACE FUNCTION increment_stock(
   p_source    TEXT DEFAULT 'manual',
   p_source_id UUID DEFAULT NULL,
   p_recipe_id UUID DEFAULT NULL,
-  p_note      TEXT DEFAULT NULL
+  p_note      TEXT DEFAULT NULL,
+  p_custom_recipe JSONB DEFAULT NULL
 )
 RETURNS NUMERIC
 LANGUAGE plpgsql
-SECURITY DEFINER  -- RLS bypass
+SECURITY DEFINER
 AS $$
 DECLARE
   v_before NUMERIC;
@@ -117,8 +121,8 @@ BEGIN
   RETURNING stock_count INTO v_after;
   IF v_after IS NULL THEN v_after := v_before + p_qty; END IF;
 
-  INSERT INTO stock_movements(item_id, delta, quantity_before, quantity_after, source, source_id, recipe_id, note, "type")
-  VALUES (p_item_id, p_qty, v_before, v_after, COALESCE(p_source,'manual'), p_source_id, p_recipe_id, p_note, COALESCE(p_source,'manual'));
+  INSERT INTO stock_movements(item_id, delta, quantity_before, quantity_after, source, source_id, recipe_id, note, "type", custom_recipe_data)
+  VALUES (p_item_id, p_qty, v_before, v_after, COALESCE(p_source,'manual'), p_source_id, p_recipe_id, p_note, COALESCE(p_source,'manual'), p_custom_recipe);
 
   IF p_recipe_id IS NOT NULL THEN
     INSERT INTO product_recipe_stock(product_id, recipe_id, stock_count)
@@ -138,7 +142,8 @@ CREATE OR REPLACE FUNCTION decrement_stock(
   p_source    TEXT DEFAULT 'manual',
   p_source_id UUID DEFAULT NULL,
   p_recipe_id UUID DEFAULT NULL,
-  p_note      TEXT DEFAULT NULL
+  p_note      TEXT DEFAULT NULL,
+  p_custom_recipe JSONB DEFAULT NULL
 )
 RETURNS NUMERIC
 LANGUAGE plpgsql
@@ -151,13 +156,12 @@ BEGIN
   SELECT COALESCE(stock_count, 0) INTO v_before FROM items WHERE id = p_item_id;
   IF v_before IS NULL THEN v_before := 0; END IF;
 
-  -- Negatif stoka izin ver (eksik stok takibi için gerekli)
   UPDATE items SET stock_count = v_before - p_qty WHERE id = p_item_id
   RETURNING stock_count INTO v_after;
   IF v_after IS NULL THEN v_after := v_before - p_qty; END IF;
 
-  INSERT INTO stock_movements(item_id, delta, quantity_before, quantity_after, source, source_id, recipe_id, note, "type")
-  VALUES (p_item_id, -p_qty, v_before, v_after, COALESCE(p_source,'manual'), p_source_id, p_recipe_id, p_note, COALESCE(p_source,'manual'));
+  INSERT INTO stock_movements(item_id, delta, quantity_before, quantity_after, source, source_id, recipe_id, note, "type", custom_recipe_data)
+  VALUES (p_item_id, -p_qty, v_before, v_after, COALESCE(p_source,'manual'), p_source_id, p_recipe_id, p_note, COALESCE(p_source,'manual'), p_custom_recipe);
 
   IF p_recipe_id IS NOT NULL THEN
     UPDATE product_recipe_stock
