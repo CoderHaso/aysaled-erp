@@ -861,12 +861,11 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
       setRcpLoading(true);
       Promise.all([
         supabase.from('product_recipe_stock').select('*').eq('product_id', item.id),
-        // Özel reçete ile üretilenleri stock_movements'tan çek
+        // Özel reçete ile üretilenleri stock_movements'tan çek (tüm hareketler — net stok hesabı için)
         supabase.from('stock_movements')
           .select('*')
           .eq('item_id', item.id)
           .not('custom_recipe_data', 'is', null)
-          .in('source', ['production', 'work_order'])
           .order('created_at', { ascending: false }),
       ]).then(([sRes, mvRes]) => {
         setRecipeStocks(sRes.data || []);
@@ -1103,7 +1102,7 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
                   <RefreshCcw size={20} className="animate-spin" style={{ color: currentColor }}/>
                 </div>
               )}
-              {!rcpLoading && recipes.length === 0 && (
+              {!rcpLoading && recipes.length === 0 && customRecipeStocks.length === 0 && (
                 <div className="text-center py-12">
                   <FlaskConical size={32} className="mx-auto mb-2 opacity-20" style={{ color: c.muted }}/>
                   <p className="text-xs" style={{ color: c.muted }}>Henüz reçete tanımlanmamış</p>
