@@ -834,6 +834,7 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
   const [tab, setTab] = React.useState('detail');
   const [movements, setMovements] = React.useState([]);
   const [mvLoading, setMvLoading] = React.useState(false);
+  const [saleOrderMap, setSaleOrderMap] = React.useState({});  // source_id -> { unit_price, quantity, order_number }
   const [recipes, setRecipes] = React.useState([]);
   const [recipeStocks, setRecipeStocks] = React.useState([]);
   const [customRecipeStocks, setCustomRecipeStocks] = React.useState([]); // özel reçeteden üretilenler
@@ -970,7 +971,25 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
         .eq('item_id', item.id)
         .order('created_at', { ascending: false })
         .limit(60)
-        .then(({ data }) => { setMovements(data || []); setMvLoading(false); });
+        .then(async ({ data }) => {
+          const mvs = data || [];
+          setMovements(mvs);
+          // Satış hareketlerinin sipariş detaylarını çek
+          const saleIds = [...new Set(mvs.filter(m => m.source === 'sale' && m.source_id).map(m => m.source_id))];
+          if (saleIds.length > 0) {
+            const map = {};
+            // order_items'tan ilgili kalemin fiyatını çek
+            const { data: oiData } = await supabase.from('order_items').select('order_id, item_id, unit_price, quantity').in('order_id', saleIds).eq('item_id', item.id);
+            // orders'tan order_number çek
+            const { data: ordData } = await supabase.from('orders').select('id, order_number, currency').in('id', saleIds);
+            (oiData || []).forEach(oi => {
+              const ord = (ordData || []).find(o => o.id === oi.order_id);
+              map[oi.order_id] = { unit_price: oi.unit_price, quantity: oi.quantity, order_number: ord?.order_number, currency: ord?.currency };
+            });
+            setSaleOrderMap(map);
+          }
+          setMvLoading(false);
+        });
     }
     if (tab === 'recipes' && isProduct) {
       setRcpLoading(true);
@@ -1245,20 +1264,31 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
                         <p className="text-[10px] mt-1 truncate" style={{ color: c.muted }}>{mv.note}</p>
                       )}
                       {/* Satış hareketlerinde fiyat bilgisi */}
-                      {mv.source === 'sale' && (
-                        <div className="flex items-center gap-3 mt-1.5 px-2 py-1 rounded-lg" style={{ background: isDark ? 'rgba(59,130,246,0.06)' : 'rgba(59,130,246,0.04)' }}>
-                          {item.sale_price > 0 && (
-                            <span className="text-[9px] font-bold" style={{ color: '#3b82f6' }}>
-                              💰 Satış: ₺{(item.sale_price * Math.abs(mv.delta)).toFixed(2)} ({Math.abs(mv.delta)}×₺{item.sale_price})
-                            </span>
-                          )}
-                          {avgCost && (
-                            <span className="text-[9px] font-bold" style={{ color: '#94a3b8' }}>
-                              📦 Maliyet: {sym}{(Number(avgCost) * Math.abs(mv.delta)).toFixed(2)}
-                            </span>
-                          )}
-                        </div>
-                      )}
+                      {mv.source === 'sale' && (() => {
+                        const saleInfo = saleOrderMap[mv.source_id];
+                        const unitPrice = saleInfo?.unit_price ?? item.sale_price;
+                        const saleCurSym = CURRENCY_SYM[saleInfo?.currency] || '₺';
+                        const absQty = Math.abs(mv.delta);
+                        return (
+                          <div className="flex flex-wrap items-center gap-2 mt-1.5 px-2 py-1.5 rounded-lg" style={{ background: isDark ? 'rgba(59,130,246,0.06)' : 'rgba(59,130,246,0.04)' }}>
+                            {unitPrice > 0 && (
+                              <span className="text-[9px] font-bold" style={{ color: '#3b82f6' }}>
+                                💰 Satış: {saleCurSym}{(unitPrice * absQty).toFixed(2)} ({absQty}×{saleCurSym}{unitPrice})
+                              </span>
+                            )}
+                            {saleInfo?.order_number && (
+                              <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(59,130,246,0.08)', color: '#3b82f6' }}>
+                                #{saleInfo.order_number}
+                              </span>
+                            )}
+                            {avgCost && (
+                              <span className="text-[9px] font-bold" style={{ color: '#94a3b8' }}>
+                                📦 Maliyet: {sym}{(Number(avgCost) * absQty).toFixed(2)}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {mv.custom_recipe_data && (() => {
                         let crd = mv.custom_recipe_data;
                         if (typeof crd === 'string') try { crd = JSON.parse(crd); } catch(_) { crd = null; }
