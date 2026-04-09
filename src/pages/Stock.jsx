@@ -9,7 +9,7 @@ import {
   X, CheckCircle2, AlertOctagon, FolderDown, Eye, Save,
   Layers, ArrowRight, DollarSign, Hash, MapPin, Ruler, Tag,
   Clock, ArrowUpCircle, ArrowDownCircle, Wrench, ShoppingCart, FileText,
-  FlaskConical,
+  FlaskConical, Pencil, Check, Minus,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useStock } from '../hooks/useStock';
@@ -783,7 +783,7 @@ export default function Stock() {
             currentColor={currentColor}
             isDark={isDark}
             onClose={() => setDetailItem(null)}
-            onEdit={(item) => { setDetailItem(null); openForm(item, item.item_type); }}
+            onEdit={(it) => { if (!it) { setDetailItem(null); pageCache.invalidate('stock_items'); return; } setDetailItem(null); openForm(it, it.item_type); }}
           />
         )}
       </AnimatePresence>
@@ -838,6 +838,70 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
   const [customRecipeStocks, setCustomRecipeStocks] = React.useState([]); // özel reçeteden üretilenler
   const [rcpLoading, setRcpLoading] = React.useState(false);
   const isProduct = item.item_type === 'product';
+
+  // ── Hızlı Düzenleme ──
+  const [qe, setQe] = React.useState(false);
+  const [qeForm, setQeForm] = React.useState({});
+  const [qeSaving, setQeSaving] = React.useState(false);
+
+  const startQuickEdit = () => {
+    setQeForm({
+      stock_count: item.stock_count ?? 0,
+      purchase_price: item.purchase_price ?? '',
+      sale_price: item.sale_price ?? '',
+      critical_limit: item.critical_limit ?? '',
+      sku: item.sku || '',
+      location: item.location || '',
+      supplier_name: item.supplier_name || '',
+    });
+    setQe(true);
+  };
+
+  const saveQuickEdit = async () => {
+    setQeSaving(true);
+    const oldStock = Number(item.stock_count) || 0;
+    const newStock = Number(qeForm.stock_count) || 0;
+    const delta = newStock - oldStock;
+    const patch = {
+      purchase_price: Number(qeForm.purchase_price) || 0,
+      sale_price: Number(qeForm.sale_price) || 0,
+      critical_limit: Number(qeForm.critical_limit) || 0,
+      sku: qeForm.sku?.trim() || null,
+      location: qeForm.location?.trim() || null,
+      supplier_name: qeForm.supplier_name?.trim() || null,
+    };
+    if (delta !== 0) {
+      if (delta > 0) await supabase.rpc('increment_stock', { p_item_id: item.id, p_qty: delta, p_source: 'manual', p_note: 'Hızlı düzenleme' });
+      else await supabase.rpc('decrement_stock', { p_item_id: item.id, p_qty: Math.abs(delta), p_source: 'manual', p_note: 'Hızlı düzenleme' });
+    }
+    await supabase.from('items').update(patch).eq('id', item.id);
+    pageCache.invalidate('stock_items');
+    setQe(false); setQeSaving(false);
+    onEdit(null);
+  };
+
+  // ── Reçete stok düzenleme ──
+  const [editingRecipeStock, setEditingRecipeStock] = React.useState(null);
+  const [rcpStockInput, setRcpStockInput] = React.useState('');
+  const saveRecipeStock = async (type, id, oldCount, newCount) => {
+    const diff = newCount - oldCount;
+    if (diff === 0) { setEditingRecipeStock(null); return; }
+    if (type === 'base') {
+      await supabase.from('product_recipe_stock').update({ stock_count: newCount, updated_at: new Date().toISOString() }).eq('id', id);
+    }
+    if (diff > 0) await supabase.rpc('increment_stock', { p_item_id: item.id, p_qty: diff, p_source: 'manual', p_note: `Reçete stok düzenleme` });
+    else await supabase.rpc('decrement_stock', { p_item_id: item.id, p_qty: Math.abs(diff), p_source: 'manual', p_note: `Reçete stok düzenleme` });
+    pageCache.invalidate('stock_items');
+    setEditingRecipeStock(null);
+    setTab(''); setTimeout(() => setTab('recipes'), 50);
+  };
+  const deleteCustomRecipeStock = async (cs) => {
+    if (!confirm(`Bu özel reçete stoğunu silmek istediğinize emin misiniz? (${cs.count} adet)`)) return;
+    if (cs.count > 0) await supabase.rpc('decrement_stock', { p_item_id: item.id, p_qty: cs.count, p_source: 'manual', p_note: 'Özel reçete stoğu silindi' });
+    for (const mv of cs.movements) await supabase.from('stock_movements').delete().eq('id', mv.id);
+    pageCache.invalidate('stock_items');
+    setTab(''); setTimeout(() => setTab('recipes'), 50);
+  };
 
   React.useEffect(() => {
     // Reçeteleri her zaman yükle (geçmişte de lazım)
@@ -903,15 +967,16 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
 
   const rows = [
     { icon: Tag,           label: 'Tür',           value: item.item_type === 'product' ? 'Mamül Ürün' : 'Hammadde' },
-    { icon: Hash,          label: 'SKU',            value: item.sku || '—' },
+    { icon: Hash,          label: 'SKU',            value: item.sku || '—', field: 'sku' },
     { icon: Ruler,         label: 'Birim',          value: item.unit },
-    { icon: Boxes,         label: 'Stok',           value: `${item.stock_count} ${item.unit}`, color: clr },
-    { icon: AlertTriangle, label: 'Kritik Limit',   value: item.critical_limit > 0 ? `${item.critical_limit} ${item.unit}` : '—' },
-    { icon: DollarSign,    label: 'Alış Fiyatı',    value: item.purchase_price > 0 ? `${sym}${item.purchase_price}` : '—', color: '#10b981' },
-    { icon: DollarSign,    label: 'Satış Fiyatı',   value: item.sale_price > 0 ? `₺${item.sale_price}` : '—', color: '#3b82f6' },
-    { icon: MapPin,        label: 'Konum',          value: item.location || '—' },
-    { icon: Package,       label: 'Tedarikçi',      value: item.supplier_name || '—' },
+    { icon: Boxes,         label: 'Stok',           value: `${item.stock_count} ${item.unit}`, color: clr, field: 'stock_count', suffix: item.unit, numField: true },
+    { icon: AlertTriangle, label: 'Kritik Limit',   value: item.critical_limit > 0 ? `${item.critical_limit} ${item.unit}` : '—', field: 'critical_limit', suffix: item.unit, numField: true },
+    { icon: DollarSign,    label: 'Alış Fiyatı',    value: item.purchase_price > 0 ? `${sym}${item.purchase_price}` : '—', color: '#10b981', field: 'purchase_price', prefix: sym, numField: true },
+    { icon: DollarSign,    label: 'Satış Fiyatı',   value: item.sale_price > 0 ? `₺${item.sale_price}` : '—', color: '#3b82f6', field: 'sale_price', prefix: '₺', numField: true },
+    { icon: MapPin,        label: 'Konum',          value: item.location || '—', field: 'location' },
+    { icon: Package,       label: 'Tedarikçi',      value: item.supplier_name || '—', field: 'supplier_name' },
   ];
+  const inputStyle = { background: isDark ? 'rgba(255,255,255,0.06)' : '#f1f5f9', border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`, color: c.text, borderRadius: 8, padding: '4px 8px', fontSize: 12, fontWeight: 600, textAlign: 'right', width: 110, outline: 'none' };
 
   return (
     <div className="fixed inset-0 z-[200] flex justify-end">
@@ -931,9 +996,17 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
             </p>
             <h3 className="text-sm font-bold mt-0.5 truncate" style={{ color: c.text }}>{item.name}</h3>
           </div>
-          <button onClick={onClose} className="p-2 rounded-xl" style={{ color: c.muted }}>
-            <X size={15}/>
-          </button>
+          <div className="flex items-center gap-1">
+            {!qe && (
+              <button onClick={startQuickEdit} className="p-2 rounded-xl transition-all hover:scale-105"
+                style={{ color: '#f59e0b', background: 'rgba(245,158,11,0.08)' }} title="Hızlı Düzenle">
+                <Pencil size={14}/>
+              </button>
+            )}
+            <button onClick={onClose} className="p-2 rounded-xl" style={{ color: c.muted }}>
+              <X size={15}/>
+            </button>
+          </div>
         </div>
 
         {/* Stok durumu büyük gösterge */}
@@ -944,7 +1017,14 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
               <Package size={22} style={{ color: clr }}/>
             </div>
             <div>
-              <p className="text-2xl font-black" style={{ color: clr }}>{item.stock_count}</p>
+              {qe ? (
+                <input type="number" value={qeForm.stock_count}
+                  onChange={e => setQeForm(f => ({ ...f, stock_count: e.target.value }))}
+                  className="text-2xl font-black w-24 bg-transparent outline-none"
+                  style={{ color: clr, borderBottom: `2px solid ${clr}` }}/>
+              ) : (
+                <p className="text-2xl font-black" style={{ color: clr }}>{item.stock_count}</p>
+              )}
               <p className="text-[10px] font-semibold" style={{ color: c.muted }}>{item.unit} stokta</p>
             </div>
           </div>
@@ -985,15 +1065,25 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
             <>
               <div className="px-5 py-3 space-y-1">
                 {rows.map((r, i) => (
-                  <div key={i} className="flex items-center justify-between py-2"
+                  <div key={i} className="flex items-center justify-between py-2 gap-2"
                     style={{ borderBottom: i < rows.length - 1 ? `1px solid ${c.border}` : 'none' }}>
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex items-center gap-2 flex-shrink-0">
                       <r.icon size={12} style={{ color: c.muted, flexShrink: 0 }}/>
-                      <span className="text-xs font-semibold" style={{ color: c.muted }}>{r.label}</span>
+                      <span className="text-xs font-semibold whitespace-nowrap" style={{ color: c.muted }}>{r.label}</span>
                     </div>
-                    <span className="text-xs font-bold text-right truncate ml-2" style={{ color: r.color || c.text }}>
-                      {r.value}
-                    </span>
+                    {qe && r.field ? (
+                      <div className="flex items-center gap-1">
+                        {r.prefix && <span className="text-xs font-bold" style={{ color: c.muted }}>{r.prefix}</span>}
+                        <input type={r.numField ? 'number' : 'text'} value={qeForm[r.field] ?? ''}
+                          onChange={e => setQeForm(f => ({ ...f, [r.field]: e.target.value }))}
+                          style={inputStyle} placeholder={r.label}/>
+                        {r.suffix && <span className="text-[10px] font-semibold" style={{ color: c.muted }}>{r.suffix}</span>}
+                      </div>
+                    ) : (
+                      <span className="text-xs font-bold text-right ml-2" style={{ color: r.color || c.text, maxWidth: '55%', wordBreak: 'break-word', overflowWrap: 'break-word' }}>
+                        {r.value}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1119,10 +1209,26 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
                         <span className="text-xs font-bold truncate" style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}>{r.name}</span>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        {stk > 0 && (
-                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full"
-                            style={{ background: 'rgba(16,185,129,0.12)', color: '#10b981' }}>
-                            {stk} stokta
+                        {editingRecipeStock?.type === 'base' && editingRecipeStock?.id === rs?.id ? (
+                          <div className="flex items-center gap-1">
+                            <input type="number" value={rcpStockInput}
+                              onChange={e => setRcpStockInput(e.target.value)}
+                              className="w-12 text-center text-xs font-bold rounded-lg px-1 py-0.5"
+                              style={inputStyle} autoFocus/>
+                            <button onClick={() => saveRecipeStock('base', rs.id, stk, Number(rcpStockInput) || 0)}
+                              className="p-1 rounded-lg" style={{ color: '#10b981', background: 'rgba(16,185,129,0.1)' }}>
+                              <Check size={10}/>
+                            </button>
+                            <button onClick={() => setEditingRecipeStock(null)}
+                              className="p-1 rounded-lg" style={{ color: '#ef4444', background: 'rgba(239,68,68,0.1)' }}>
+                              <X size={10}/>
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full cursor-pointer group"
+                            onClick={() => { setEditingRecipeStock({ type: 'base', id: rs?.id }); setRcpStockInput(String(stk)); }}
+                            style={{ background: stk > 0 ? 'rgba(16,185,129,0.12)' : 'rgba(148,163,184,0.06)', color: stk > 0 ? '#10b981' : c.muted }}>
+                            {stk > 0 ? `${stk} stokta` : '0 stok'} <Pencil size={7} className="inline ml-0.5 opacity-40"/>
                           </span>
                         )}
                         {r.tags && r.tags.length > 0 && r.tags.map((t, i) => (
@@ -1161,10 +1267,18 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
                               {baseRecipe ? `${baseRecipe.name} (Özel)` : 'Özel Reçete'}
                             </span>
                           </div>
-                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full"
-                            style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>
-                            {cs.count} stokta
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full"
+                              style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>
+                              {cs.count} stokta
+                            </span>
+                            <button onClick={() => deleteCustomRecipeStock(cs)}
+                              className="p-1 rounded-lg transition-all hover:scale-110"
+                              style={{ color: '#ef4444', background: 'rgba(239,68,68,0.08)' }}
+                              title="Özel reçete stoğunu sil">
+                              <Trash2 size={11}/>
+                            </button>
+                          </div>
                         </div>
                         <div className="px-3 pb-2.5 space-y-0.5" style={{ borderTop: '1px solid rgba(245,158,11,0.15)' }}>
                           {(cs.items || []).map((ri, j) => (
@@ -1201,11 +1315,27 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
 
         {/* Alt butonlar */}
         <div className="px-5 py-4 flex gap-2 flex-shrink-0" style={{ borderTop: `1px solid ${c.border}` }}>
-          <button onClick={() => onEdit(item)}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white"
-            style={{ background: currentColor }}>
-            <Edit2 size={14}/> Düzenle
-          </button>
+          {qe ? (
+            <>
+              <button onClick={() => setQe(false)} disabled={qeSaving}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all"
+                style={{ background: isDark ? 'rgba(255,255,255,0.04)' : '#f1f5f9', color: c.muted, border: `1px solid ${c.border}` }}>
+                <X size={14}/> İptal
+              </button>
+              <button onClick={saveQuickEdit} disabled={qeSaving}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-all"
+                style={{ background: '#10b981', opacity: qeSaving ? 0.6 : 1 }}>
+                {qeSaving ? <RefreshCcw size={14} className="animate-spin"/> : <Check size={14}/>}
+                {qeSaving ? 'Kaydediliyor...' : 'Kaydet'}
+              </button>
+            </>
+          ) : (
+            <button onClick={() => onEdit(item)}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white"
+              style={{ background: currentColor }}>
+              <Edit2 size={14}/> Düzenle
+            </button>
+          )}
         </div>
       </motion.div>
     </div>
