@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, FileText, Loader2, Trash2, Eye, Edit3,
-  CheckCircle2, Clock, XCircle, Send, RefreshCw, FileMinus
+  CheckCircle2, Clock, XCircle, Send, RefreshCw, FileMinus, Calendar, X
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
@@ -52,6 +52,8 @@ export default function Quotes() {
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [dateFrom,     setDateFrom]     = useState('');
+  const [dateTo,       setDateTo]       = useState('');
   const [view, setView]         = useState('list'); // 'list' | 'form'
   const [editId, setEditId]     = useState(null);
   const [previewQ, setPreviewQ] = useState(null);
@@ -122,6 +124,9 @@ export default function Quotes() {
       (q.quote_no || '').toLowerCase().includes(search.toLowerCase()) ||
       (q.company_name || '').toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === 'all' || q.status === statusFilter;
+    const d = new Date(q.created_at || q.issue_date);
+    if (dateFrom && d < new Date(dateFrom)) return false;
+    if (dateTo && d > new Date(dateTo + 'T23:59:59')) return false;
     return matchSearch && matchStatus;
   });
 
@@ -210,6 +215,28 @@ export default function Quotes() {
                 {l}
               </button>
             ))}
+          </div>
+          {/* Tarih Filtresi */}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl"
+              style={{ background: 'rgba(255,255,255,0.06)', border: `1px solid ${c.border}` }}>
+              <Calendar size={11} style={{ color: c.muted }}/>
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                className="bg-transparent text-[11px] outline-none" style={{ color: c.text }}/>
+            </div>
+            <span className="text-[10px] font-bold" style={{ color: c.muted }}>—</span>
+            <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl"
+              style={{ background: 'rgba(255,255,255,0.06)', border: `1px solid ${c.border}` }}>
+              <Calendar size={11} style={{ color: c.muted }}/>
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                className="bg-transparent text-[11px] outline-none" style={{ color: c.text }}/>
+            </div>
+            {(dateFrom || dateTo) && (
+              <button onClick={() => { setDateFrom(''); setDateTo(''); }}
+                className="p-1.5 rounded-lg" style={{ color: '#ef4444', background: 'rgba(239,68,68,0.08)' }}>
+                <X size={11}/>
+              </button>
+            )}
           </div>
         </div>
 

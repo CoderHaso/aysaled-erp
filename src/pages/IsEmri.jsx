@@ -511,7 +511,9 @@ export default function IsEmri() {
   const [loading,    setLoading]    = useState(true);
   const [showForm,   setShowForm]   = useState(false);
   const [search,     setSearch]     = useState('');
-  const [tab,        setTab]        = useState('active'); // active | history | cancelled
+  const [tab,        setTab]        = useState('siparisler');
+  const [dateFrom,   setDateFrom]   = useState('');
+  const [dateTo,     setDateTo]     = useState('');
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -535,47 +537,84 @@ export default function IsEmri() {
     setWorkOrders(ws => ws.filter(w => w.id !== id));
   };
 
-  // Sekme filtreleme
-  const tabFilter = wo => {
-    if (tab === 'active')    return wo.status === 'pending' || wo.status === 'in_progress';
-    if (tab === 'history')   return wo.status === 'completed';
-    if (tab === 'cancelled') return wo.status === 'cancelled';
+  // Tarih filtresi
+  const dateFilter = (wo) => {
+    if (!dateFrom && !dateTo) return true;
+    const d = new Date(wo.created_at);
+    if (dateFrom && d < new Date(dateFrom)) return false;
+    if (dateTo && d > new Date(dateTo + 'T23:59:59')) return false;
     return true;
   };
 
-  const filtered = workOrders.filter(wo => {
-    if (!tabFilter(wo)) return false;
+  // Arama filtresi
+  const searchFilter = (wo) => {
     if (!search) return true;
     const item = items.find(i => i.id === wo.item_id);
     const ord  = orders.find(o => o.id === wo.order_id);
-    return item?.name?.toLowerCase().includes(search.toLowerCase()) ||
-      ord?.customer_name?.toLowerCase().includes(search.toLowerCase()) ||
-      ord?.order_number?.toLowerCase().includes(search.toLowerCase());
-  });
-
-  const counts = {
-    active:    workOrders.filter(w => w.status==='pending'||w.status==='in_progress').length,
-    history:   workOrders.filter(w => w.status==='completed').length,
-    cancelled: workOrders.filter(w => w.status==='cancelled').length,
+    const q = search.toLowerCase();
+    return item?.name?.toLowerCase().includes(q) ||
+      ord?.customer_name?.toLowerCase().includes(q) ||
+      ord?.order_number?.toLowerCase().includes(q);
   };
 
-  // Sipariş bazlı gruplama
-  const groupedByOrder = {};
-  const independent = [];
-  filtered.forEach(wo => {
-    if (wo.order_id) {
-      if (!groupedByOrder[wo.order_id]) groupedByOrder[wo.order_id] = [];
-      groupedByOrder[wo.order_id].push(wo);
-    } else {
-      independent.push(wo);
+  // Tüm filtrelenen WO'lar
+  const allFiltered = workOrders.filter(wo => dateFilter(wo) && searchFilter(wo));
+
+  // Tab bazlı gruplama
+  const orderWOs = allFiltered.filter(w => w.order_id); // siparişe bağlı
+  const standaloneWOs = allFiltered.filter(w => !w.order_id); // bağımsız
+
+  const tabData = React.useMemo(() => {
+    if (tab === 'siparisler') {
+      // siparişe bağlı + aktif (en az bir tanesi pending/in_progress olan siparişler)
+      const grouped = {};
+      orderWOs.forEach(wo => {
+        if (!grouped[wo.order_id]) grouped[wo.order_id] = [];
+        grouped[wo.order_id].push(wo);
+      });
+      // Sipariş aktif: en az bir pending/in_progress WO varsa
+      return { type: 'orders', groups: Object.entries(grouped).filter(([_, wos]) => wos.some(w => w.status === 'pending' || w.status === 'in_progress')) };
     }
-  });
-  const orderGroups = Object.entries(groupedByOrder);
+    if (tab === 'bagimsiz') {
+      return { type: 'list', items: standaloneWOs.filter(w => w.status === 'pending' || w.status === 'in_progress') };
+    }
+    if (tab === 'uretimde') {
+      return { type: 'list', items: allFiltered.filter(w => w.status === 'in_progress') };
+    }
+    if (tab === 'tamamlanan') {
+      // Tamamlanmış siparişler + bağımsız tamamlananlar
+      const grouped = {};
+      allFiltered.filter(w => w.status === 'completed').forEach(wo => {
+        const key = wo.order_id || `ind_${wo.id}`;
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(wo);
+      });
+      return { type: 'mixed', groups: Object.entries(grouped) };
+    }
+    if (tab === 'iptal') {
+      return { type: 'list', items: allFiltered.filter(w => w.status === 'cancelled') };
+    }
+    return { type: 'list', items: [] };
+  }, [allFiltered, tab, orderWOs, standaloneWOs]);
+
+  const counts = {
+    siparisler: (() => {
+      const grouped = {};
+      orderWOs.forEach(wo => { if (!grouped[wo.order_id]) grouped[wo.order_id] = []; grouped[wo.order_id].push(wo); });
+      return Object.values(grouped).filter(wos => wos.some(w => w.status === 'pending' || w.status === 'in_progress')).length;
+    })(),
+    bagimsiz:   standaloneWOs.filter(w => w.status === 'pending' || w.status === 'in_progress').length,
+    uretimde:   allFiltered.filter(w => w.status === 'in_progress').length,
+    tamamlanan: allFiltered.filter(w => w.status === 'completed').length,
+    iptal:      allFiltered.filter(w => w.status === 'cancelled').length,
+  };
 
   const TABS = [
-    { id:'active',    label:'Aktif',        icon:Activity,  count:counts.active    },
-    { id:'history',   label:'Tamamlananlar', icon:History,   count:counts.history   },
-    { id:'cancelled', label:'İptal',         icon:XCircle,   count:counts.cancelled },
+    { id:'siparisler', label:'Siparişler',   icon:Package,      count:counts.siparisler },
+    { id:'bagimsiz',   label:'Bağımsız',     icon:Hammer,       count:counts.bagimsiz   },
+    { id:'uretimde',   label:'Üretimde',     icon:Zap,          count:counts.uretimde   },
+    { id:'tamamlanan', label:'Tamamlanan',   icon:CheckCircle2, count:counts.tamamlanan },
+    { id:'iptal',      label:'İptal',        icon:XCircle,      count:counts.iptal      },
   ];
 
   return (
@@ -630,13 +669,36 @@ export default function IsEmri() {
           })}
         </div>
 
-        {/* Arama */}
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
-          style={{ background: isDark?'rgba(255,255,255,0.04)':'#f8fafc', border:`1px solid ${isDark?'rgba(148,163,184,0.1)':'#e2e8f0'}` }}>
-          <Search size={13} style={{ color:'#94a3b8' }} className="shrink-0"/>
-          <input className="flex-1 bg-transparent text-sm outline-none" style={{ color: isDark?'#f1f5f9':'#1e293b' }}
-            placeholder="Ürün adı veya müşteri ara…" value={search} onChange={e => setSearch(e.target.value)}/>
-          {search && <button onClick={() => setSearch('')}><X size={12} style={{ color:'#94a3b8' }}/></button>}
+        {/* Arama + Tarih Filtresi */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
+            style={{ background: isDark?'rgba(255,255,255,0.04)':'#f8fafc', border:`1px solid ${isDark?'rgba(148,163,184,0.1)':'#e2e8f0'}` }}>
+            <Search size={13} style={{ color:'#94a3b8' }} className="shrink-0"/>
+            <input className="flex-1 bg-transparent text-sm outline-none" style={{ color: isDark?'#f1f5f9':'#1e293b' }}
+              placeholder="Ürün adı veya müşteri ara…" value={search} onChange={e => setSearch(e.target.value)}/>
+            {search && <button onClick={() => setSearch('')}><X size={12} style={{ color:'#94a3b8' }}/></button>}
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 flex-1 px-3 py-1.5 rounded-xl"
+              style={{ background: isDark?'rgba(255,255,255,0.04)':'#f8fafc', border:`1px solid ${isDark?'rgba(148,163,184,0.1)':'#e2e8f0'}` }}>
+              <Calendar size={11} style={{ color:'#94a3b8' }}/>
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                className="flex-1 bg-transparent text-[11px] outline-none" style={{ color: isDark?'#f1f5f9':'#1e293b' }}/>
+            </div>
+            <span className="text-[10px] font-bold" style={{ color:'#94a3b8' }}>—</span>
+            <div className="flex items-center gap-1.5 flex-1 px-3 py-1.5 rounded-xl"
+              style={{ background: isDark?'rgba(255,255,255,0.04)':'#f8fafc', border:`1px solid ${isDark?'rgba(148,163,184,0.1)':'#e2e8f0'}` }}>
+              <Calendar size={11} style={{ color:'#94a3b8' }}/>
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                className="flex-1 bg-transparent text-[11px] outline-none" style={{ color: isDark?'#f1f5f9':'#1e293b' }}/>
+            </div>
+            {(dateFrom || dateTo) && (
+              <button onClick={() => { setDateFrom(''); setDateTo(''); }}
+                className="p-1.5 rounded-lg" style={{ color:'#ef4444', background:'rgba(239,68,68,0.08)' }}>
+                <X size={11}/>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -649,55 +711,66 @@ export default function IsEmri() {
           </div>
         )}
 
-        {!loading && filtered.length === 0 && (
-          <div className="text-center py-16">
-            <Hammer size={38} className="mx-auto mb-3 opacity-20" style={{ color:'#94a3b8' }}/>
-            <p className="text-sm" style={{ color:'#64748b' }}>
-              {tab === 'active'    ? 'Aktif iş emri yok' :
-               tab === 'history'  ? 'Tamamlanan iş emri yok' :
-               tab === 'cancelled' ? 'İptal edilen iş emri yok' : 'İş emri yok'}
-            </p>
-            {tab === 'active' && (
-              <button onClick={() => setShowForm(true)}
-                className="mt-3 px-4 py-2 rounded-xl text-sm font-semibold text-white"
-                style={{ background:currentColor }}>
-                İlk İş Emrini Oluştur
-              </button>
-            )}
-          </div>
-        )}
+        {!loading && (() => {
+          const isEmpty = tabData.type === 'list'
+            ? tabData.items.length === 0
+            : tabData.type === 'orders' || tabData.type === 'mixed'
+              ? (tabData.groups || []).length === 0
+              : true;
+          if (!isEmpty) return null;
+          const emptyMsg = {
+            siparisler: 'Aktif sipariş iş emri yok',
+            bagimsiz: 'Bağımsız iş emri yok',
+            uretimde: 'Üretimde olan iş emri yok',
+            tamamlanan: 'Tamamlanan iş emri yok',
+            iptal: 'İptal edilen iş emri yok',
+          }[tab] || 'İş emri yok';
+          return (
+            <div className="text-center py-16">
+              <Hammer size={38} className="mx-auto mb-3 opacity-20" style={{ color:'#94a3b8' }}/>
+              <p className="text-sm" style={{ color:'#64748b' }}>{emptyMsg}</p>
+              {tab === 'bagimsiz' && (
+                <button onClick={() => setShowForm(true)}
+                  className="mt-3 px-4 py-2 rounded-xl text-sm font-semibold text-white"
+                  style={{ background:currentColor }}>
+                  Yeni İş Emri Oluştur
+                </button>
+              )}
+            </div>
+          );
+        })()}
 
         <AnimatePresence initial={false}>
           {!loading && (
             <>
-              {/* Sipariş bazlı gruplar */}
-              {orderGroups.map(([orderId, wos]) => {
-                const ord = orders.find(o => o.id === orderId);
-                return (
-                  <OrderGroup key={orderId} orderId={orderId} wos={wos} order={ord}
-                    items={items} allRecipes={allRecipes}
-                    onStatusChange={loadAll} onDelete={handleDelete}
-                    currentColor={currentColor} isDark={isDark}/>
-                );
+              {/* Sipariş bazlı gruplar (siparisler + tamamlanan) */}
+              {(tabData.type === 'orders' || tabData.type === 'mixed') && (tabData.groups || []).map(([orderId, wos]) => {
+                const isOrder = !orderId.startsWith('ind_');
+                if (isOrder) {
+                  const ord = orders.find(o => o.id === orderId);
+                  return (
+                    <OrderGroup key={orderId} orderId={orderId} wos={wos} order={ord}
+                      items={items} allRecipes={allRecipes}
+                      onStatusChange={loadAll} onDelete={handleDelete}
+                      currentColor={currentColor} isDark={isDark}/>
+                  );
+                }
+                // Bağımsız tamamlanan
+                return wos.map(wo => (
+                  <WorkOrderCard key={wo.id} wo={wo} items={items} orders={orders}
+                    allRecipes={allRecipes} onStatusChange={loadAll}
+                    onDelete={handleDelete} currentColor={currentColor}/>
+                ));
               })}
 
-              {/* Bağımsız iş emirleri */}
-              {independent.length > 0 && (
-                <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }}>
-                  {orderGroups.length > 0 && (
-                    <div className="flex items-center gap-2 my-2">
-                      <div className="flex-1 h-px" style={{ background: isDark?'rgba(148,163,184,0.1)':'#e2e8f0' }}/>
-                      <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color:'#64748b' }}>Bağımsız İş Emirleri</span>
-                      <div className="flex-1 h-px" style={{ background: isDark?'rgba(148,163,184,0.1)':'#e2e8f0' }}/>
-                    </div>
-                  )}
-                  <div className="space-y-3">
-                    {independent.map(wo => (
-                      <WorkOrderCard key={wo.id} wo={wo} items={items} orders={orders}
-                        allRecipes={allRecipes} onStatusChange={loadAll}
-                        onDelete={handleDelete} currentColor={currentColor}/>
-                    ))}
-                  </div>
+              {/* Düz liste (bağımsız, üretimde, iptal) */}
+              {tabData.type === 'list' && tabData.items.length > 0 && (
+                <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} className="space-y-3">
+                  {tabData.items.map(wo => (
+                    <WorkOrderCard key={wo.id} wo={wo} items={items} orders={orders}
+                      allRecipes={allRecipes} onStatusChange={loadAll}
+                      onDelete={handleDelete} currentColor={currentColor}/>
+                  ))}
                 </motion.div>
               )}
             </>

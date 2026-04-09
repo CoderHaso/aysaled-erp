@@ -1481,6 +1481,8 @@ export default function Sales() {
   const [loading,   setLoading]   = useState(true);
   const [search,    setSearch]    = useState('');
   const [tab,       setTab]       = useState('current');
+  const [dateFrom,  setDateFrom]  = useState('');
+  const [dateTo,    setDateTo]    = useState('');
   const [showForm,  setShowForm]  = useState(false);
   const [editOrder, setEditOrder] = useState(null);
   const [toast,     setToast]     = useState(null);
@@ -1748,11 +1750,13 @@ export default function Sales() {
       const q = search.toLowerCase();
       list = list.filter(o => o.order_number.toLowerCase().includes(q) || o.customer_name.toLowerCase().includes(q));
     }
+    if (dateFrom) list = list.filter(o => new Date(o.created_at) >= new Date(dateFrom));
+    if (dateTo) list = list.filter(o => new Date(o.created_at) <= new Date(dateTo + 'T23:59:59'));
     if (tab === 'current')  return list.filter(o => o.status === 'pending' || o.status === 'processing');
     if (tab === 'urgent')   return list.filter(o => isUrgent(o));
     if (tab === 'history')  return list.filter(o => o.status === 'completed' || o.status === 'cancelled' || o.status === 'refunded');
     return list;
-  }, [orders, tab, search]);
+  }, [orders, tab, search, dateFrom, dateTo]);
 
   const urgentCount  = orders.filter(isUrgent).length;
   const currentCount = orders.filter(o => o.status === 'pending' || o.status === 'processing').length;
@@ -1820,6 +1824,29 @@ export default function Sales() {
               <Plus size={15} />Yeni Sipariş
             </button>
           </div>
+        </div>
+
+        {/* Tarih Filtresi */}
+        <div className="flex items-center gap-2 mb-4">
+          <div className="flex items-center gap-1.5 flex-1 px-3 py-2 rounded-xl"
+            style={{ background: c.card, border: `1px solid ${c.border}` }}>
+            <Calendar size={12} style={{ color: c.muted }}/>
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+              className="flex-1 bg-transparent text-xs outline-none" style={{ color: c.text }}/>
+          </div>
+          <span className="text-[10px] font-bold" style={{ color: c.muted }}>—</span>
+          <div className="flex items-center gap-1.5 flex-1 px-3 py-2 rounded-xl"
+            style={{ background: c.card, border: `1px solid ${c.border}` }}>
+            <Calendar size={12} style={{ color: c.muted }}/>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+              className="flex-1 bg-transparent text-xs outline-none" style={{ color: c.text }}/>
+          </div>
+          {(dateFrom || dateTo) && (
+            <button onClick={() => { setDateFrom(''); setDateTo(''); }}
+              className="p-2 rounded-xl" style={{ color: '#ef4444', background: 'rgba(239,68,68,0.08)' }}>
+              <X size={12}/>
+            </button>
+          )}
         </div>
 
         {/* Stats */}
