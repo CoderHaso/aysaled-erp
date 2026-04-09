@@ -69,12 +69,6 @@ export default function RecipePickerModal({
   const getRecipeStock = (recipeId) => recipeStocks.find(s => s.recipe_id === recipeId)?.stock_count || 0;
   const activeStock = getRecipeStock(selectedId);
 
-  // Özel reçete seçilince stoktan kullan devre dışı
-  const canSkipWorkOrder = !hideSkipWorkOrder && activeStock > 0 && !changed;
-  React.useEffect(() => {
-    if (changed && skipWorkOrder) setSkipWorkOrder(false);
-  }, [changed]);
-
   /* ── Etiketler ─────────────────────────────────────────────── */
   const allTags = useMemo(() => {
     const s = new Set(['Tümü']);
@@ -102,6 +96,12 @@ export default function RecipePickerModal({
     JSON.stringify((activeRecipe?.recipe_items || []).map(i => ({ n: i.item_name, q: String(i.quantity), u: i.unit }))),
     [localItems, activeRecipe]
   );
+
+  // Özel reçete seçilince stoktan kullan devre dışı (changed tanımından SONRA olmalı)
+  const canSkipWorkOrder = !hideSkipWorkOrder && activeStock > 0 && !changed;
+  React.useEffect(() => {
+    if (changed && skipWorkOrder) setSkipWorkOrder(false);
+  }, [changed]);
 
   /* ── Reçete seç ────────────────────────────────────────────── */
   const selectRecipe = useCallback(recipe => {
