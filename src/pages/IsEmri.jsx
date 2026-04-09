@@ -218,13 +218,15 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
       const woNote   = `İş emri #${wo.id?.slice(0,8)} (${item?.name||''}) tamamlandı${noteInput.trim() ? ` | Not: ${noteInput.trim()}` : ''}`;
       const customItems = wo.custom_recipe_items; // JSONB from DB
       const isCustom = customItems && Array.isArray(customItems) && customItems.length > 0;
+      console.log('[WO COMPLETE] custom_recipe_items:', customItems, 'isCustom:', isCustom, 'recipeId:', recipeId);
 
       // Mamül stok artır + custom reçete bilgisini kaydet
-      await supabase.rpc('increment_stock', {
+      const rpcResult = await supabase.rpc('increment_stock', {
         p_item_id: wo.item_id, p_qty: woQty, p_source: 'work_order',
         p_source_id: wo.id, p_recipe_id: recipeId, p_note: woNote,
         p_custom_recipe: isCustom ? JSON.stringify(customItems) : null,
       });
+      console.log('[WO COMPLETE] increment_stock result:', rpcResult);
 
       // Hammadde düş: custom reçete varsa onu, yoksa base reçeteyi kullan
       let rawMaterials = [];
@@ -264,6 +266,8 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
 
   const handleRecipeUpdate = async (rec) => {
     const isCustom = rec.changed; // base reçeteden farklı mı (RecipePickerModal hesaplar)
+    console.log('[RECIPE UPDATE] rec:', JSON.stringify(rec, null, 2));
+    console.log('[RECIPE UPDATE] isCustom:', isCustom, 'changed:', rec.changed);
     const changeNote = isCustom
       ? `Özel reçete: ${rec.recipe_key} (${rec.components.length} malzeme)`
       : `Reçete: ${rec.recipe_key || rec.recipe_id}`;
@@ -276,11 +280,13 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
       unit: c.unit || 'Adet',
     })) : null;
 
-    await supabase.from('work_orders').update({
+    console.log('[RECIPE UPDATE] saving to work_order:', { recipe_id: rec.recipe_id, customItems });
+    const updateResult = await supabase.from('work_orders').update({
       recipe_id: rec.recipe_id || null,
       recipe_change_note: changeNote,
       custom_recipe_items: customItems,
     }).eq('id', wo.id);
+    console.log('[RECIPE UPDATE] save result:', updateResult);
 
     // Siparişe de not düş
     if (wo.order_id) {

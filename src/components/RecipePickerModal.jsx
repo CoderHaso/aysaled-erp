@@ -72,6 +72,8 @@ export default function RecipePickerModal({
         .not('custom_recipe_data', 'is', null)
         .order('created_at', { ascending: false }),
     ]).then(([sRes, mvRes]) => {
+      console.log('[RECIPE PICKER] product_recipe_stock:', sRes.data);
+      console.log('[RECIPE PICKER] stock_movements with custom_recipe_data:', mvRes.data);
       setRecipeStocks(sRes.data || []);
       // Özel reçeteleri grupla
       const customMap = {};
@@ -111,6 +113,7 @@ export default function RecipePickerModal({
             })),
           };
         });
+      console.log('[RECIPE PICKER] virtual custom recipes:', virtuals);
       setCustomVirtualRecipes(virtuals);
     });
   }, [productId]);
