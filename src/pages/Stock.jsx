@@ -14,6 +14,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { useStock } from '../hooks/useStock';
 import { supabase } from '../lib/supabaseClient';
+import { pageCache } from '../lib/pageCache';
 import ItemDrawer from '../components/stock/ItemDrawer';
 import QuickAddModal from '../components/stock/QuickAddModal';
 
@@ -843,6 +844,11 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
   const [qe, setQe] = React.useState(false);
   const [qeForm, setQeForm] = React.useState({});
   const [qeSaving, setQeSaving] = React.useState(false);
+  const [qeError, setQeError] = React.useState('');
+
+  // Fiyat geçmişi
+  const [priceHistory, setPriceHistory] = React.useState([]);
+  const [phLoading, setPhLoading] = React.useState(false);
 
   const startQuickEdit = () => {
     setQeForm({
@@ -854,43 +860,88 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
       location: item.location || '',
       supplier_name: item.supplier_name || '',
     });
-    setQe(true);
+    setQe(true); setQeError('');
   };
 
+  // Reçete toplam stok minimum hesapla
+  const recipeMinStock = React.useMemo(() => {
+    if (!isProduct) return 0;
+    const baseSum = recipeStocks.reduce((s, rs) => s + (Number(rs.stock_count) || 0), 0);
+    const customSum = customRecipeStocks.reduce((s, cs) => s + (Number(cs.count) || 0), 0);
+    return baseSum + customSum;
+  }, [recipeStocks, customRecipeStocks, isProduct]);
+
   const saveQuickEdit = async () => {
-    setQeSaving(true);
+    setQeSaving(true); setQeError('');
     const oldStock = Number(item.stock_count) || 0;
     const newStock = Number(qeForm.stock_count) || 0;
     const delta = newStock - oldStock;
+
+    // Reçeteli ürünlerde minimum stok kontrolü
+    if (isProduct && recipeMinStock > 0 && newStock < recipeMinStock) {
+      setQeError(`Minimum ${recipeMinStock} olabilir (reçete stokları toplamı). Reçeteler sekmesinden düşürebilirsiniz.`);
+      setQeSaving(false); return;
+    }
+
+    const oldPurchase = Number(item.purchase_price) || 0;
+    const newPurchase = Number(qeForm.purchase_price) || 0;
+    const oldSale = Number(item.sale_price) || 0;
+    const newSale = Number(qeForm.sale_price) || 0;
+
     const patch = {
-      purchase_price: Number(qeForm.purchase_price) || 0,
-      sale_price: Number(qeForm.sale_price) || 0,
+      sale_price: newSale,
       critical_limit: Number(qeForm.critical_limit) || 0,
       sku: qeForm.sku?.trim() || null,
       location: qeForm.location?.trim() || null,
       supplier_name: qeForm.supplier_name?.trim() || null,
     };
+    // Reçeteli ürünlerde alış fiyatı değiştirilemez
+    if (!isProduct || recipes.length === 0) {
+      patch.purchase_price = newPurchase;
+    }
+
     if (delta !== 0) {
       if (delta > 0) await supabase.rpc('increment_stock', { p_item_id: item.id, p_qty: delta, p_source: 'manual', p_note: 'Hızlı düzenleme' });
       else await supabase.rpc('decrement_stock', { p_item_id: item.id, p_qty: Math.abs(delta), p_source: 'manual', p_note: 'Hızlı düzenleme' });
     }
+
     await supabase.from('items').update(patch).eq('id', item.id);
+
+    // Fiyat değişikliği varsa stock_movements'a kaydet
+    if (oldPurchase !== newPurchase && (!isProduct || recipes.length === 0)) {
+      await supabase.from('stock_movements').insert({
+        item_id: item.id, delta: 0, quantity_before: oldStock, quantity_after: oldStock,
+        source: 'manual', note: `Alış fiyatı: ${sym}${oldPurchase} → ${sym}${newPurchase}`,
+        type: 'manual',
+      });
+    }
+    if (oldSale !== newSale) {
+      await supabase.from('stock_movements').insert({
+        item_id: item.id, delta: 0, quantity_before: oldStock, quantity_after: oldStock,
+        source: 'manual', note: `Satış fiyatı: ₺${oldSale} → ₺${newSale}`,
+        type: 'manual',
+      });
+    }
+
     pageCache.invalidate('stock_items');
     setQe(false); setQeSaving(false);
     onEdit(null);
   };
 
-  // ── Reçete stok düzenleme ──
+  // ── Reçete stok düzenleme (sadece azaltma) ──
   const [editingRecipeStock, setEditingRecipeStock] = React.useState(null);
   const [rcpStockInput, setRcpStockInput] = React.useState('');
   const saveRecipeStock = async (type, id, oldCount, newCount) => {
     const diff = newCount - oldCount;
     if (diff === 0) { setEditingRecipeStock(null); return; }
+    // Base reçeteler sadece azaltılabilir
+    if (type === 'base' && diff > 0) { setEditingRecipeStock(null); return; }
     if (type === 'base') {
       await supabase.from('product_recipe_stock').update({ stock_count: newCount, updated_at: new Date().toISOString() }).eq('id', id);
     }
-    if (diff > 0) await supabase.rpc('increment_stock', { p_item_id: item.id, p_qty: diff, p_source: 'manual', p_note: `Reçete stok düzenleme` });
-    else await supabase.rpc('decrement_stock', { p_item_id: item.id, p_qty: Math.abs(diff), p_source: 'manual', p_note: `Reçete stok düzenleme` });
+    // Toplam stok güncelle
+    if (diff > 0) await supabase.rpc('increment_stock', { p_item_id: item.id, p_qty: diff, p_source: 'manual', p_note: 'Reçete stok düzenleme' });
+    else await supabase.rpc('decrement_stock', { p_item_id: item.id, p_qty: Math.abs(diff), p_source: 'manual', p_note: 'Reçete stok düzenleme' });
     pageCache.invalidate('stock_items');
     setEditingRecipeStock(null);
     setTab(''); setTimeout(() => setTab('recipes'), 50);
@@ -951,6 +1002,20 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
         setRcpLoading(false);
       });
     }
+    if (tab === 'prices') {
+      setPhLoading(true);
+      supabase.from('stock_movements').select('*').eq('item_id', item.id)
+        .or('delta.eq.0,note.ilike.%fiyat%')
+        .order('created_at', { ascending: false }).limit(100)
+        .then(({ data }) => {
+          // Fiyat değişikliklerini filtrele
+          const priceChanges = (data || []).filter(mv =>
+            mv.note && (mv.note.includes('fiyat') || mv.note.includes('Fiyat'))
+          );
+          setPriceHistory(priceChanges);
+          setPhLoading(false);
+        });
+    }
   }, [tab, item.id]);
 
   const srcIcon = (src) => {
@@ -965,13 +1030,29 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
     invoice: 'Fatura', manual: 'Manuel', 'toplu güncelleme': 'Toplu Güncelleme',
   })[src] || src || 'Manuel';
 
+  // Ortalama maliyet hesapla (reçeteli ürünlerde)
+  const avgCost = React.useMemo(() => {
+    if (!isProduct || recipes.length === 0) return null;
+    let totalCost = 0; let totalCount = 0;
+    recipes.forEach(r => {
+      const cost = (r.recipe_items || []).reduce((s, ri) => s + (Number(ri.purchase_price || 0) * Number(ri.quantity || 1)), 0);
+      const rs = recipeStocks.find(rs2 => rs2.recipe_id === r.id);
+      const stk = rs?.stock_count || 0;
+      if (stk > 0) { totalCost += cost * stk; totalCount += stk; }
+    });
+    return totalCount > 0 ? (totalCost / totalCount).toFixed(2) : null;
+  }, [recipes, recipeStocks, isProduct]);
+
+  const hasRecipes = isProduct && recipes.length > 0;
   const rows = [
     { icon: Tag,           label: 'Tür',           value: item.item_type === 'product' ? 'Mamül Ürün' : 'Hammadde' },
     { icon: Hash,          label: 'SKU',            value: item.sku || '—', field: 'sku' },
     { icon: Ruler,         label: 'Birim',          value: item.unit },
     { icon: Boxes,         label: 'Stok',           value: `${item.stock_count} ${item.unit}`, color: clr, field: 'stock_count', suffix: item.unit, numField: true },
     { icon: AlertTriangle, label: 'Kritik Limit',   value: item.critical_limit > 0 ? `${item.critical_limit} ${item.unit}` : '—', field: 'critical_limit', suffix: item.unit, numField: true },
-    { icon: DollarSign,    label: 'Alış Fiyatı',    value: item.purchase_price > 0 ? `${sym}${item.purchase_price}` : '—', color: '#10b981', field: 'purchase_price', prefix: sym, numField: true },
+    hasRecipes
+      ? { icon: DollarSign, label: 'Ort. Maliyet', value: avgCost ? `${sym}${avgCost}` : '—', color: '#94a3b8', disabled: true }
+      : { icon: DollarSign, label: 'Alış Fiyatı',  value: item.purchase_price > 0 ? `${sym}${item.purchase_price}` : '—', color: '#10b981', field: 'purchase_price', prefix: sym, numField: true },
     { icon: DollarSign,    label: 'Satış Fiyatı',   value: item.sale_price > 0 ? `₺${item.sale_price}` : '—', color: '#3b82f6', field: 'sale_price', prefix: '₺', numField: true },
     { icon: MapPin,        label: 'Konum',          value: item.location || '—', field: 'location' },
     { icon: Package,       label: 'Tedarikçi',      value: item.supplier_name || '—', field: 'supplier_name' },
@@ -1050,6 +1131,7 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
             { id: 'detail', label: 'Detay', icon: Package },
             ...(isProduct ? [{ id: 'recipes', label: 'Reçeteler', icon: FlaskConical }] : []),
             { id: 'history', label: 'Geçmiş', icon: Clock },
+            { id: 'prices', label: 'Fiyat', icon: DollarSign },
           ].map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
@@ -1162,6 +1244,21 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
                       {mv.note && (
                         <p className="text-[10px] mt-1 truncate" style={{ color: c.muted }}>{mv.note}</p>
                       )}
+                      {/* Satış hareketlerinde fiyat bilgisi */}
+                      {mv.source === 'sale' && (
+                        <div className="flex items-center gap-3 mt-1.5 px-2 py-1 rounded-lg" style={{ background: isDark ? 'rgba(59,130,246,0.06)' : 'rgba(59,130,246,0.04)' }}>
+                          {item.sale_price > 0 && (
+                            <span className="text-[9px] font-bold" style={{ color: '#3b82f6' }}>
+                              💰 Satış: ₺{(item.sale_price * Math.abs(mv.delta)).toFixed(2)} ({Math.abs(mv.delta)}×₺{item.sale_price})
+                            </span>
+                          )}
+                          {avgCost && (
+                            <span className="text-[9px] font-bold" style={{ color: '#94a3b8' }}>
+                              📦 Maliyet: {sym}{(Number(avgCost) * Math.abs(mv.delta)).toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+                      )}
                       {mv.custom_recipe_data && (() => {
                         let crd = mv.custom_recipe_data;
                         if (typeof crd === 'string') try { crd = JSON.parse(crd); } catch(_) { crd = null; }
@@ -1246,6 +1343,15 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
                         </div>
                       ))}
                     </div>
+                    {(() => {
+                      const cost = (r.recipe_items || []).reduce((s, ri) => s + (Number(ri.purchase_price || 0) * Number(ri.quantity || 1)), 0);
+                      return cost > 0 ? (
+                        <div className="px-3 pb-2 flex items-center justify-between" style={{ borderTop: '1px solid rgba(139,92,246,0.06)' }}>
+                          <span className="text-[9px] font-bold" style={{ color: '#94a3b8' }}>Birim Maliyet</span>
+                          <span className="text-[10px] font-black" style={{ color: '#a78bfa' }}>{sym}{cost.toFixed(2)}</span>
+                        </div>
+                      ) : null;
+                    })()}
                   </div>
                 );
               })}
@@ -1311,7 +1417,59 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
               ))}
             </div>
           )}
+
+          {/* Fiyat Geçmişi tab */}
+          {tab === 'prices' && (
+            <div className="px-4 py-3 space-y-2">
+              {phLoading && (
+                <div className="flex items-center justify-center py-12">
+                  <RefreshCcw size={20} className="animate-spin" style={{ color: currentColor }}/>
+                </div>
+              )}
+              {!phLoading && priceHistory.length === 0 && (
+                <div className="text-center py-12">
+                  <DollarSign size={32} className="mx-auto mb-2 opacity-20" style={{ color: c.muted }}/>
+                  <p className="text-xs" style={{ color: c.muted }}>Henüz fiyat değişikliği yok</p>
+                </div>
+              )}
+              {!phLoading && priceHistory.map((ph, i) => {
+                const dt = new Date(ph.created_at);
+                const dateStr = dt.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short', year: '2-digit' });
+                const timeStr = dt.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+                const isAlis = ph.note?.includes('Alış');
+                return (
+                  <div key={ph.id || i} className="flex items-start gap-3 rounded-xl p-3"
+                    style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#fff', border: `1px solid ${isDark ? 'rgba(148,163,184,0.08)' : '#e2e8f0'}` }}>
+                    <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
+                      style={{ background: isAlis ? 'rgba(16,185,129,0.12)' : 'rgba(59,130,246,0.12)' }}>
+                      <DollarSign size={14} style={{ color: isAlis ? '#10b981' : '#3b82f6' }}/>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold" style={{ color: isAlis ? '#10b981' : '#3b82f6' }}>
+                          {isAlis ? 'Alış Fiyatı' : 'Satış Fiyatı'}
+                        </span>
+                        <span className="text-[10px] flex-shrink-0" style={{ color: c.muted }}>{dateStr} {timeStr}</span>
+                      </div>
+                      <p className="text-[11px] font-semibold mt-1" style={{ color: c.text }}>{ph.note}</p>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <span style={{ color: c.muted }}>{srcIcon(ph.source)}</span>
+                        <span className="text-[10px] font-semibold" style={{ color: c.muted }}>{srcLabel(ph.source)}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
+
+        {/* Quick Edit Error */}
+        {qeError && (
+          <div className="px-5 py-2 flex-shrink-0" style={{ background: 'rgba(239,68,68,0.08)' }}>
+            <p className="text-[11px] font-semibold text-center" style={{ color: '#ef4444' }}>⚠️ {qeError}</p>
+          </div>
+        )}
 
         {/* Alt butonlar */}
         <div className="px-5 py-4 flex gap-2 flex-shrink-0" style={{ borderTop: `1px solid ${c.border}` }}>
