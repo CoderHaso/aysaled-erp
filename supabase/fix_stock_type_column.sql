@@ -125,7 +125,8 @@ BEGIN
   INSERT INTO stock_movements(item_id, delta, quantity_before, quantity_after, source, source_id, recipe_id, note, "type", custom_recipe_data)
   VALUES (p_item_id, p_qty, v_before, v_after, COALESCE(p_source,'manual'), p_source_id, p_recipe_id, p_note, COALESCE(p_source,'manual'), p_custom_recipe);
 
-  IF p_recipe_id IS NOT NULL THEN
+  -- Sadece mevcut reçete ise product_recipe_stock güncelle (özel reçete değilse)
+  IF p_recipe_id IS NOT NULL AND p_custom_recipe IS NULL THEN
     INSERT INTO product_recipe_stock(product_id, recipe_id, stock_count)
     VALUES(p_item_id, p_recipe_id, p_qty)
     ON CONFLICT(product_id, recipe_id)
@@ -164,7 +165,8 @@ BEGIN
   INSERT INTO stock_movements(item_id, delta, quantity_before, quantity_after, source, source_id, recipe_id, note, "type", custom_recipe_data)
   VALUES (p_item_id, -p_qty, v_before, v_after, COALESCE(p_source,'manual'), p_source_id, p_recipe_id, p_note, COALESCE(p_source,'manual'), p_custom_recipe);
 
-  IF p_recipe_id IS NOT NULL THEN
+  -- Sadece mevcut reçete ise product_recipe_stock güncelle (özel reçete değilse)
+  IF p_recipe_id IS NOT NULL AND p_custom_recipe IS NULL THEN
     UPDATE product_recipe_stock
     SET stock_count = stock_count - p_qty, updated_at = now()
     WHERE product_id = p_item_id AND recipe_id = p_recipe_id;

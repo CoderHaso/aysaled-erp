@@ -57,28 +57,87 @@ export default function RecipePickerModal({
   // ItemPickerModal: 'add' | idx (swap) | null
   const [pickerTarget, setPickerTarget] = useState(null);
 
-  // Stok bilgisi: bu ürünün her reçetesinde kaç stok var
+  // Stok bilgisi: base + özel reçete stokları
   const [recipeStocks, setRecipeStocks] = useState([]);
+  const [customVirtualRecipes, setCustomVirtualRecipes] = useState([]); // özel reçeteler sanal giriş
   const [skipWorkOrder, setSkipWorkOrder] = useState(false);
   React.useEffect(() => {
-    if (productId) {
-      supabase.from('product_recipe_stock').select('*').eq('product_id', productId)
-        .then(({ data }) => setRecipeStocks(data || []));
-    }
+    if (!productId) return;
+    Promise.all([
+      supabase.from('product_recipe_stock').select('*').eq('product_id', productId),
+      // Özel reçete üretimleri
+      supabase.from('stock_movements')
+        .select('*')
+        .eq('item_id', productId)
+        .not('custom_recipe_data', 'is', null)
+        .order('created_at', { ascending: false }),
+    ]).then(([sRes, mvRes]) => {
+      setRecipeStocks(sRes.data || []);
+      // Özel reçeteleri grupla
+      const customMap = {};
+      (mvRes.data || []).forEach(mv => {
+        let crd = mv.custom_recipe_data;
+        if (typeof crd === 'string') try { crd = JSON.parse(crd); } catch(_) { crd = null; }
+        if (!crd || !Array.isArray(crd) || crd.length === 0) return;
+        const key = JSON.stringify(crd.map(c => `${c.item_name}:${c.quantity}`).sort());
+        if (!customMap[key]) {
+          customMap[key] = { items: crd, recipe_id: mv.recipe_id, count: 0, key };
+        }
+        const qty = Number(mv.quantity) || 0;
+        if (mv.type === 'increment' || mv.delta > 0) customMap[key].count += qty;
+        else customMap[key].count -= qty;
+      });
+      // Stok > 0 olan özel reçeteleri sanal reçete olarak oluştur
+      const virtuals = Object.values(customMap)
+        .filter(c => c.count > 0)
+        .map((c, idx) => {
+          const baseRecipe = (allRecipes || []).find(r => r.id === c.recipe_id);
+          return {
+            id: `custom_${idx}_${c.key.slice(0, 20)}`, // sanal ID
+            _isCustomVirtual: true,
+            _customKey: c.key,
+            _customItems: c.items,
+            _customStock: c.count,
+            _baseRecipeId: c.recipe_id,
+            product_id: productId,
+            name: baseRecipe ? `${baseRecipe.name} (Özel)` : `Özel Reçete ${idx + 1}`,
+            tags: ['Özel'],
+            recipe_items: c.items.map((it, j) => ({
+              id: `cvi_${idx}_${j}`,
+              item_id: it.item_id,
+              item_name: it.item_name,
+              quantity: it.quantity,
+              unit: it.unit || 'Adet',
+            })),
+          };
+        });
+      setCustomVirtualRecipes(virtuals);
+    });
   }, [productId]);
-  const getRecipeStock = (recipeId) => recipeStocks.find(s => s.recipe_id === recipeId)?.stock_count || 0;
+  const getRecipeStock = (recipeId) => {
+    // Önce sanal özel reçete mi kontrol et
+    const vr = customVirtualRecipes.find(v => v.id === recipeId);
+    if (vr) return vr._customStock || 0;
+    return recipeStocks.find(s => s.recipe_id === recipeId)?.stock_count || 0;
+  };
   const activeStock = getRecipeStock(selectedId);
 
   /* ── Etiketler ─────────────────────────────────────────────── */
+  // Mevcut + özel sanal reçeteleri birleştir
+  const allCombinedRecipes = useMemo(() =>
+    [...productRecipes, ...customVirtualRecipes],
+    [productRecipes, customVirtualRecipes]
+  );
+
   const allTags = useMemo(() => {
     const s = new Set(['Tümü']);
-    productRecipes.forEach(r => (r.tags || []).forEach(t => s.add(t)));
+    allCombinedRecipes.forEach(r => (r.tags || []).forEach(t => s.add(t)));
     return [...s];
-  }, [productRecipes]);
+  }, [allCombinedRecipes]);
 
   const filteredRecipes = useMemo(() =>
-    productRecipes.filter(r => activeTag === 'Tümü' || (r.tags || []).includes(activeTag)),
-    [productRecipes, activeTag]
+    allCombinedRecipes.filter(r => activeTag === 'Tümü' || (r.tags || []).includes(activeTag)),
+    [allCombinedRecipes, activeTag]
   );
 
   const activeRecipe = filteredRecipes.find(r => r.id === selectedId) || filteredRecipes[0];
@@ -97,11 +156,13 @@ export default function RecipePickerModal({
     [localItems, activeRecipe]
   );
 
-  // Özel reçete seçilince stoktan kullan devre dışı (changed tanımından SONRA olmalı)
-  const canSkipWorkOrder = !hideSkipWorkOrder && activeStock > 0 && !changed;
+  // Stoktan kullan: sanal özel reçete seçiliyse izin ver, elle değiştirme yapıldıysa devre dışı
+  const isVirtualSelected = !!activeRecipe?._isCustomVirtual;
+  const canSkipWorkOrder = !hideSkipWorkOrder && activeStock > 0 && (!changed || isVirtualSelected);
   React.useEffect(() => {
-    if (changed && skipWorkOrder) setSkipWorkOrder(false);
-  }, [changed]);
+    // Elle değişiklik yapıldıysa ve sanal reçete değilse skip kapat
+    if (changed && skipWorkOrder && !isVirtualSelected) setSkipWorkOrder(false);
+  }, [changed, isVirtualSelected]);
 
   /* ── Reçete seç ────────────────────────────────────────────── */
   const selectRecipe = useCallback(recipe => {
@@ -147,6 +208,7 @@ export default function RecipePickerModal({
   /* ── Onayla ────────────────────────────────────────────────── */
   const handleConfirm = () => {
     if (!activeRecipe) return;
+    const isVirtual = !!activeRecipe._isCustomVirtual;
     const components = localItems
       .filter(it => it.item_name?.trim())
       .map(it => ({
@@ -158,17 +220,20 @@ export default function RecipePickerModal({
         purchase_price: it.purchase_price ?? null,
       }));
     onSelect({
-      recipe_id:   activeRecipe.id,
+      // Sanal özel reçete ise base recipe_id'yi kullan
+      recipe_id:   isVirtual ? activeRecipe._baseRecipeId : activeRecipe.id,
       recipe_key:  activeRecipe.name,
       recipe_note: `${activeRecipe.name}: ${components.map(c => `${c.quantity}x ${c.item_name}`).join(', ')}`,
       components,
-      changed,                          // base reçeteden farklı mı
-      skip_work_order: skipWorkOrder,   // stoktan kullan (iş emrine gönderme)
-      recipe_stock: activeStock,        // mevcut stok bilgisi
+      changed: changed || isVirtual,             // özel reçete HER ZAMAN custom
+      skip_work_order: skipWorkOrder,
+      recipe_stock: activeStock,
+      is_custom_virtual: isVirtual,              // sanal özel reçete mi
+      custom_recipe_key: isVirtual ? activeRecipe._customKey : null,
     });
   };
 
-  const hasSingleRecipe = productRecipes.length <= 1;
+  const hasSingleRecipe = allCombinedRecipes.length <= 1;
 
   return (
     <>
@@ -219,7 +284,7 @@ export default function RecipePickerModal({
         </div>
 
         {/* ═══ BODY ═══ */}
-        {productRecipes.length === 0 ? (
+        {allCombinedRecipes.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center py-16 px-8 text-center">
             <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
               style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#f1f5f9', border: `1px solid ${isDark ? 'rgba(148,163,184,0.1)' : '#e2e8f0'}` }}>
@@ -259,27 +324,29 @@ export default function RecipePickerModal({
                   {filteredRecipes.map(r => {
                     const active = (activeRecipe?.id === r.id);
                     const rStock = getRecipeStock(r.id);
+                    const isCustom = !!r._isCustomVirtual;
+                    const accentColor = isCustom ? '#f59e0b' : currentColor;
                     return (
                       <button key={r.id} onClick={() => selectRecipe(r)}
                         className="w-full text-left px-4 py-3 flex items-start gap-2 transition-all group"
                         style={{
-                          background:  active ? `${currentColor}15` : 'transparent',
-                          borderLeft: `2px solid ${active ? currentColor : 'transparent'}`,
+                          background: active ? `${accentColor}15` : 'transparent',
+                          borderLeft: `2px solid ${active ? accentColor : 'transparent'}`,
                         }}>
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-semibold truncate"
-                            style={{ color: active ? (isDark ? '#c4b5fd' : '#8b5cf6') : (isDark ? '#94a3b8' : '#64748b') }}>
-                            {r.name}
+                            style={{ color: active ? (isCustom ? '#fbbf24' : (isDark ? '#c4b5fd' : '#8b5cf6')) : (isDark ? '#94a3b8' : '#64748b') }}>
+                            {isCustom && '🔧 '}{r.name}
                           </p>
                           <p className="text-[10px] mt-0.5 flex items-center gap-1" style={{ color: isDark ? '#475569' : '#94a3b8'}}>
                             <Package size={8}/> {(r.recipe_items || []).length} malzeme
                           </p>
                         </div>
                         <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                          {active && <ChevronRight size={11} style={{ color: currentColor }}/>}
+                          {active && <ChevronRight size={11} style={{ color: accentColor }}/>}
                           {rStock > 0 && (
                             <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-                              style={{ background:'rgba(16,185,129,0.12)', color:'#10b981' }}>
+                              style={{ background: isCustom ? 'rgba(245,158,11,0.12)' : 'rgba(16,185,129,0.12)', color: isCustom ? '#f59e0b' : '#10b981' }}>
                               {rStock} stokta
                             </span>
                           )}
@@ -448,7 +515,7 @@ export default function RecipePickerModal({
         )}
 
         {/* ═══ FOOTER ═══ */}
-        {productRecipes.length > 0 && (
+        {allCombinedRecipes.length > 0 && (
           <div className="flex items-center justify-between gap-3 px-5 py-3.5 flex-shrink-0"
             style={{ borderTop: '1px solid rgba(148,163,184,0.08)', background: 'rgba(0,0,0,0.2)' }}>
             <div className="flex flex-col gap-2">
@@ -481,7 +548,7 @@ export default function RecipePickerModal({
                     onChange={e => setSkipWorkOrder(e.target.checked)}
                     className="w-3.5 h-3.5 rounded accent-emerald-500"/>
                   <span className="text-[11px] font-semibold" style={{ color: skipWorkOrder ? '#10b981' : '#94a3b8' }}>
-                    {changed ? 'Özel reçete — stoktan kullanılamaz' : 'Stoktan kullan — İş emrine gönderme'}
+                    {!canSkipWorkOrder ? 'Elle değiştirildi — stoktan kullanılamaz' : (isVirtualSelected ? 'Özel reçete stoktan kullan' : 'Stoktan kullan — İş emrine gönderme')}
                   </span>
                   {skipWorkOrder && (
                     <span className="text-[9px] ml-auto px-2 py-0.5 rounded-full font-bold"
