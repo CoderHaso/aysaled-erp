@@ -835,6 +835,7 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
   const [mvLoading, setMvLoading] = React.useState(false);
   const [recipes, setRecipes] = React.useState([]);
   const [recipeStocks, setRecipeStocks] = React.useState([]);
+  const [customRecipeStocks, setCustomRecipeStocks] = React.useState([]); // özel reçeteden üretilenler
   const [rcpLoading, setRcpLoading] = React.useState(false);
   const isProduct = item.item_type === 'product';
 
@@ -858,8 +859,36 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
     }
     if (tab === 'recipes' && isProduct) {
       setRcpLoading(true);
-      supabase.from('product_recipe_stock').select('*').eq('product_id', item.id)
-        .then(({ data }) => { setRecipeStocks(data || []); setRcpLoading(false); });
+      Promise.all([
+        supabase.from('product_recipe_stock').select('*').eq('product_id', item.id),
+        // Özel reçete ile üretilenleri stock_movements'tan çek
+        supabase.from('stock_movements')
+          .select('*')
+          .eq('item_id', item.id)
+          .not('custom_recipe_data', 'is', null)
+          .in('source', ['production', 'work_order'])
+          .order('created_at', { ascending: false }),
+      ]).then(([sRes, mvRes]) => {
+        setRecipeStocks(sRes.data || []);
+        // Özel reçeteleri grupla (custom_recipe_data JSON hash'ine göre)
+        const customMap = {};
+        (mvRes.data || []).forEach(mv => {
+          let crd = mv.custom_recipe_data;
+          if (typeof crd === 'string') try { crd = JSON.parse(crd); } catch(_) { crd = null; }
+          if (!crd || !Array.isArray(crd) || crd.length === 0) return;
+          const key = JSON.stringify(crd.map(c => `${c.item_name}:${c.quantity}`).sort());
+          if (!customMap[key]) {
+            customMap[key] = { items: crd, recipe_id: mv.recipe_id, count: 0, movements: [], created_at: mv.created_at };
+          }
+          // increment ise stok ekle, sale/decrement ise çıkar
+          const qty = Number(mv.quantity) || 0;
+          if (mv.type === 'increment') customMap[key].count += qty;
+          else if (mv.type === 'decrement') customMap[key].count -= qty;
+          customMap[key].movements.push(mv);
+        });
+        setCustomRecipeStocks(Object.values(customMap).filter(c => c.count > 0));
+        setRcpLoading(false);
+      });
     }
   }, [tab, item.id]);
 
@@ -1117,21 +1146,56 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
                   </div>
                 );
               })}
-              {/* Bağımsız reçeteler (tek seferlik, product_recipe_stock'ta recipe_id product_recipes'ta yok) */}
+              {/* Özel reçete stokları (stock_movements'tan hesaplanan) */}
+              {!rcpLoading && customRecipeStocks.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[9px] font-bold uppercase tracking-widest px-1 pt-2" style={{ color: '#f59e0b' }}>
+                    🔧 Özel Reçeteler (Geçici)
+                  </p>
+                  {customRecipeStocks.map((cs, idx) => {
+                    const baseRecipe = recipes.find(r => r.id === cs.recipe_id);
+                    return (
+                      <div key={idx} className="rounded-xl overflow-hidden"
+                        style={{ background: 'rgba(245,158,11,0.04)', border: '1px solid rgba(245,158,11,0.2)' }}>
+                        <div className="flex items-center justify-between px-3 py-2.5">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <FlaskConical size={13} style={{ color: '#f59e0b', flexShrink: 0 }}/>
+                            <span className="text-xs font-bold truncate" style={{ color: '#f59e0b' }}>
+                              {baseRecipe ? `${baseRecipe.name} (Özel)` : 'Özel Reçete'}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full"
+                            style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>
+                            {cs.count} stokta
+                          </span>
+                        </div>
+                        <div className="px-3 pb-2.5 space-y-0.5" style={{ borderTop: '1px solid rgba(245,158,11,0.15)' }}>
+                          {(cs.items || []).map((ri, j) => (
+                            <div key={j} className="flex items-center justify-between text-[10px] py-0.5" style={{ color: c.muted }}>
+                              <span>• {ri.item_name}</span>
+                              <span className="font-bold">{ri.quantity} {ri.unit}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {/* Bağımsız reçeteler (product_recipe_stock'ta recipe_id product_recipes'ta yok) */}
               {!rcpLoading && recipeStocks.filter(s => s.stock_count > 0 && !recipes.find(r => r.id === s.recipe_id)).map(s => (
                 <div key={s.id} className="rounded-xl px-3 py-2.5"
                   style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)' }}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <FlaskConical size={12} style={{ color: '#f59e0b' }}/>
-                      <span className="text-[11px] font-bold" style={{ color: '#f59e0b' }}>Tek Seferlik Reçete</span>
+                      <span className="text-[11px] font-bold" style={{ color: '#f59e0b' }}>Bilinmeyen Reçete</span>
                     </div>
                     <span className="text-[10px] font-black px-2 py-0.5 rounded-full"
                       style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>
                       {s.stock_count} stokta
                     </span>
                   </div>
-                  <p className="text-[10px] mt-1" style={{ color: c.muted }}>ID: {s.recipe_id?.slice(0,8)}</p>
                 </div>
               ))}
             </div>
