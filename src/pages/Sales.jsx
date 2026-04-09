@@ -1116,12 +1116,17 @@ function OrderSummaryModal({ order, onConfirm, onCancel, c, currentColor, isDark
 }
 
 // ─── Sipariş Detay Drawer ─────────────────────────────────────────────────────
-function OrderDetailDrawer({ order, onClose, onEdit, onSendToWorkOrders, onStatusChange, onRefund, allRecipes, c, currentColor, isDark, tab }) {
+function OrderDetailDrawer({ order, onClose, onEdit, onSendToWorkOrders, onStatusChange, onRefund, onConfirmComplete, allRecipes, c, currentColor, isDark, tab }) {
   const urgent = isUrgent(order);
   const isHistory = tab === 'history';
   const isCancelled = order.status === 'cancelled';
   const isRefunded = order.status === 'refunded';
   const [expandedRecipe, setExpandedRecipe] = useState(null);
+
+  // Stoktan satış tespiti
+  const recipeLines = (order.items || []).filter(l => l.recipe_note || l.recipe_key);
+  const woNeededLines = recipeLines.filter(l => !l.skip_work_order);
+  const allSkipped = recipeLines.length > 0 && woNeededLines.length === 0;
 
   // Reçete detaylarını bul
   const recipeMap = {};
@@ -1254,6 +1259,15 @@ function OrderDetailDrawer({ order, onClose, onEdit, onSendToWorkOrders, onStatu
         </div>
 
         {/* Actions footer */}
+        {allSkipped && !isHistory && order.status !== 'completed' && order.status !== 'cancelled' && onConfirmComplete && (
+          <div className="px-5 py-4 flex-shrink-0" style={{ borderTop: `1px solid ${c.border}` }}>
+            <button onClick={() => onConfirmComplete(order)}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white transition-all active:scale-[0.98]"
+              style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)', boxShadow: '0 4px 12px rgba(59,130,246,0.3)' }}>
+              <CheckCircle2 size={15}/> Siparişi Tamamla (Stoktan Satış)
+            </button>
+          </div>
+        )}
         {isCancelled && !isRefunded && (
           <div className="px-5 py-4 flex-shrink-0" style={{ borderTop: `1px solid ${c.border}` }}>
             <button onClick={() => onRefund(order)}
@@ -1281,7 +1295,9 @@ function OrderCard({ order, onView, onEdit, onStatusChange, onSendToWorkOrders, 
   const urgent = isUrgent(order);
   const daysLeft = order.due_date ? Math.ceil((new Date(order.due_date) - new Date()) / 86400000) : null;
   const recipeLines = (order.items || []).filter(l => l.recipe_note || l.recipe_key);
-  const hasRecipe = recipeLines.length > 0;
+  const woNeededLines = recipeLines.filter(l => !l.skip_work_order); // İş emrine gitmesi gerekenler
+  const allSkipped = recipeLines.length > 0 && woNeededLines.length === 0; // Hepsi stoktan satılacak
+  const hasRecipe = woNeededLines.length > 0; // İş emrine göndermesi gereken reçeteli kalem var mı
   const sentToWO = order.work_orders_sent;
   const allWOsDone = order.allWOsDone && sentToWO && order.status !== 'completed';
   const isHistory = tab === 'history';
@@ -1348,6 +1364,23 @@ function OrderCard({ order, onView, onEdit, onStatusChange, onSendToWorkOrders, 
             className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-white"
             style={{ background: '#10b981' }}>
             Tamamla
+          </button>
+        </div>
+      )}
+
+      {/* Stoktan satılacak banner */}
+      {allSkipped && !sentToWO && order.status !== 'completed' && order.status !== 'cancelled' && (
+        <div className="mx-3 mb-2 flex items-center gap-2 px-3 py-2 rounded-xl"
+          style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.25)' }}
+          onClick={e => e.stopPropagation()}>
+          <span>📦</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] font-bold text-blue-400">Tüm ürünler stoktan satılacak</p>
+          </div>
+          <button onClick={e => { e.stopPropagation(); onConfirmComplete(order); }}
+            className="px-2.5 py-1.5 rounded-lg text-[10px] font-bold text-white"
+            style={{ background: '#3b82f6' }}>
+            Siparişi Tamamla
           </button>
         </div>
       )}
@@ -1925,6 +1958,7 @@ export default function Sales() {
             onSendToWorkOrders={sendToWorkOrders}
             onStatusChange={updateStatus}
             onRefund={handleRefund}
+            onConfirmComplete={o => setConfirmOrder(o)}
           />
         )}
       </AnimatePresence>

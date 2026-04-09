@@ -165,6 +165,7 @@ function WorkOrderForm({ items, orders, allRecipes, onClose, onSaved, currentCol
           allRecipes={allRecipes} allItems={items} currentColor={currentColor}
           selectedRecipeId={form.recipe_id || null}
           customRecipeItems={form.custom_recipe_items || null}
+          hideSkipWorkOrder={true}
           onClose={() => setShowRecipePicker(false)}
           onSelect={(rec) => {
             const customItems = rec.changed ? rec.components?.map(c => ({
@@ -420,6 +421,7 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
           allRecipes={allRecipes||[]} allItems={items||[]} currentColor={currentColor}
           selectedRecipeId={wo.recipe_id}
           customRecipeItems={wo.custom_recipe_items}
+          hideSkipWorkOrder={true}
           onClose={() => setShowRecipePicker(false)} onSelect={handleRecipeUpdate}/>
       )}
     </motion.div>

@@ -31,6 +31,7 @@ export default function RecipePickerModal({
   onSelect, onClose, currentColor = '#8b5cf6',
   selectedRecipeId = null,
   customRecipeItems = null,
+  hideSkipWorkOrder = false,
 }) {
   const { effectiveMode } = useTheme();
   const isDark = effectiveMode === 'dark';
@@ -67,6 +68,12 @@ export default function RecipePickerModal({
   }, [productId]);
   const getRecipeStock = (recipeId) => recipeStocks.find(s => s.recipe_id === recipeId)?.stock_count || 0;
   const activeStock = getRecipeStock(selectedId);
+
+  // Özel reçete seçilince stoktan kullan devre dışı
+  const canSkipWorkOrder = !hideSkipWorkOrder && activeStock > 0 && !changed;
+  React.useEffect(() => {
+    if (changed && skipWorkOrder) setSkipWorkOrder(false);
+  }, [changed]);
 
   /* ── Etiketler ─────────────────────────────────────────────── */
   const allTags = useMemo(() => {
@@ -466,14 +473,15 @@ export default function RecipePickerModal({
                   </div>
                 )}
               </div>
-              {/* Stoktan kullan checkbox — sadece stok > 0 ise */}
-              {activeStock > 0 && (
-                <label className="flex items-center gap-2 cursor-pointer select-none px-2.5 py-2 rounded-xl transition-all"
+              {/* Stoktan kullan checkbox — sadece stok > 0 && özel reçete değilse && hideSkipWorkOrder değilse */}
+              {!hideSkipWorkOrder && activeStock > 0 && (
+                <label className={`flex items-center gap-2 select-none px-2.5 py-2 rounded-xl transition-all ${canSkipWorkOrder ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}
                   style={{ background: skipWorkOrder ? 'rgba(16,185,129,0.08)' : 'rgba(255,255,255,0.02)', border: `1px solid ${skipWorkOrder ? 'rgba(16,185,129,0.3)' : 'rgba(148,163,184,0.08)'}` }}>
-                  <input type="checkbox" checked={skipWorkOrder} onChange={e => setSkipWorkOrder(e.target.checked)}
+                  <input type="checkbox" checked={skipWorkOrder} disabled={!canSkipWorkOrder}
+                    onChange={e => setSkipWorkOrder(e.target.checked)}
                     className="w-3.5 h-3.5 rounded accent-emerald-500"/>
                   <span className="text-[11px] font-semibold" style={{ color: skipWorkOrder ? '#10b981' : '#94a3b8' }}>
-                    Stoktan kullan — İş emrine gönderme
+                    {changed ? 'Özel reçete — stoktan kullanılamaz' : 'Stoktan kullan — İş emrine gönderme'}
                   </span>
                   {skipWorkOrder && (
                     <span className="text-[9px] ml-auto px-2 py-0.5 rounded-full font-bold"
