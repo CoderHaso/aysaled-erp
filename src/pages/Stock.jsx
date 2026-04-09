@@ -879,10 +879,8 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
           if (!customMap[key]) {
             customMap[key] = { items: crd, recipe_id: mv.recipe_id, count: 0, movements: [], created_at: mv.created_at };
           }
-          // increment ise stok ekle, sale/decrement ise çıkar
-          const qty = Number(mv.quantity) || 0;
-          if (mv.type === 'increment') customMap[key].count += qty;
-          else if (mv.type === 'decrement') customMap[key].count -= qty;
+          // delta zaten işaretli: + üretim, - satış
+          customMap[key].count += Number(mv.delta) || 0;
           customMap[key].movements.push(mv);
         });
         setCustomRecipeStocks(Object.values(customMap).filter(c => c.count > 0));

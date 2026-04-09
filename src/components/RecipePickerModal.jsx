@@ -85,9 +85,8 @@ export default function RecipePickerModal({
         if (!customMap[key]) {
           customMap[key] = { items: crd, recipe_id: mv.recipe_id, count: 0, key };
         }
-        const qty = Number(mv.quantity) || 0;
-        if (mv.type === 'increment' || mv.delta > 0) customMap[key].count += qty;
-        else customMap[key].count -= qty;
+        // delta zaten işaretli: + üretim, - satış
+        customMap[key].count += Number(mv.delta) || 0;
       });
       // Stok > 0 olan özel reçeteleri sanal reçete olarak oluştur
       const virtuals = Object.values(customMap)
