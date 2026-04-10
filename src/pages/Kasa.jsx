@@ -321,7 +321,8 @@ export default function Kasa() {
     setChqLoading(false);
   }, []);
 
-  useEffect(() => { if (mainTab === 'cekler' && cheques.length === 0) loadCheques(); }, [mainTab]);
+  const [chqLoaded, setChqLoaded] = useState(false);
+  useEffect(() => { if (mainTab === 'cekler' && !chqLoaded) { loadCheques(); setChqLoaded(true); } }, [mainTab]);
 
   const saveCheque = async (chq, formData) => {
     try {
@@ -836,21 +837,44 @@ export default function Kasa() {
                         <input style={inp} type="date" value={f.due_date} onChange={e => s('due_date', e.target.value)}/>
                       </div>
                     </div>
-                    {/* Kimden / Kime */}
-                    <div className="grid grid-cols-2 gap-3">
+                    {/* Alınan: Kimden (müşteri) */}
+                    {f.direction === 'received' && (
                       <div>
-                        <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>
-                          {f.direction === 'received' ? 'Kimden (Müşteri)' : 'Kimden'}
-                        </p>
+                        <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Kimden (Müşteri) *</p>
                         <input style={inp} placeholder="Seva Aydınlatma" value={f.from_name} onChange={e => s('from_name', e.target.value)}/>
                       </div>
-                      <div>
-                        <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>
-                          {f.direction === 'given' ? 'Kime (Tedarikçi)' : 'Kime'}
-                        </p>
-                        <input style={inp} placeholder="GMC Tedarik" value={f.to_name} onChange={e => s('to_name', e.target.value)}/>
-                      </div>
-                    </div>
+                    )}
+                    {/* Verilen: Kime + Kaynak */}
+                    {f.direction === 'given' && (
+                      <>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Kime (Tedarikçi) *</p>
+                          <input style={inp} placeholder="GMC Tedarik" value={f.to_name} onChange={e => s('to_name', e.target.value)}/>
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Kaynak (Çekin Kökeni)</p>
+                          <select style={{...inp, cursor:'pointer'}} value={f.from_name}
+                            onChange={e => {
+                              const val = e.target.value;
+                              if (val === '__biz__') { s('from_name', 'Şirket Çeki'); }
+                              else if (val.startsWith('__chq__')) {
+                                const src = receivedCheques.find(ch2 => ch2.id === val.replace('__chq__',''));
+                                if (src) { s('from_name', src.from_name||'Alınan');
+                                  if(!f.amount) s('amount',src.amount); if(!f.cheque_no) s('cheque_no',src.cheque_no||'');
+                                  if(!f.bank_name) s('bank_name',src.bank_name||''); if(!f.due_date&&src.due_date) s('due_date',src.due_date.split('T')[0]); }
+                              } else { s('from_name', val); }
+                            }}>
+                            <option value="">Seçin...</option>
+                            <option value="__biz__">Şirket (Kendi Çekimiz)</option>
+                            {receivedCheques.filter(ch2 => ch2.status === 'active').map(ch2 => (
+                              <option key={ch2.id} value={`__chq__${ch2.id}`}>
+                                {ch2.from_name||'?'} — {fmt(ch2.amount)} ₺ {ch2.cheque_no ? `#${ch2.cheque_no}` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </>
+                    )}
                     {/* Durum */}
                     {editChq?.id && (
                       <div>
@@ -866,6 +890,17 @@ export default function Kasa() {
                         </div>
                       </div>
                     )}
+                    {/* Görsel */}
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Çek Görseli (Opsiyonel)</p>
+                      <label className="flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer border"
+                        style={{ borderColor: c.border, background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc' }}>
+                        <Upload size={13} style={{ color: '#a78bfa' }}/>
+                        <span className="text-xs" style={{ color: c.muted }}>{f._imageFile ? f._imageFile.name : 'Görsel seç...'}</span>
+                        <input type="file" accept="image/*" className="hidden"
+                          onChange={e => { if (e.target.files[0]) s('_imageFile', e.target.files[0]); }}/>
+                      </label>
+                    </div>
                     {/* Not */}
                     <div>
                       <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Not</p>
@@ -874,7 +909,13 @@ export default function Kasa() {
                     <button onClick={async () => {
                       if (!f.amount) return;
                       setSaving(true);
-                      await saveCheque(editChq, { ...f, amount: parseFloat(f.amount) });
+                      const { _imageFile, ...payload } = f;
+                      const saved = await saveCheque(editChq, { ...payload, amount: parseFloat(payload.amount) });
+                      if (_imageFile) {
+                        // Find the saved cheque's ID to upload image
+                        const latest = cheques.find(ch2 => ch2.cheque_no === payload.cheque_no && ch2.amount === parseFloat(payload.amount));
+                        if (latest) await uploadChequeImage(latest.id, _imageFile);
+                      }
                       setSaving(false);
                     }} disabled={saving || !f.amount}
                       className="w-full py-3 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"

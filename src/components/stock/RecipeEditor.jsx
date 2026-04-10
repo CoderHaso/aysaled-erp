@@ -6,6 +6,7 @@
  * - Baska urunun recetesini kopyala
  */
 import React, { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../../lib/supabaseClient';
 import {
   Plus, Trash2, Copy, ChevronDown, ChevronRight,
@@ -442,7 +443,7 @@ function RecipeItemRow({ item, index, rawItems, onChange, onBlur, onDelete, c, c
               placeholder="Ara..." />
             {/* FIXED DROPDOWN — viewport üzerinde açılır, hiçbir overflow bunu kesmez */}
             {filtered.length > 0 && typeof document !== 'undefined' && (
-              React.createPortal(
+              createPortal(
                 <div
                   style={{
                     position: 'fixed',
