@@ -5,6 +5,8 @@ import {
   ArrowDownLeft, ArrowUpRight, Filter, Users, Package,
   Coffee, Truck, ShoppingBag, Car, MoreHorizontal,
   CalendarDays, TrendingUp, TrendingDown, Check, Edit3,
+  FileText, ArrowRightLeft, Image, Upload, Eye, Receipt,
+  Building2, Clock, AlertTriangle, Ban, ChevronRight,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
@@ -227,6 +229,15 @@ export default function Kasa() {
   const [dialog, setDialog]      = useState({ open: false });
   const [filterDir, setFilterDir] = useState('all');
   const [filterCat, setFilterCat] = useState('all');
+  const [mainTab, setMainTab]    = useState('kasa'); // kasa | cekler
+
+  // ── Çek State'leri ──
+  const [cheques, setCheques]       = useState([]);
+  const [chqLoading, setChqLoading] = useState(false);
+  const [chqTab, setChqTab]         = useState('received'); // received | given
+  const [showChqForm, setShowChqForm] = useState(false);
+  const [editChq, setEditChq]       = useState(null);
+  const [transferChq, setTransferChq] = useState(null); // devir modal
 
   const c = {
     card:   isDark ? 'rgba(30,41,59,0.7)' : '#ffffff',
@@ -302,12 +313,94 @@ export default function Kasa() {
     setTxs(prev => prev.map(t => t.id === tx.id ? updated : t));
   };
 
+  // ── Çek CRUD ──
+  const loadCheques = useCallback(async () => {
+    setChqLoading(true);
+    const { data } = await supabase.from('cheques').select('*').order('created_at', { ascending: false });
+    setCheques(data || []);
+    setChqLoading(false);
+  }, []);
+
+  useEffect(() => { if (mainTab === 'cekler' && cheques.length === 0) loadCheques(); }, [mainTab]);
+
+  const saveCheque = async (chq, formData) => {
+    try {
+      if (chq?.id) {
+        const { data } = await supabase.from('cheques').update(formData).eq('id', chq.id).select().single();
+        setCheques(prev => prev.map(c2 => c2.id === data.id ? data : c2));
+        showToast('Çek güncellendi ✓');
+      } else {
+        const { data } = await supabase.from('cheques').insert(formData).select().single();
+        setCheques(prev => [data, ...prev]);
+        showToast('Çek eklendi ✓');
+      }
+      setShowChqForm(false); setEditChq(null);
+    } catch(e) { showToast(e.message, 'error'); }
+  };
+
+  const deleteCheque = (id) => {
+    setDialog({
+      open: true, type: 'danger', title: 'Çek Sil',
+      message: 'Bu çek kaydı silinecek. Emin misiniz?',
+      onConfirm: async () => {
+        await supabase.from('cheques').delete().eq('id', id);
+        setCheques(prev => prev.filter(c2 => c2.id !== id));
+        setDialog({ open: false });
+        showToast('Çek silindi');
+      }
+    });
+  };
+
+  const doTransfer = async (chq, toName, note) => {
+    try {
+      // 1. Verilen çek oluştur
+      const { data: givenChq } = await supabase.from('cheques').insert({
+        direction: 'given', amount: chq.amount, currency: chq.currency,
+        cheque_no: chq.cheque_no, bank_name: chq.bank_name, due_date: chq.due_date,
+        issue_date: chq.issue_date, from_name: chq.from_name, to_name: toName,
+        status: 'active', transferred_from: chq.id, image_url: chq.image_url,
+        transfer_note: note || `${chq.from_name || 'Alınan'} çeki ${toName}'e devredildi`,
+        notes: `Devir: ${chq.from_name || '?'} → ${toName}`,
+      }).select().single();
+      // 2. Alınan çeki "used" olarak işaretle
+      const { data: updatedChq } = await supabase.from('cheques').update({
+        status: 'used', transferred_to: givenChq.id,
+        transfer_note: `${toName}'e devredildi`,
+      }).eq('id', chq.id).select().single();
+      setCheques(prev => [givenChq, ...prev.map(c2 => c2.id === updatedChq.id ? updatedChq : c2)]);
+      setTransferChq(null);
+      showToast(`Çek ${toName}'e devredildi ✓`);
+    } catch(e) { showToast(e.message, 'error'); }
+  };
+
+  const uploadChequeImage = async (chqId, file) => {
+    const ext = file.name.split('.').pop();
+    const path = `cheques/${chqId}.${ext}`;
+    const { error: upErr } = await supabase.storage.from('media').upload(path, file, { upsert: true });
+    if (upErr) { showToast('Görsel yüklenemedi', 'error'); return; }
+    const { data: urlData } = supabase.storage.from('media').getPublicUrl(path);
+    await supabase.from('cheques').update({ image_url: urlData.publicUrl }).eq('id', chqId);
+    setCheques(prev => prev.map(c2 => c2.id === chqId ? { ...c2, image_url: urlData.publicUrl } : c2));
+    showToast('Görsel yüklendi ✓');
+  };
+
+  const CHQ_STATUS = {
+    active:    { label: 'Aktif',       color: '#3b82f6', icon: Clock },
+    used:      { label: 'Kullanıldı',  color: '#f59e0b', icon: ArrowRightLeft },
+    deposited: { label: 'Yatırıldı',   color: '#10b981', icon: Building2 },
+    bounced:   { label: 'Karşılıksız', color: '#ef4444', icon: AlertTriangle },
+    cancelled: { label: 'İptal',       color: '#94a3b8', icon: Ban },
+  };
+
+  const receivedCheques = cheques.filter(c2 => c2.direction === 'received');
+  const givenCheques = cheques.filter(c2 => c2.direction === 'given');
+
   return (
     <>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
         className="p-4 sm:p-6 lg:p-8 max-w-6xl mx-auto space-y-6">
 
-        {/* ── Başlık ── */}
+        {/* ── Başlık + Ana Sekmeler ── */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="p-3 rounded-2xl flex-shrink-0" style={{ background: `${currentColor}15` }}>
@@ -316,196 +409,535 @@ export default function Kasa() {
             <div>
               <h1 className="text-2xl font-bold" style={{ color: c.text }}>Kasa</h1>
               <p className="text-sm mt-0.5" style={{ color: c.muted }}>
-                Nakit gider & gelir takibi
+                {mainTab === 'kasa' ? 'Nakit gider & gelir takibi' : 'Çek yönetimi'}
               </p>
             </div>
           </div>
-          <button onClick={() => { setEditing(null); setShowForm(true); }}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-bold"
-            style={{ background: currentColor }}>
-            <Plus size={15} />Yeni Kayıt
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex gap-1 p-1 rounded-xl" style={{ background: isDark ? 'rgba(255,255,255,0.04)' : '#f1f5f9' }}>
+              {[{ id: 'kasa', label: 'Kasa', icon: Wallet }, { id: 'cekler', label: 'Çekler', icon: Receipt }].map(t => (
+                <button key={t.id} onClick={() => setMainTab(t.id)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+                  style={{
+                    background: mainTab === t.id ? (isDark ? 'rgba(255,255,255,0.08)' : '#fff') : 'transparent',
+                    color: mainTab === t.id ? currentColor : c.muted,
+                    boxShadow: mainTab === t.id ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+                  }}>
+                  <t.icon size={13}/> {t.label}
+                  {t.id === 'cekler' && cheques.length > 0 && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full font-black"
+                      style={{ background: `${currentColor}20`, color: currentColor }}>{cheques.length}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+            {mainTab === 'kasa' ? (
+              <button onClick={() => { setEditing(null); setShowForm(true); }}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-bold"
+                style={{ background: currentColor }}>
+                <Plus size={15}/>Yeni Kayıt
+              </button>
+            ) : (
+              <button onClick={() => { setEditChq(null); setShowChqForm(true); }}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-bold"
+                style={{ background: currentColor }}>
+                <Plus size={15}/>Yeni Çek
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* ── Özet Kartlar ── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[
-            { label: 'Net Bakiye',    value: fmt(Math.abs(netBalance)), prefix: netBalance >= 0 ? '+' : '-', color: netBalance >= 0 ? '#10b981' : '#ef4444', icon: Wallet },
-            { label: 'Toplam Gider', value: fmt(totalOut),   prefix: '-', color: '#ef4444',  icon: TrendingDown },
-            { label: 'Bu Ay Gider',  value: fmt(monthOut),   prefix: '-', color: '#f97316',  icon: CalendarDays },
-            { label: 'Bu Ay Gelir',  value: fmt(monthIn),    prefix: '+', color: '#10b981',  icon: TrendingUp },
-          ].map((s, i) => (
-            <motion.div key={i} initial={{ opacity:0, y:12 }} animate={{ opacity:1, y:0 }}
-              transition={{ delay: i * 0.06 }}
-              className="rounded-2xl p-4"
-              style={{ background: c.card, border: `1px solid ${c.border}` }}>
-              <div className="flex items-center justify-between mb-2">
-                <div className="p-2 rounded-xl" style={{ background: `${s.color}15` }}>
-                  <s.icon size={15} style={{ color: s.color }} />
-                </div>
-              </div>
-              <p className="text-xl font-bold" style={{ color: s.color }}>
-                {s.prefix}{s.value} ₺
-              </p>
-              <p className="text-[10px] font-bold uppercase tracking-wider mt-0.5" style={{ color: c.muted }}>
-                {s.label}
-              </p>
-            </motion.div>
-          ))}
-        </div>
-
-        {/* ── İçerik Alanı: 2 Kolon ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-          {/* ── Sol: Liste ── */}
-          <div className="lg:col-span-2 space-y-4">
-
-            {/* Filtreler & Arama */}
-            <div className="space-y-2">
-              {/* Arama */}
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl border"
-                style={{ background: c.card, borderColor: c.border }}>
-                <Search size={14} style={{ color: c.muted }} />
-                <input value={search} onChange={e => setSearch(e.target.value)}
-                  placeholder="Aciklama ara..."
-                  className="bg-transparent border-none outline-none text-sm flex-1"
-                  style={{ color: c.text }} />
-                {search && <button onClick={() => setSearch('')}><X size={13} style={{ color: c.muted }} /></button>}
-              </div>
+        {/* ═══════════════ KASA TAB ═══════════════ */}
+        {mainTab === 'kasa' && (
+          <>
+            {/* Özet Kartlar */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {[
+                { label: 'Net Bakiye', value: fmt(Math.abs(netBalance)), prefix: netBalance >= 0 ? '+' : '-', color: netBalance >= 0 ? '#10b981' : '#ef4444', icon: Wallet },
+                { label: 'Toplam Gider', value: fmt(totalOut), prefix: '-', color: '#ef4444', icon: TrendingDown },
+                { label: 'Bu Ay Gider', value: fmt(monthOut), prefix: '-', color: '#f97316', icon: CalendarDays },
+                { label: 'Bu Ay Gelir', value: fmt(monthIn), prefix: '+', color: '#10b981', icon: TrendingUp },
+              ].map((s, i) => (
+                <motion.div key={i} initial={{ opacity:0, y:12 }} animate={{ opacity:1, y:0 }}
+                  transition={{ delay: i * 0.06 }} className="rounded-2xl p-4"
+                  style={{ background: c.card, border: `1px solid ${c.border}` }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="p-2 rounded-xl" style={{ background: `${s.color}15` }}>
+                      <s.icon size={15} style={{ color: s.color }} />
+                    </div>
+                  </div>
+                  <p className="text-xl font-bold" style={{ color: s.color }}>{s.prefix}{s.value} ₺</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider mt-0.5" style={{ color: c.muted }}>{s.label}</p>
+                </motion.div>
+              ))}
             </div>
 
-            {/* İşlem Listesi */}
-            <div className="space-y-2">
-              {loading && (
+            {/* İçerik Alanı */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Sol: Liste */}
+              <div className="lg:col-span-2 space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl border"
+                    style={{ background: c.card, borderColor: c.border }}>
+                    <Search size={14} style={{ color: c.muted }} />
+                    <input value={search} onChange={e => setSearch(e.target.value)}
+                      placeholder="Aciklama ara..." className="bg-transparent border-none outline-none text-sm flex-1"
+                      style={{ color: c.text }} />
+                    {search && <button onClick={() => setSearch('')}><X size={13} style={{ color: c.muted }} /></button>}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  {loading && (
+                    <div className="flex justify-center py-14">
+                      <Loader2 size={24} className="animate-spin" style={{ color: currentColor }} />
+                    </div>
+                  )}
+                  {!loading && filtered.length === 0 && (
+                    <div className="text-center py-14">
+                      <Wallet size={36} className="mx-auto mb-2 opacity-20" style={{ color: c.muted }} />
+                      <p className="text-sm font-semibold" style={{ color: c.muted }}>Kayıt bulunamadı</p>
+                    </div>
+                  )}
+                  <AnimatePresence mode="popLayout">
+                    {!loading && filtered.map((tx, i) => {
+                      const cat = catById(tx.category);
+                      const isOut = tx.direction === 'out';
+                      return (
+                        <motion.div key={tx.id} layout
+                          initial={{ opacity:0, y:6 }} animate={{ opacity:1, y:0 }}
+                          exit={{ opacity:0, scale:0.97 }} transition={{ delay: Math.min(i * 0.02, 0.15) }}
+                          className="group rounded-2xl p-4 transition-all"
+                          style={{
+                            background: tx.is_settled ? 'rgba(255,255,255,0.02)' : (isDark ? 'rgba(30,41,59,0.5)' : '#fff'),
+                            border: `1px solid ${tx.is_settled ? 'rgba(148,163,184,0.06)' : c.border}`,
+                            opacity: tx.is_settled ? 0.55 : 1,
+                          }}>
+                          <div className="flex items-start gap-3">
+                            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
+                              style={{ background: `${cat.color}18`, border: `1px solid ${cat.color}30` }}>
+                              <cat.icon size={15} style={{ color: cat.color }} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className="text-sm font-semibold truncate" style={{ color: c.text }}>
+                                      {tx.description || cat.label}
+                                    </p>
+                                    <CatBadge catId={tx.category} />
+                                    {tx.is_settled && (
+                                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+                                        style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981' }}>Kapatıldı</span>
+                                    )}
+                                  </div>
+                                  <span className="text-[10px]" style={{ color: c.muted }}>{fmtD(tx.tx_date)}</span>
+                                </div>
+                                <p className="text-base font-bold flex-shrink-0" style={{ color: isOut ? '#f87171' : '#34d399' }}>
+                                  {isOut ? '-' : '+'}{fmt(tx.amount)} ₺
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 mt-2.5 pt-2.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                            style={{ borderTop: '1px solid rgba(148,163,184,0.07)' }}>
+                            <button onClick={() => toggleSettle(tx)}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all"
+                              style={{ background: tx.is_settled ? 'rgba(255,255,255,0.05)' : 'rgba(16,185,129,0.1)', color: tx.is_settled ? c.muted : '#10b981' }}>
+                              <Check size={11} />{tx.is_settled ? 'Yeniden Aç' : 'Kapat / Ödendi'}
+                            </button>
+                            <button onClick={() => { setEditing(tx); setShowForm(true); }}
+                              className="p-1.5 rounded-lg transition-colors"
+                              style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', color: '#64748b' }}>
+                              <Edit3 size={12} />
+                            </button>
+                            <button onClick={() => handleDelete(tx.id)}
+                              className="p-1.5 rounded-lg transition-colors"
+                              style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', color: '#64748b' }}>
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
+                </div>
+              </div>
+
+              {/* Sağ: Kategori Dağılımı */}
+              <div className="space-y-5">
+                <div className="glass-card p-4">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Kategori Dağılımı</p>
+                  {CATEGORIES.map(cat => {
+                    const catTotal = openTxs.filter(t => t.category === cat.id && t.direction === 'out').reduce((s,t) => s + t.amount, 0);
+                    if (catTotal === 0) return null;
+                    const pct = totalOut > 0 ? (catTotal / totalOut) * 100 : 0;
+                    return (
+                      <div key={cat.id} className="mb-2.5">
+                        <div className="flex justify-between items-center mb-1">
+                          <div className="flex items-center gap-1.5">
+                            <cat.icon size={11} style={{ color: cat.color }} />
+                            <span className="text-[11px] font-semibold" style={{ color: '#94a3b8' }}>{cat.label}</span>
+                          </div>
+                          <span className="text-[11px] font-bold" style={{ color: cat.color }}>{fmt(catTotal)} ₺</span>
+                        </div>
+                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.07)' }}>
+                          <motion.div className="h-full rounded-full" style={{ background: cat.color }}
+                            initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ delay: 0.2 }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ═══════════════ ÇEKLER TAB ═══════════════ */}
+        {mainTab === 'cekler' && (
+          <>
+            {/* Çek Özet */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {[
+                { label: 'Alınan Çek', value: receivedCheques.length, sub: fmt(receivedCheques.filter(ch=>ch.status==='active').reduce((s,ch)=>s+Number(ch.amount),0)), color: '#10b981' },
+                { label: 'Verilen Çek', value: givenCheques.length, sub: fmt(givenCheques.filter(ch=>ch.status==='active').reduce((s,ch)=>s+Number(ch.amount),0)), color: '#ef4444' },
+                { label: 'Aktif Çek', value: cheques.filter(ch=>ch.status==='active').length, sub: fmt(cheques.filter(ch=>ch.status==='active').reduce((s,ch)=>s+Number(ch.amount),0)), color: '#3b82f6' },
+                { label: 'Kullanılan', value: cheques.filter(ch=>ch.status==='used').length, sub: fmt(cheques.filter(ch=>ch.status==='used').reduce((s,ch)=>s+Number(ch.amount),0)), color: '#f59e0b' },
+              ].map((s,i) => (
+                <div key={i} className="rounded-2xl p-4" style={{ background: c.card, border: `1px solid ${c.border}` }}>
+                  <p className="text-2xl font-bold" style={{ color: s.color }}>{s.value}</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: c.muted }}>{s.label}</p>
+                  <p className="text-xs font-semibold mt-1" style={{ color: s.color }}>{s.sub} ₺</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Alınan / Verilen Sub-tabs */}
+            <div className="flex gap-1 p-1 rounded-xl" style={{ background: isDark ? 'rgba(255,255,255,0.04)' : '#f1f5f9' }}>
+              {[
+                { id: 'received', label: 'Alınan Çekler', icon: ArrowDownLeft, count: receivedCheques.length, color: '#10b981' },
+                { id: 'given', label: 'Verilen Çekler', icon: ArrowUpRight, count: givenCheques.length, color: '#ef4444' },
+              ].map(t => (
+                <button key={t.id} onClick={() => setChqTab(t.id)}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-bold transition-all"
+                  style={{
+                    background: chqTab === t.id ? (isDark ? 'rgba(255,255,255,0.08)' : '#fff') : 'transparent',
+                    color: chqTab === t.id ? t.color : c.muted,
+                    boxShadow: chqTab === t.id ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+                  }}>
+                  <t.icon size={13}/> {t.label}
+                  {t.count > 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full font-black"
+                    style={{ background: `${t.color}18`, color: t.color }}>{t.count}</span>}
+                </button>
+              ))}
+            </div>
+
+            {/* Çek Listesi */}
+            <div className="space-y-3">
+              {chqLoading && (
                 <div className="flex justify-center py-14">
-                  <Loader2 size={24} className="animate-spin" style={{ color: currentColor }} />
+                  <Loader2 size={24} className="animate-spin" style={{ color: currentColor }}/>
                 </div>
               )}
-              {!loading && filtered.length === 0 && (
+              {!chqLoading && (chqTab === 'received' ? receivedCheques : givenCheques).length === 0 && (
                 <div className="text-center py-14">
-                  <Wallet size={36} className="mx-auto mb-2 opacity-20" style={{ color: c.muted }} />
-                  <p className="text-sm font-semibold" style={{ color: c.muted }}>Kayıt bulunamadı</p>
-                  <p className="text-xs mt-1 opacity-70" style={{ color: c.muted }}>
-                    Yeni kayıt eklemek için sağ üstteki butonu kullanın.
+                  <Receipt size={36} className="mx-auto mb-2 opacity-20" style={{ color: c.muted }}/>
+                  <p className="text-sm font-semibold" style={{ color: c.muted }}>
+                    {chqTab === 'received' ? 'Alınan çek yok' : 'Verilen çek yok'}
                   </p>
                 </div>
               )}
-              <AnimatePresence mode="popLayout">
-                {!loading && filtered.map((tx, i) => {
-                  const cat = catById(tx.category);
-                  const isOut = tx.direction === 'out';
-                  return (
-                    <motion.div key={tx.id}
-                      layout
-                      initial={{ opacity:0, y:6 }} animate={{ opacity:1, y:0 }}
-                      exit={{ opacity:0, scale:0.97 }}
-                      transition={{ delay: Math.min(i * 0.02, 0.15) }}
-                      className="group rounded-2xl p-4 transition-all"
-                      style={{
-                        background: tx.is_settled ? 'rgba(255,255,255,0.02)' : (isDark ? 'rgba(30,41,59,0.5)' : '#fff'),
-                        border: `1px solid ${tx.is_settled ? 'rgba(148,163,184,0.06)' : c.border}`,
-                        opacity: tx.is_settled ? 0.55 : 1,
-                      }}>
+              {!chqLoading && (chqTab === 'received' ? receivedCheques : givenCheques).map(chq => {
+                const st = CHQ_STATUS[chq.status] || CHQ_STATUS.active;
+                const StIcon = st.icon;
+                const isReceived = chq.direction === 'received';
+                const linkedChq = chq.transferred_to ? cheques.find(c2 => c2.id === chq.transferred_to) : null;
+                const sourceChq = chq.transferred_from ? cheques.find(c2 => c2.id === chq.transferred_from) : null;
+                return (
+                  <motion.div key={chq.id} initial={{ opacity:0, y:6 }} animate={{ opacity:1, y:0 }}
+                    className="group rounded-2xl overflow-hidden"
+                    style={{ background: c.card, border: `1px solid ${c.border}` }}>
+                    <div className="p-4">
                       <div className="flex items-start gap-3">
-                        {/* Kategori İkonu */}
-                        <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
-                          style={{ background: `${cat.color}18`, border: `1px solid ${cat.color}30` }}>
-                          <cat.icon size={15} style={{ color: cat.color }} />
+                        {/* İkon */}
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                          style={{ background: `${isReceived ? '#10b981' : '#ef4444'}15` }}>
+                          {isReceived ? <ArrowDownLeft size={18} style={{ color: '#10b981' }}/> : <ArrowUpRight size={18} style={{ color: '#ef4444' }}/>}
                         </div>
-
-                        {/* İçerik */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <p className="text-sm font-semibold truncate" style={{ color: c.text }}>
-                                  {tx.description || cat.label}
+                                <p className="text-sm font-bold" style={{ color: c.text }}>
+                                  {isReceived ? (chq.from_name || 'Bilinmeyen') : (chq.to_name || 'Bilinmeyen')}
                                 </p>
-                                <CatBadge catId={tx.category} />
-                                {tx.is_settled && (
-                                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
-                                    style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981' }}>Kapatıldı</span>
-                                )}
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold"
+                                  style={{ background: `${st.color}18`, color: st.color }}>
+                                  <StIcon size={10}/> {st.label}
+                                </span>
                               </div>
-                              <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                                <span className="text-[10px]" style={{ color: c.muted }}>{fmtD(tx.tx_date)}</span>
+                              <div className="flex items-center gap-3 mt-1 flex-wrap">
+                                {chq.cheque_no && <span className="text-[10px] font-mono font-bold" style={{ color: c.muted }}>#{chq.cheque_no}</span>}
+                                {chq.bank_name && <span className="text-[10px]" style={{ color: c.muted }}>{chq.bank_name}</span>}
+                                {chq.due_date && <span className="text-[10px]" style={{ color: c.muted }}>Vade: {fmtD(chq.due_date)}</span>}
                               </div>
                             </div>
-                            {/* Tutar */}
-                            <div className="text-right flex-shrink-0">
-                              <p className="text-base font-bold" style={{ color: isOut ? '#f87171' : '#34d399' }}>
-                                {isOut ? '-' : '+'}{fmt(tx.amount)} ₺
-                              </p>
-                            </div>
+                            <p className="text-lg font-black flex-shrink-0" style={{ color: isReceived ? '#10b981' : '#ef4444' }}>
+                              {fmt(chq.amount)} ₺
+                            </p>
                           </div>
+
+                          {/* Transfer bilgisi */}
+                          {chq.transfer_note && (
+                            <div className="mt-2 px-2.5 py-1.5 rounded-lg flex items-center gap-2"
+                              style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)' }}>
+                              <ArrowRightLeft size={11} style={{ color: '#f59e0b' }}/>
+                              <span className="text-[10px] font-semibold" style={{ color: '#f59e0b' }}>{chq.transfer_note}</span>
+                            </div>
+                          )}
+                          {sourceChq && (
+                            <div className="mt-2 px-2.5 py-1.5 rounded-lg flex items-center gap-2"
+                              style={{ background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.15)' }}>
+                              <ArrowDownLeft size={11} style={{ color: '#3b82f6' }}/>
+                              <span className="text-[10px] font-semibold" style={{ color: '#3b82f6' }}>
+                                {sourceChq.from_name || 'Bilinmeyen'} çeki ile ödeme yapıldı
+                              </span>
+                            </div>
+                          )}
+                          {linkedChq && (
+                            <div className="mt-2 px-2.5 py-1.5 rounded-lg flex items-center gap-2"
+                              style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)' }}>
+                              <ChevronRight size={11} style={{ color: '#f59e0b' }}/>
+                              <span className="text-[10px] font-semibold" style={{ color: '#f59e0b' }}>
+                                {linkedChq.to_name || '?'} tedarikçisine devredildi
+                              </span>
+                            </div>
+                          )}
+                          {chq.notes && !chq.transfer_note && (
+                            <p className="text-[10px] mt-1.5" style={{ color: c.muted }}>{chq.notes}</p>
+                          )}
                         </div>
                       </div>
-
-                      {/* Aksiyonlar (hover) */}
-                      <div className="flex items-center gap-2 mt-2.5 pt-2.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                        style={{ borderTop: '1px solid rgba(148,163,184,0.07)' }}>
-                        <button onClick={() => toggleSettle(tx)}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all"
-                          style={{ background: tx.is_settled ? 'rgba(255,255,255,0.05)' : 'rgba(16,185,129,0.1)', color: tx.is_settled ? c.muted : '#10b981' }}>
-                          <Check size={11} />{tx.is_settled ? 'Yeniden Aç' : 'Kapat / Ödendi'}
-                        </button>
-                        <button onClick={() => { setEditing(tx); setShowForm(true); }}
-                          className="p-1.5 rounded-lg transition-colors"
-                          style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', color: '#64748b' }}>
-                          <Edit3 size={12} />
-                        </button>
-                        <button onClick={() => handleDelete(tx.id)}
-                          className="p-1.5 rounded-lg transition-colors"
-                          style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', color: '#64748b' }}>
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-            </div>
-          </div>
-
-          {/* ── Sağ: Kişi Özeti + Kategori Dağılımı ── */}
-          <div className="space-y-5">
-
-            {/* Kategori Özeti */}
-            <div className="glass-card p-4">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-3">Kategori Dağılımı</p>
-              {CATEGORIES.map(cat => {
-                const catTotal = openTxs
-                  .filter(t => t.category === cat.id && t.direction === 'out')
-                  .reduce((s,t) => s + t.amount, 0);
-                if (catTotal === 0) return null;
-                const pct = totalOut > 0 ? (catTotal / totalOut) * 100 : 0;
-                return (
-                  <div key={cat.id} className="mb-2.5">
-                    <div className="flex justify-between items-center mb-1">
-                      <div className="flex items-center gap-1.5">
-                        <cat.icon size={11} style={{ color: cat.color }} />
-                        <span className="text-[11px] font-semibold" style={{ color: '#94a3b8' }}>{cat.label}</span>
-                      </div>
-                      <span className="text-[11px] font-bold" style={{ color: cat.color }}>{fmt(catTotal)} ₺</span>
                     </div>
-                    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.07)' }}>
-                      <motion.div className="h-full rounded-full" style={{ background: cat.color }}
-                        initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ delay: 0.2 }} />
+
+                    {/* Çek görseli */}
+                    {chq.image_url && (
+                      <div className="px-4 pb-2">
+                        <img src={chq.image_url} alt="Çek" className="w-full max-h-48 object-cover rounded-xl border"
+                          style={{ borderColor: c.border }}/>
+                      </div>
+                    )}
+
+                    {/* Aksiyonlar */}
+                    <div className="flex items-center gap-2 px-4 pb-3 pt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {isReceived && chq.status === 'active' && (
+                        <button onClick={() => setTransferChq(chq)}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold"
+                          style={{ background: 'rgba(245,158,11,0.1)', color: '#f59e0b' }}>
+                          <ArrowRightLeft size={11}/> Devret
+                        </button>
+                      )}
+                      <label className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold cursor-pointer"
+                        style={{ background: 'rgba(139,92,246,0.1)', color: '#a78bfa' }}>
+                        <Upload size={11}/> Görsel
+                        <input type="file" accept="image/*" className="hidden"
+                          onChange={e => { if (e.target.files[0]) uploadChequeImage(chq.id, e.target.files[0]); }}/>
+                      </label>
+                      <button onClick={() => { setEditChq(chq); setShowChqForm(true); }}
+                        className="p-1.5 rounded-lg" style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', color: '#64748b' }}>
+                        <Edit3 size={12}/>
+                      </button>
+                      <button onClick={() => deleteCheque(chq.id)}
+                        className="p-1.5 rounded-lg" style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', color: '#64748b' }}>
+                        <Trash2 size={12}/>
+                      </button>
                     </div>
-                  </div>
+                  </motion.div>
                 );
               })}
             </div>
-          </div>
-        </div>
+          </>
+        )}
       </motion.div>
 
-      {/* Form Modal */}
+      {/* ── Kasa Form Modal ── */}
       <AnimatePresence>
         {showForm && (
           <TxForm tx={editing} onSave={handleSaved} onClose={() => { setShowForm(false); setEditing(null); }} color={currentColor} />
         )}
       </AnimatePresence>
+
+      {/* ── Çek Form Modal ── */}
+      <AnimatePresence>
+        {showChqForm && (() => {
+          const ChequeFormModal = () => {
+            const [f, setF] = useState({
+              direction: editChq?.direction || (chqTab === 'given' ? 'given' : 'received'),
+              amount: editChq?.amount || '',
+              currency: editChq?.currency || 'TRY',
+              cheque_no: editChq?.cheque_no || '',
+              bank_name: editChq?.bank_name || '',
+              due_date: editChq?.due_date ? editChq.due_date.split('T')[0] : '',
+              issue_date: editChq?.issue_date ? editChq.issue_date.split('T')[0] : new Date().toISOString().split('T')[0],
+              from_name: editChq?.from_name || '',
+              to_name: editChq?.to_name || '',
+              notes: editChq?.notes || '',
+              status: editChq?.status || 'active',
+            });
+            const [saving, setSaving] = useState(false);
+            const s = (k,v) => setF(prev => ({ ...prev, [k]: v }));
+            const inp = { background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`,
+              borderRadius: 10, color: isDark ? '#f1f5f9' : '#1e293b', padding: '8px 12px', fontSize: 13, outline: 'none', width: '100%' };
+            return (
+              <div className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+                style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}>
+                <motion.div initial={{ opacity:0, scale:0.96 }} animate={{ opacity:1, scale:1 }}
+                  className="w-full max-w-md rounded-3xl overflow-y-auto"
+                  style={{ background: isDark ? '#0c1526' : '#fff', border: `1px solid ${c.border}`, maxHeight: '90vh' }}>
+                  <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: `1px solid ${c.border}` }}>
+                    <h2 className="text-sm font-bold" style={{ color: c.text }}>{editChq?.id ? 'Çek Düzenle' : 'Yeni Çek'}</h2>
+                    <button onClick={() => { setShowChqForm(false); setEditChq(null); }} style={{ color: c.muted }}><X size={15}/></button>
+                  </div>
+                  <div className="px-6 py-5 space-y-4">
+                    {/* Yön */}
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: c.muted }}>Tür</p>
+                      <div className="flex gap-2">
+                        {[{ v:'received', l:'Alınan', c2:'#10b981' }, { v:'given', l:'Verilen', c2:'#ef4444' }].map(o => (
+                          <button key={o.v} onClick={() => s('direction', o.v)}
+                            className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
+                            style={{ background: f.direction === o.v ? `${o.c2}18` : 'rgba(255,255,255,0.04)',
+                              border: `1px solid ${f.direction === o.v ? o.c2+'50' : 'rgba(148,163,184,0.1)'}`,
+                              color: f.direction === o.v ? o.c2 : c.muted }}>
+                            {o.l}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Tutar + Çek No */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Tutar *</p>
+                        <input style={inp} type="number" step="0.01" placeholder="0.00" value={f.amount} onChange={e => s('amount', e.target.value)}/>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Çek No</p>
+                        <input style={inp} placeholder="CHK-001" value={f.cheque_no} onChange={e => s('cheque_no', e.target.value)}/>
+                      </div>
+                    </div>
+                    {/* Banka + Vade */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Banka</p>
+                        <input style={inp} placeholder="İş Bankası" value={f.bank_name} onChange={e => s('bank_name', e.target.value)}/>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Vade Tarihi</p>
+                        <input style={inp} type="date" value={f.due_date} onChange={e => s('due_date', e.target.value)}/>
+                      </div>
+                    </div>
+                    {/* Kimden / Kime */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>
+                          {f.direction === 'received' ? 'Kimden (Müşteri)' : 'Kimden'}
+                        </p>
+                        <input style={inp} placeholder="Seva Aydınlatma" value={f.from_name} onChange={e => s('from_name', e.target.value)}/>
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>
+                          {f.direction === 'given' ? 'Kime (Tedarikçi)' : 'Kime'}
+                        </p>
+                        <input style={inp} placeholder="GMC Tedarik" value={f.to_name} onChange={e => s('to_name', e.target.value)}/>
+                      </div>
+                    </div>
+                    {/* Durum */}
+                    {editChq?.id && (
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: c.muted }}>Durum</p>
+                        <div className="flex gap-1 flex-wrap">
+                          {Object.entries(CHQ_STATUS).map(([k,v]) => (
+                            <button key={k} onClick={() => s('status', k)}
+                              className="px-2.5 py-1 rounded-lg text-[10px] font-bold"
+                              style={{ background: f.status === k ? `${v.color}18` : 'rgba(255,255,255,0.04)', color: f.status === k ? v.color : c.muted }}>
+                              {v.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {/* Not */}
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Not</p>
+                      <input style={inp} placeholder="Ek bilgi..." value={f.notes} onChange={e => s('notes', e.target.value)}/>
+                    </div>
+                    <button onClick={async () => {
+                      if (!f.amount) return;
+                      setSaving(true);
+                      await saveCheque(editChq, { ...f, amount: parseFloat(f.amount) });
+                      setSaving(false);
+                    }} disabled={saving || !f.amount}
+                      className="w-full py-3 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
+                      style={{ background: currentColor, opacity: saving || !f.amount ? 0.5 : 1 }}>
+                      {saving ? <Loader2 size={14} className="animate-spin"/> : <CheckCircle2 size={14}/>}
+                      {editChq?.id ? 'Güncelle' : 'Kaydet'}
+                    </button>
+                  </div>
+                </motion.div>
+              </div>
+            );
+          };
+          return <ChequeFormModal/>;
+        })()}
+      </AnimatePresence>
+
+      {/* ── Devir Modal ── */}
+      {transferChq && (() => {
+        const TransferModal = () => {
+          const [toName, setToName] = useState('');
+          const [note, setNote] = useState('');
+          const [saving, setSaving] = useState(false);
+          const inp = { background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`,
+            borderRadius: 10, color: isDark ? '#f1f5f9' : '#1e293b', padding: '8px 12px', fontSize: 13, outline: 'none', width: '100%' };
+          return (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+              style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}>
+              <motion.div initial={{ opacity:0, scale:0.96 }} animate={{ opacity:1, scale:1 }}
+                className="w-full max-w-sm rounded-3xl p-6 space-y-4"
+                style={{ background: isDark ? '#0c1526' : '#fff', border: `1px solid ${c.border}` }}>
+                <div className="text-center">
+                  <div className="w-14 h-14 rounded-2xl mx-auto mb-3 flex items-center justify-center"
+                    style={{ background: 'rgba(245,158,11,0.12)' }}>
+                    <ArrowRightLeft size={24} style={{ color: '#f59e0b' }}/>
+                  </div>
+                  <h3 className="text-base font-bold" style={{ color: c.text }}>Çek Devret</h3>
+                  <p className="text-xs mt-1" style={{ color: c.muted }}>
+                    {transferChq.from_name || '?'} — {fmt(transferChq.amount)} ₺
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Kime Devredilecek (Tedarikçi) *</p>
+                  <input style={inp} placeholder="GMC Tedarik" value={toName} onChange={e => setToName(e.target.value)}/>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Not</p>
+                  <input style={inp} placeholder="Devir açıklaması..." value={note} onChange={e => setNote(e.target.value)}/>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setTransferChq(null)} className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
+                    style={{ color: c.muted }}>İptal</button>
+                  <button disabled={!toName || saving} onClick={async () => { setSaving(true); await doTransfer(transferChq, toName, note); setSaving(false); }}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
+                    style={{ background: '#f59e0b', opacity: !toName || saving ? 0.5 : 1 }}>
+                    {saving ? <Loader2 size={14} className="animate-spin"/> : <ArrowRightLeft size={14}/>} Devret
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          );
+        };
+        return <TransferModal/>;
+      })()}
 
       <AnimatePresence>
         {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
