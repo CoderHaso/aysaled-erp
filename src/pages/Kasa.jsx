@@ -326,17 +326,23 @@ export default function Kasa() {
 
   const saveCheque = async (chq, formData) => {
     try {
+      let saved;
       if (chq?.id) {
-        const { data } = await supabase.from('cheques').update(formData).eq('id', chq.id).select().single();
+        const { data, error } = await supabase.from('cheques').update(formData).eq('id', chq.id).select().single();
+        if (error) throw error;
+        saved = data;
         setCheques(prev => prev.map(c2 => c2.id === data.id ? data : c2));
         showToast('Çek güncellendi ✓');
       } else {
-        const { data } = await supabase.from('cheques').insert(formData).select().single();
+        const { data, error } = await supabase.from('cheques').insert(formData).select().single();
+        if (error) throw error;
+        saved = data;
         setCheques(prev => [data, ...prev]);
         showToast('Çek eklendi ✓');
       }
       setShowChqForm(false); setEditChq(null);
-    } catch(e) { showToast(e.message, 'error'); }
+      return saved;
+    } catch(e) { showToast(e.message, 'error'); return null; }
   };
 
   const deleteCheque = (id) => {
@@ -375,14 +381,62 @@ export default function Kasa() {
   };
 
   const uploadChequeImage = async (chqId, file) => {
-    const ext = file.name.split('.').pop();
-    const path = `cheques/${chqId}.${ext}`;
-    const { error: upErr } = await supabase.storage.from('media').upload(path, file, { upsert: true });
-    if (upErr) { showToast('Görsel yüklenemedi', 'error'); return; }
-    const { data: urlData } = supabase.storage.from('media').getPublicUrl(path);
-    await supabase.from('cheques').update({ image_url: urlData.publicUrl }).eq('id', chqId);
-    setCheques(prev => prev.map(c2 => c2.id === chqId ? { ...c2, image_url: urlData.publicUrl } : c2));
-    showToast('Görsel yüklendi ✓');
+    try {
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const r = await fetch('/api/media', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: `cheque_${chqId}_${Date.now()}.${file.name.split('.').pop()}`,
+          mimeType: file.type, fileSize: file.size, fileData: base64,
+          name: `Çek ${chqId}`,
+        }),
+      });
+      const { publicUrl, error } = await r.json();
+      if (error) throw new Error(error);
+      await supabase.from('cheques').update({ image_url: publicUrl }).eq('id', chqId);
+      setCheques(prev => prev.map(c2 => c2.id === chqId ? { ...c2, image_url: publicUrl } : c2));
+      showToast('Görsel yüklendi ✓');
+      return publicUrl;
+    } catch(e) { showToast('Görsel yüklenemedi: ' + e.message, 'error'); return null; }
+  };
+
+  // Media items for image picker
+  const [chqMediaItems, setChqMediaItems] = useState([]);
+  const [chqImagePicker, setChqImagePicker] = useState(null); // cheque id to attach image
+  const [chqMediaSearch, setChqMediaSearch] = useState('');
+  const [chqUploading, setChqUploading] = useState(false);
+
+  const openChqImagePicker = async (chqId) => {
+    setChqImagePicker(chqId);
+    const { data } = await supabase.from('media').select('*').order('created_at', { ascending: false });
+    setChqMediaItems(data || []);
+  };
+
+  const selectChqMedia = async (url) => {
+    if (!chqImagePicker) return;
+    await supabase.from('cheques').update({ image_url: url }).eq('id', chqImagePicker);
+    setCheques(prev => prev.map(c2 => c2.id === chqImagePicker ? { ...c2, image_url: url } : c2));
+    setChqImagePicker(null);
+    showToast('Görsel seçildi ✓');
+  };
+
+  const uploadChqDirect = async (file) => {
+    if (!file || !chqImagePicker) return;
+    setChqUploading(true);
+    try {
+      const url = await uploadChequeImage(chqImagePicker, file);
+      if (url) {
+        setChqImagePicker(null);
+        const { data } = await supabase.from('media').select('*').order('created_at', { ascending: false });
+        setChqMediaItems(data || []);
+      }
+    } finally { setChqUploading(false); }
   };
 
   const CHQ_STATUS = {
@@ -738,12 +792,11 @@ export default function Kasa() {
                           <ArrowRightLeft size={11}/> Devret
                         </button>
                       )}
-                      <label className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold cursor-pointer"
+                      <button onClick={() => openChqImagePicker(chq.id)}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold"
                         style={{ background: 'rgba(139,92,246,0.1)', color: '#a78bfa' }}>
                         <Upload size={11}/> Görsel
-                        <input type="file" accept="image/*" className="hidden"
-                          onChange={e => { if (e.target.files[0]) uploadChequeImage(chq.id, e.target.files[0]); }}/>
-                      </label>
+                      </button>
                       <button onClick={() => { setEditChq(chq); setShowChqForm(true); }}
                         className="p-1.5 rounded-lg" style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', color: '#64748b' }}>
                         <Edit3 size={12}/>
@@ -896,7 +949,7 @@ export default function Kasa() {
                       <label className="flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer border"
                         style={{ borderColor: c.border, background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc' }}>
                         <Upload size={13} style={{ color: '#a78bfa' }}/>
-                        <span className="text-xs" style={{ color: c.muted }}>{f._imageFile ? f._imageFile.name : 'Görsel seç...'}</span>
+                        <span className="text-xs" style={{ color: c.muted }}>{f._imageFile ? f._imageFile.name : 'Dosya seç...'}</span>
                         <input type="file" accept="image/*" className="hidden"
                           onChange={e => { if (e.target.files[0]) s('_imageFile', e.target.files[0]); }}/>
                       </label>
@@ -911,10 +964,8 @@ export default function Kasa() {
                       setSaving(true);
                       const { _imageFile, ...payload } = f;
                       const saved = await saveCheque(editChq, { ...payload, amount: parseFloat(payload.amount) });
-                      if (_imageFile) {
-                        // Find the saved cheque's ID to upload image
-                        const latest = cheques.find(ch2 => ch2.cheque_no === payload.cheque_no && ch2.amount === parseFloat(payload.amount));
-                        if (latest) await uploadChequeImage(latest.id, _imageFile);
+                      if (_imageFile && saved?.id) {
+                        await uploadChequeImage(saved.id, _imageFile);
                       }
                       setSaving(false);
                     }} disabled={saving || !f.amount}
@@ -979,6 +1030,63 @@ export default function Kasa() {
         };
         return <TransferModal/>;
       })()}
+
+      {/* ── Çek Görsel Seç/Yükle Modal ── */}
+      {chqImagePicker && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.72)' }}>
+          <div className="rounded-2xl shadow-2xl w-full max-w-2xl max-h-[88vh] overflow-hidden flex flex-col"
+            style={{ background: isDark ? '#0c1526' : '#fff', border: `1px solid ${c.border}` }}>
+            <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${c.border}` }}>
+              <p className="font-bold text-sm" style={{ color: c.text }}>Görsel Seç / Yükle</p>
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white cursor-pointer"
+                  style={{ background: currentColor }}>
+                  {chqUploading ? <Loader2 size={12} className="animate-spin"/> : <Upload size={12}/>}
+                  Yükle
+                  <input type="file" accept="image/*" className="hidden"
+                    onChange={e => { const f2 = e.target.files?.[0]; if (f2) uploadChqDirect(f2); e.target.value = ''; }}/>
+                </label>
+                <button onClick={() => setChqImagePicker(null)} style={{ color: c.muted }}><X size={18}/></button>
+              </div>
+            </div>
+            <div className="px-4 py-3" style={{ borderBottom: `1px solid ${c.border}` }}>
+              <input value={chqMediaSearch} onChange={e => setChqMediaSearch(e.target.value)}
+                placeholder="Görsel ara..." className="w-full px-3 py-2 rounded-lg text-sm outline-none border"
+                style={{ background: c.card, borderColor: c.border, color: c.text }}/>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              {chqUploading ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 size={28} className="animate-spin" style={{ color: currentColor }}/>
+                  <span className="ml-2 text-sm" style={{ color: c.muted }}>Yükleniyor...</span>
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                  {chqMediaItems
+                    .filter(m => m.mime_type?.startsWith('image/') && (m.name || '').toLowerCase().includes(chqMediaSearch.toLowerCase()))
+                    .map(m => (
+                      <div key={m.id} onClick={() => selectChqMedia(m.file_url)}
+                        className="aspect-square rounded-xl overflow-hidden cursor-pointer border-2 border-transparent hover:border-purple-500 transition-all group relative"
+                        style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9' }}>
+                        <img src={m.file_url} alt={m.name} className="w-full h-full object-cover"/>
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-1">
+                          <p className="text-[10px] text-white truncate">{m.name}</p>
+                        </div>
+                      </div>
+                    ))}
+                  {chqMediaItems.filter(m => m.mime_type?.startsWith('image/')).length === 0 && (
+                    <div className="col-span-4 text-center py-12">
+                      <Upload size={36} className="mx-auto mb-2 opacity-20" style={{ color: c.muted }}/>
+                      <p className="text-sm font-semibold" style={{ color: c.muted }}>Henüz görsel yok</p>
+                      <p className="text-xs mt-1" style={{ color: c.muted }}>Yukarıdaki "Yükle" butonuyla ekleyebilirsiniz</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <AnimatePresence>
         {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
