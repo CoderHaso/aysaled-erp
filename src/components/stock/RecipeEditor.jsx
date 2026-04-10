@@ -269,10 +269,11 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
           style={{ background: currentColor }}>
           {index + 1}
         </div>
-        <div className="flex-1 min-w-0" onClick={e => e.stopPropagation()}>
+        <div className="flex-1 min-w-0">
           {editingName ? (
             <input autoFocus value={nameVal} onChange={e => setNameVal(e.target.value)}
               onBlur={handleNameBlur} onKeyDown={e => e.key === 'Enter' && handleNameBlur()}
+              onClick={e => e.stopPropagation()}
               className="bg-transparent outline-none font-semibold text-sm w-full"
               style={{ color: c.text, borderBottom: `1px solid ${currentColor}` }} />
           ) : (

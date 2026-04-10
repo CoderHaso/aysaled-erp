@@ -328,9 +328,16 @@ export default function Kasa() {
   const saveCheque = async (chq, formData) => {
     try {
       // Clean: empty strings → null for date fields
-      const clean = { ...formData };
+      const { source_cheque_id, ...clean } = formData;
       if (!clean.due_date) clean.due_date = null;
       if (!clean.issue_date) clean.issue_date = null;
+
+      if (!chq?.id && source_cheque_id) {
+        clean.transferred_from = source_cheque_id;
+        clean.transfer_note = clean.transfer_note || `${clean.from_name || 'Alınan'} çeki ${clean.to_name}'e devredildi`;
+        clean.notes = clean.notes || `Devir: ${clean.from_name || '?'} → ${clean.to_name}`;
+      }
+
       let saved;
       if (chq?.id) {
         const { data, error } = await supabase.from('cheques').update(clean).eq('id', chq.id).select().single();
@@ -342,7 +349,22 @@ export default function Kasa() {
         const { data, error } = await supabase.from('cheques').insert(clean).select().single();
         if (error) throw error;
         saved = data;
-        setCheques(prev => [data, ...prev]);
+
+        if (source_cheque_id) {
+          // Update source cheque to 'used'
+          const { data: updatedSrc } = await supabase.from('cheques').update({
+            status: 'used', transferred_to: saved.id,
+            transfer_note: `${clean.to_name}'e devredildi`,
+          }).eq('id', source_cheque_id).select().single();
+
+          if (updatedSrc) {
+            setCheques(prev => [saved, ...prev.map(c2 => c2.id === updatedSrc.id ? updatedSrc : c2)]);
+          } else {
+            setCheques(prev => [saved, ...prev]);
+          }
+        } else {
+          setCheques(prev => [data, ...prev]);
+        }
         showToast('Çek eklendi ✓');
       }
       setShowChqForm(false); setEditChq(null);
@@ -834,11 +856,6 @@ export default function Kasa() {
                           <ArrowRightLeft size={11}/> Devret
                         </button>
                       )}
-                      <button onClick={() => openChqImagePicker(chq.id)}
-                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold"
-                        style={{ background: 'rgba(139,92,246,0.1)', color: '#a78bfa' }}>
-                        <Upload size={11}/> Görsel
-                      </button>
                       <button onClick={() => { setEditChq(chq); setShowChqForm(true); }}
                         className="p-1.5 rounded-lg" style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', color: '#64748b' }}>
                         <Edit3 size={12}/>
@@ -1056,6 +1073,9 @@ function ChequeFormInner({ editChq, chqTab, isDark, c, currentColor, CHQ_STATUS,
         if (!f.cheque_no) s('cheque_no', src.cheque_no || '');
         if (!f.bank_name) s('bank_name', src.bank_name || '');
         if (!f.due_date && src.due_date) s('due_date', src.due_date.split('T')[0]);
+        if (src.image_url) {
+          setSelectedImgUrl(src.image_url);
+        }
       }
     }
   };
@@ -1077,11 +1097,16 @@ function ChequeFormInner({ editChq, chqTab, isDark, c, currentColor, CHQ_STATUS,
   const handleSave = async () => {
     if (!f.amount) return;
     setSaving(true);
+    
+    const extra = {};
+    if (sourceKey && sourceKey.startsWith('__chq__')) {
+      extra.source_cheque_id = sourceKey.replace('__chq__', '');
+    }
+
     if (croppedFile) {
-      const saved = await saveCheque(editChq, { ...f, amount: parseFloat(f.amount) });
+      const saved = await saveCheque(editChq, { ...f, amount: parseFloat(f.amount), ...extra });
       if (saved?.id) await uploadChequeImage(saved.id, croppedFile);
     } else {
-      const extra = {};
       if (selectedImgUrl && selectedImgUrl !== editChq?.image_url) extra.image_url = selectedImgUrl;
       await saveCheque(editChq, { ...f, amount: parseFloat(f.amount), ...extra });
     }
