@@ -413,35 +413,72 @@ export default function Kasa() {
 
   // Media items for image picker
   const [chqMediaItems, setChqMediaItems] = useState([]);
-  const [chqImagePicker, setChqImagePicker] = useState(null); // cheque id to attach image
+  const [chqImagePicker, setChqImagePicker] = useState(null); // cheque id OR '__form__'
   const [chqMediaSearch, setChqMediaSearch] = useState('');
   const [chqUploading, setChqUploading] = useState(false);
+  const [chqPickerCallback, setChqPickerCallback] = useState(null); // form mode callback
+  const [previewImgUrl, setPreviewImgUrl] = useState(null); // full image preview modal
 
+  // Liste modunda: chqId ile açılır, DB'ye kaydeder
   const openChqImagePicker = async (chqId) => {
     setChqImagePicker(chqId);
+    setChqPickerCallback(null);
+    const { data } = await supabase.from('media').select('*').order('created_at', { ascending: false });
+    setChqMediaItems(data || []);
+  };
+
+  // Form modunda: callback ile açılır, URL'i callback'e verir
+  const openChqImagePickerForForm = async (callback) => {
+    setChqImagePicker('__form__');
+    setChqPickerCallback(() => callback);
     const { data } = await supabase.from('media').select('*').order('created_at', { ascending: false });
     setChqMediaItems(data || []);
   };
 
   const selectChqMedia = async (url) => {
     if (!chqImagePicker) return;
-    await supabase.from('cheques').update({ image_url: url }).eq('id', chqImagePicker);
-    setCheques(prev => prev.map(c2 => c2.id === chqImagePicker ? { ...c2, image_url: url } : c2));
-    setChqImagePicker(null);
-    showToast('Görsel seçildi ✓');
+    if (chqPickerCallback) {
+      // Form mode — URL'i callback'e ver
+      chqPickerCallback(url);
+      setChqImagePicker(null); setChqPickerCallback(null);
+    } else {
+      // List mode — DB'ye kaydet
+      await supabase.from('cheques').update({ image_url: url }).eq('id', chqImagePicker);
+      setCheques(prev => prev.map(c2 => c2.id === chqImagePicker ? { ...c2, image_url: url } : c2));
+      setChqImagePicker(null);
+      showToast('Görsel seçildi ✓');
+    }
   };
 
   const uploadChqDirect = async (file) => {
     if (!file || !chqImagePicker) return;
     setChqUploading(true);
     try {
-      const url = await uploadChequeImage(chqImagePicker, file);
-      if (url) {
-        setChqImagePicker(null);
-        const { data } = await supabase.from('media').select('*').order('created_at', { ascending: false });
-        setChqMediaItems(data || []);
-      }
-    } finally { setChqUploading(false); }
+      // Upload to B2 via API
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const r = await fetch('/api/media', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: `cheque_upload_${Date.now()}.${file.name.split('.').pop()}`,
+          mimeType: file.type, fileSize: file.size, fileData: base64,
+          name: file.name.replace(/\.[^.]+$/, ''),
+        }),
+      });
+      const { publicUrl, error } = await r.json();
+      if (error) throw new Error(error);
+      // İlgili moda göre ata
+      selectChqMedia(publicUrl);
+      // Media listesini güncelle
+      const { data } = await supabase.from('media').select('*').order('created_at', { ascending: false });
+      setChqMediaItems(data || []);
+    } catch(e) { showToast('Yüklenemedi: ' + e.message, 'error'); }
+    finally { setChqUploading(false); }
   };
 
   const CHQ_STATUS = {
@@ -780,10 +817,10 @@ export default function Kasa() {
                       </div>
                     </div>
 
-                    {/* Çek görseli */}
+                    {/* Çek görseli — tıklayınca tam boyut */}
                     {chq.image_url && (
-                      <div className="px-4 pb-2">
-                        <img src={chq.image_url} alt="Çek" className="w-full max-h-48 object-cover rounded-xl border"
+                      <div className="px-4 pb-2 cursor-pointer" onClick={() => setPreviewImgUrl(chq.image_url)}>
+                        <img src={chq.image_url} alt="Çek" className="w-full max-h-48 object-cover rounded-xl border hover:opacity-90 transition-opacity"
                           style={{ borderColor: c.border }}/>
                       </div>
                     )}
@@ -838,7 +875,7 @@ export default function Kasa() {
           receivedCheques={receivedCheques}
           saveCheque={saveCheque}
           uploadChequeImage={uploadChequeImage}
-          openChqImagePicker={openChqImagePicker}
+          openGallery={openChqImagePickerForForm}
           onClose={() => { setShowChqForm(false); setEditChq(null); }}
           fmt={fmt}
         />
@@ -949,6 +986,21 @@ export default function Kasa() {
         </div>
       )}
 
+      {/* ── Görsel Önizleme Modal ── */}
+      {previewImgUrl && (
+        <div className="fixed inset-0 z-[400] flex items-center justify-center p-6 cursor-pointer"
+          style={{ background: 'rgba(0,0,0,0.88)', backdropFilter: 'blur(12px)' }}
+          onClick={() => setPreviewImgUrl(null)}>
+          <button className="absolute top-5 right-5 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white"
+            onClick={() => setPreviewImgUrl(null)}>
+            <X size={20}/>
+          </button>
+          <img src={previewImgUrl} alt="Çek Önizleme"
+            className="max-w-full max-h-[90vh] object-contain rounded-2xl shadow-2xl"
+            onClick={e => e.stopPropagation()}/>
+        </div>
+      )}
+
       <AnimatePresence>
         {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
       </AnimatePresence>
@@ -963,7 +1015,7 @@ export default function Kasa() {
 // ChequeFormInner — ayrı component, state korunur, hata yapıldığında sıfırlanmaz
 // ═══════════════════════════════════════════════════════════════════
 function ChequeFormInner({ editChq, chqTab, isDark, c, currentColor, CHQ_STATUS,
-  receivedCheques, saveCheque, uploadChequeImage, openChqImagePicker, onClose, fmt }) {
+  receivedCheques, saveCheque, uploadChequeImage, openGallery, onClose, fmt }) {
 
   const [f, setF] = useState({
     direction: editChq?.direction || (chqTab === 'given' ? 'given' : 'received'),
@@ -980,18 +1032,11 @@ function ChequeFormInner({ editChq, chqTab, isDark, c, currentColor, CHQ_STATUS,
   });
   const [saving, setSaving] = useState(false);
   const [sourceKey, setSourceKey] = useState('');
-  const [imgFile, setImgFile] = useState(null);
-  const [cropSrc, setCropSrc] = useState(null); // data URL for cropper
+  const [selectedImgUrl, setSelectedImgUrl] = useState(editChq?.image_url || null);
+  const [croppedFile, setCroppedFile] = useState(null);
+  const [croppedPreview, setCroppedPreview] = useState(null);
   const [showCrop, setShowCrop] = useState(false);
   const s = (k, v) => setF(prev => ({ ...prev, [k]: v }));
-
-  // Dosya seçildiğinde preview URL oluştur
-  const handleFileSelect = (file) => {
-    setImgFile(file);
-    const reader = new FileReader();
-    reader.onload = () => setCropSrc(reader.result);
-    reader.readAsDataURL(file);
-  };
 
   const inp = {
     background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9',
@@ -1002,9 +1047,8 @@ function ChequeFormInner({ editChq, chqTab, isDark, c, currentColor, CHQ_STATUS,
 
   const handleSourceChange = (val) => {
     setSourceKey(val);
-    if (val === '__biz__') {
-      s('from_name', 'Şirket Çeki');
-    } else if (val.startsWith('__chq__')) {
+    if (val === '__biz__') { s('from_name', 'Şirket Çeki'); }
+    else if (val.startsWith('__chq__')) {
       const src = receivedCheques.find(ch2 => ch2.id === val.replace('__chq__', ''));
       if (src) {
         s('from_name', src.from_name || 'Alınan Çek');
@@ -1016,12 +1060,30 @@ function ChequeFormInner({ editChq, chqTab, isDark, c, currentColor, CHQ_STATUS,
     }
   };
 
+  const handleGallerySelect = (url) => {
+    setSelectedImgUrl(url); setCroppedFile(null); setCroppedPreview(null);
+  };
+
+  const handleCropped = (file) => {
+    setCroppedFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setCroppedPreview(reader.result);
+    reader.readAsDataURL(file);
+    setShowCrop(false);
+  };
+
+  const displayImg = croppedPreview || selectedImgUrl;
+
   const handleSave = async () => {
     if (!f.amount) return;
     setSaving(true);
-    const saved = await saveCheque(editChq, { ...f, amount: parseFloat(f.amount) });
-    if (imgFile && saved?.id) {
-      await uploadChequeImage(saved.id, imgFile);
+    if (croppedFile) {
+      const saved = await saveCheque(editChq, { ...f, amount: parseFloat(f.amount) });
+      if (saved?.id) await uploadChequeImage(saved.id, croppedFile);
+    } else {
+      const extra = {};
+      if (selectedImgUrl && selectedImgUrl !== editChq?.image_url) extra.image_url = selectedImgUrl;
+      await saveCheque(editChq, { ...f, amount: parseFloat(f.amount), ...extra });
     }
     setSaving(false);
   };
@@ -1089,9 +1151,8 @@ function ChequeFormInner({ editChq, chqTab, isDark, c, currentColor, CHQ_STATUS,
                 <input style={inp} placeholder="GMC Tedarik" value={f.to_name} onChange={e => s('to_name', e.target.value)}/>
               </div>
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Kaynak (Çekin Kökeni)</p>
-                <select style={{...inp, cursor:'pointer'}} value={sourceKey}
-                  onChange={e => handleSourceChange(e.target.value)}>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Kaynak</p>
+                <select style={{...inp, cursor:'pointer'}} value={sourceKey} onChange={e => handleSourceChange(e.target.value)}>
                   <option value="">Seçin...</option>
                   <option value="__biz__">Şirket (Kendi Çekimiz)</option>
                   {receivedCheques.filter(ch2 => ch2.status === 'active').map(ch2 => (
@@ -1100,11 +1161,7 @@ function ChequeFormInner({ editChq, chqTab, isDark, c, currentColor, CHQ_STATUS,
                     </option>
                   ))}
                 </select>
-                {f.from_name && (
-                  <p className="text-[10px] mt-1 font-semibold" style={{ color: '#f59e0b' }}>
-                    Seçilen: {f.from_name}
-                  </p>
-                )}
+                {f.from_name && <p className="text-[10px] mt-1 font-semibold" style={{ color: '#f59e0b' }}>Seçilen: {f.from_name}</p>}
               </div>
             </>
           )}
@@ -1123,53 +1180,38 @@ function ChequeFormInner({ editChq, chqTab, isDark, c, currentColor, CHQ_STATUS,
               </div>
             </div>
           )}
-          {/* Görsel */}
+          {/* Görsel — Galeri */}
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Çek Görseli (Opsiyonel)</p>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Çek Görseli</p>
             <div className="flex gap-2">
-              <label className="flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer border flex-1"
-                style={{ borderColor: c.border, background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc' }}>
-                <Upload size={13} style={{ color: '#a78bfa' }}/>
-                <span className="text-xs truncate" style={{ color: c.muted }}>{imgFile ? imgFile.name : 'Dosya yükle...'}</span>
-                <input type="file" accept="image/*" className="hidden"
-                  onChange={e => { if (e.target.files[0]) handleFileSelect(e.target.files[0]); }}/>
-              </label>
-              {imgFile && cropSrc && (
+              <button onClick={() => openGallery(handleGallerySelect)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold border flex-1"
+                style={{ borderColor: '#8b5cf6', color: '#8b5cf6', background: isDark ? 'rgba(139,92,246,0.06)' : 'rgba(139,92,246,0.04)' }}>
+                <Image size={14}/> Galeriden Seç / Yükle
+              </button>
+              {displayImg && (
                 <button onClick={() => setShowCrop(true)}
-                  className="px-3 py-2 rounded-xl text-xs font-semibold border whitespace-nowrap flex items-center gap-1.5"
+                  className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-semibold border whitespace-nowrap"
                   style={{ borderColor: '#8b5cf6', color: '#8b5cf6' }}>
                   <Scissors size={12}/> Kırp
                 </button>
               )}
-              {editChq?.id && (
-                <button onClick={() => openChqImagePicker(editChq.id)}
-                  className="px-3 py-2 rounded-xl text-xs font-semibold border whitespace-nowrap"
-                  style={{ borderColor: c.border, color: '#a78bfa' }}>
-                  Galeri
-                </button>
-              )}
             </div>
-            {imgFile && cropSrc && (
-              <div className="mt-2 rounded-xl overflow-hidden" style={{ border: `1px solid ${c.border}`, maxHeight: 120 }}>
-                <img src={cropSrc} alt="Önizleme" className="w-full object-contain" style={{ maxHeight: 120 }}/>
+            {displayImg && (
+              <div className="mt-2 rounded-xl overflow-hidden relative group" style={{ border: `1px solid ${c.border}` }}>
+                <img src={displayImg} alt="Çek" className="w-full object-contain" style={{ maxHeight: 140 }}/>
+                <button onClick={() => { setSelectedImgUrl(null); setCroppedFile(null); setCroppedPreview(null); }}
+                  className="absolute top-1.5 right-1.5 p-1 rounded-full bg-black/50 hover:bg-black/70 text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                  <X size={12}/>
+                </button>
+                {croppedPreview && (
+                  <div className="absolute bottom-1.5 left-1.5 px-2 py-0.5 rounded-full bg-purple-600/80 text-white text-[9px] font-bold">Kırpıldı ✓</div>
+                )}
               </div>
             )}
           </div>
-
-          {/* Kırpma Modal */}
-          {showCrop && cropSrc && (
-            <ImageCropper
-              imageSrc={cropSrc}
-              isDark={isDark}
-              onCropped={(croppedFile) => {
-                setImgFile(croppedFile);
-                const reader = new FileReader();
-                reader.onload = () => setCropSrc(reader.result);
-                reader.readAsDataURL(croppedFile);
-                setShowCrop(false);
-              }}
-              onClose={() => setShowCrop(false)}
-            />
+          {showCrop && displayImg && (
+            <ImageCropper imageSrc={displayImg} isDark={isDark} onCropped={handleCropped} onClose={() => setShowCrop(false)}/>
           )}
           {/* Not */}
           <div>
@@ -1187,3 +1229,4 @@ function ChequeFormInner({ editChq, chqTab, isDark, c, currentColor, CHQ_STATUS,
     </div>
   );
 }
+
