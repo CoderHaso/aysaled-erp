@@ -6,11 +6,12 @@ import {
   Coffee, Truck, ShoppingBag, Car, MoreHorizontal,
   CalendarDays, TrendingUp, TrendingDown, Check, Edit3,
   FileText, ArrowRightLeft, Image, Upload, Eye, Receipt,
-  Building2, Clock, AlertTriangle, Ban, ChevronRight,
+  Building2, Clock, AlertTriangle, Ban, ChevronRight, Scissors,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import CustomDialog from '../components/CustomDialog';
+import ImageCropper from '../components/ImageCropper';
 
 // ─── Sabitler ─────────────────────────────────────────────────────────────────
 const CATEGORIES = [
@@ -326,15 +327,19 @@ export default function Kasa() {
 
   const saveCheque = async (chq, formData) => {
     try {
+      // Clean: empty strings → null for date fields
+      const clean = { ...formData };
+      if (!clean.due_date) clean.due_date = null;
+      if (!clean.issue_date) clean.issue_date = null;
       let saved;
       if (chq?.id) {
-        const { data, error } = await supabase.from('cheques').update(formData).eq('id', chq.id).select().single();
+        const { data, error } = await supabase.from('cheques').update(clean).eq('id', chq.id).select().single();
         if (error) throw error;
         saved = data;
         setCheques(prev => prev.map(c2 => c2.id === data.id ? data : c2));
         showToast('Çek güncellendi ✓');
       } else {
-        const { data, error } = await supabase.from('cheques').insert(formData).select().single();
+        const { data, error } = await supabase.from('cheques').insert(clean).select().single();
         if (error) throw error;
         saved = data;
         setCheques(prev => [data, ...prev]);
@@ -822,166 +827,22 @@ export default function Kasa() {
       </AnimatePresence>
 
       {/* ── Çek Form Modal ── */}
-      <AnimatePresence>
-        {showChqForm && (() => {
-          const ChequeFormModal = () => {
-            const [f, setF] = useState({
-              direction: editChq?.direction || (chqTab === 'given' ? 'given' : 'received'),
-              amount: editChq?.amount || '',
-              currency: editChq?.currency || 'TRY',
-              cheque_no: editChq?.cheque_no || '',
-              bank_name: editChq?.bank_name || '',
-              due_date: editChq?.due_date ? editChq.due_date.split('T')[0] : '',
-              issue_date: editChq?.issue_date ? editChq.issue_date.split('T')[0] : new Date().toISOString().split('T')[0],
-              from_name: editChq?.from_name || '',
-              to_name: editChq?.to_name || '',
-              notes: editChq?.notes || '',
-              status: editChq?.status || 'active',
-            });
-            const [saving, setSaving] = useState(false);
-            const s = (k,v) => setF(prev => ({ ...prev, [k]: v }));
-            const inp = { background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`,
-              borderRadius: 10, color: isDark ? '#f1f5f9' : '#1e293b', padding: '8px 12px', fontSize: 13, outline: 'none', width: '100%' };
-            return (
-              <div className="fixed inset-0 z-[200] flex items-center justify-center p-4"
-                style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}>
-                <motion.div initial={{ opacity:0, scale:0.96 }} animate={{ opacity:1, scale:1 }}
-                  className="w-full max-w-md rounded-3xl overflow-y-auto"
-                  style={{ background: isDark ? '#0c1526' : '#fff', border: `1px solid ${c.border}`, maxHeight: '90vh' }}>
-                  <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: `1px solid ${c.border}` }}>
-                    <h2 className="text-sm font-bold" style={{ color: c.text }}>{editChq?.id ? 'Çek Düzenle' : 'Yeni Çek'}</h2>
-                    <button onClick={() => { setShowChqForm(false); setEditChq(null); }} style={{ color: c.muted }}><X size={15}/></button>
-                  </div>
-                  <div className="px-6 py-5 space-y-4">
-                    {/* Yön */}
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: c.muted }}>Tür</p>
-                      <div className="flex gap-2">
-                        {[{ v:'received', l:'Alınan', c2:'#10b981' }, { v:'given', l:'Verilen', c2:'#ef4444' }].map(o => (
-                          <button key={o.v} onClick={() => s('direction', o.v)}
-                            className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
-                            style={{ background: f.direction === o.v ? `${o.c2}18` : 'rgba(255,255,255,0.04)',
-                              border: `1px solid ${f.direction === o.v ? o.c2+'50' : 'rgba(148,163,184,0.1)'}`,
-                              color: f.direction === o.v ? o.c2 : c.muted }}>
-                            {o.l}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    {/* Tutar + Çek No */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Tutar *</p>
-                        <input style={inp} type="number" step="0.01" placeholder="0.00" value={f.amount} onChange={e => s('amount', e.target.value)}/>
-                      </div>
-                      <div>
-                        <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Çek No</p>
-                        <input style={inp} placeholder="CHK-001" value={f.cheque_no} onChange={e => s('cheque_no', e.target.value)}/>
-                      </div>
-                    </div>
-                    {/* Banka + Vade */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Banka</p>
-                        <input style={inp} placeholder="İş Bankası" value={f.bank_name} onChange={e => s('bank_name', e.target.value)}/>
-                      </div>
-                      <div>
-                        <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Vade Tarihi</p>
-                        <input style={inp} type="date" value={f.due_date} onChange={e => s('due_date', e.target.value)}/>
-                      </div>
-                    </div>
-                    {/* Alınan: Kimden (müşteri) */}
-                    {f.direction === 'received' && (
-                      <div>
-                        <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Kimden (Müşteri) *</p>
-                        <input style={inp} placeholder="Seva Aydınlatma" value={f.from_name} onChange={e => s('from_name', e.target.value)}/>
-                      </div>
-                    )}
-                    {/* Verilen: Kime + Kaynak */}
-                    {f.direction === 'given' && (
-                      <>
-                        <div>
-                          <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Kime (Tedarikçi) *</p>
-                          <input style={inp} placeholder="GMC Tedarik" value={f.to_name} onChange={e => s('to_name', e.target.value)}/>
-                        </div>
-                        <div>
-                          <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Kaynak (Çekin Kökeni)</p>
-                          <select style={{...inp, cursor:'pointer'}} value={f.from_name}
-                            onChange={e => {
-                              const val = e.target.value;
-                              if (val === '__biz__') { s('from_name', 'Şirket Çeki'); }
-                              else if (val.startsWith('__chq__')) {
-                                const src = receivedCheques.find(ch2 => ch2.id === val.replace('__chq__',''));
-                                if (src) { s('from_name', src.from_name||'Alınan');
-                                  if(!f.amount) s('amount',src.amount); if(!f.cheque_no) s('cheque_no',src.cheque_no||'');
-                                  if(!f.bank_name) s('bank_name',src.bank_name||''); if(!f.due_date&&src.due_date) s('due_date',src.due_date.split('T')[0]); }
-                              } else { s('from_name', val); }
-                            }}>
-                            <option value="">Seçin...</option>
-                            <option value="__biz__">Şirket (Kendi Çekimiz)</option>
-                            {receivedCheques.filter(ch2 => ch2.status === 'active').map(ch2 => (
-                              <option key={ch2.id} value={`__chq__${ch2.id}`}>
-                                {ch2.from_name||'?'} — {fmt(ch2.amount)} ₺ {ch2.cheque_no ? `#${ch2.cheque_no}` : ''}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </>
-                    )}
-                    {/* Durum */}
-                    {editChq?.id && (
-                      <div>
-                        <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: c.muted }}>Durum</p>
-                        <div className="flex gap-1 flex-wrap">
-                          {Object.entries(CHQ_STATUS).map(([k,v]) => (
-                            <button key={k} onClick={() => s('status', k)}
-                              className="px-2.5 py-1 rounded-lg text-[10px] font-bold"
-                              style={{ background: f.status === k ? `${v.color}18` : 'rgba(255,255,255,0.04)', color: f.status === k ? v.color : c.muted }}>
-                              {v.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {/* Görsel */}
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Çek Görseli (Opsiyonel)</p>
-                      <label className="flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer border"
-                        style={{ borderColor: c.border, background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc' }}>
-                        <Upload size={13} style={{ color: '#a78bfa' }}/>
-                        <span className="text-xs" style={{ color: c.muted }}>{f._imageFile ? f._imageFile.name : 'Dosya seç...'}</span>
-                        <input type="file" accept="image/*" className="hidden"
-                          onChange={e => { if (e.target.files[0]) s('_imageFile', e.target.files[0]); }}/>
-                      </label>
-                    </div>
-                    {/* Not */}
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Not</p>
-                      <input style={inp} placeholder="Ek bilgi..." value={f.notes} onChange={e => s('notes', e.target.value)}/>
-                    </div>
-                    <button onClick={async () => {
-                      if (!f.amount) return;
-                      setSaving(true);
-                      const { _imageFile, ...payload } = f;
-                      const saved = await saveCheque(editChq, { ...payload, amount: parseFloat(payload.amount) });
-                      if (_imageFile && saved?.id) {
-                        await uploadChequeImage(saved.id, _imageFile);
-                      }
-                      setSaving(false);
-                    }} disabled={saving || !f.amount}
-                      className="w-full py-3 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
-                      style={{ background: currentColor, opacity: saving || !f.amount ? 0.5 : 1 }}>
-                      {saving ? <Loader2 size={14} className="animate-spin"/> : <CheckCircle2 size={14}/>}
-                      {editChq?.id ? 'Güncelle' : 'Kaydet'}
-                    </button>
-                  </div>
-                </motion.div>
-              </div>
-            );
-          };
-          return <ChequeFormModal/>;
-        })()}
-      </AnimatePresence>
+      {showChqForm && (
+        <ChequeFormInner
+          editChq={editChq}
+          chqTab={chqTab}
+          isDark={isDark}
+          c={c}
+          currentColor={currentColor}
+          CHQ_STATUS={CHQ_STATUS}
+          receivedCheques={receivedCheques}
+          saveCheque={saveCheque}
+          uploadChequeImage={uploadChequeImage}
+          openChqImagePicker={openChqImagePicker}
+          onClose={() => { setShowChqForm(false); setEditChq(null); }}
+          fmt={fmt}
+        />
+      )}
 
       {/* ── Devir Modal ── */}
       {transferChq && (() => {
@@ -1095,5 +956,234 @@ export default function Kasa() {
       <CustomDialog {...dialog} onClose={() => setDialog({ open:false })}
         onConfirm={dialog.onConfirm || (() => setDialog({ open:false }))} />
     </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ChequeFormInner — ayrı component, state korunur, hata yapıldığında sıfırlanmaz
+// ═══════════════════════════════════════════════════════════════════
+function ChequeFormInner({ editChq, chqTab, isDark, c, currentColor, CHQ_STATUS,
+  receivedCheques, saveCheque, uploadChequeImage, openChqImagePicker, onClose, fmt }) {
+
+  const [f, setF] = useState({
+    direction: editChq?.direction || (chqTab === 'given' ? 'given' : 'received'),
+    amount: editChq?.amount || '',
+    currency: editChq?.currency || 'TRY',
+    cheque_no: editChq?.cheque_no || '',
+    bank_name: editChq?.bank_name || '',
+    due_date: editChq?.due_date ? editChq.due_date.split('T')[0] : '',
+    issue_date: editChq?.issue_date ? editChq.issue_date.split('T')[0] : new Date().toISOString().split('T')[0],
+    from_name: editChq?.from_name || '',
+    to_name: editChq?.to_name || '',
+    notes: editChq?.notes || '',
+    status: editChq?.status || 'active',
+  });
+  const [saving, setSaving] = useState(false);
+  const [sourceKey, setSourceKey] = useState('');
+  const [imgFile, setImgFile] = useState(null);
+  const [cropSrc, setCropSrc] = useState(null); // data URL for cropper
+  const [showCrop, setShowCrop] = useState(false);
+  const s = (k, v) => setF(prev => ({ ...prev, [k]: v }));
+
+  // Dosya seçildiğinde preview URL oluştur
+  const handleFileSelect = (file) => {
+    setImgFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setCropSrc(reader.result);
+    reader.readAsDataURL(file);
+  };
+
+  const inp = {
+    background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9',
+    border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`,
+    borderRadius: 10, color: isDark ? '#f1f5f9' : '#1e293b',
+    padding: '8px 12px', fontSize: 13, outline: 'none', width: '100%',
+  };
+
+  const handleSourceChange = (val) => {
+    setSourceKey(val);
+    if (val === '__biz__') {
+      s('from_name', 'Şirket Çeki');
+    } else if (val.startsWith('__chq__')) {
+      const src = receivedCheques.find(ch2 => ch2.id === val.replace('__chq__', ''));
+      if (src) {
+        s('from_name', src.from_name || 'Alınan Çek');
+        if (!f.amount) s('amount', src.amount);
+        if (!f.cheque_no) s('cheque_no', src.cheque_no || '');
+        if (!f.bank_name) s('bank_name', src.bank_name || '');
+        if (!f.due_date && src.due_date) s('due_date', src.due_date.split('T')[0]);
+      }
+    }
+  };
+
+  const handleSave = async () => {
+    if (!f.amount) return;
+    setSaving(true);
+    const saved = await saveCheque(editChq, { ...f, amount: parseFloat(f.amount) });
+    if (imgFile && saved?.id) {
+      await uploadChequeImage(saved.id, imgFile);
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}>
+      <motion.div initial={{ opacity:0, scale:0.96 }} animate={{ opacity:1, scale:1 }}
+        className="w-full max-w-md rounded-3xl overflow-y-auto"
+        style={{ background: isDark ? '#0c1526' : '#fff', border: `1px solid ${c.border}`, maxHeight: '90vh' }}>
+        <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: `1px solid ${c.border}` }}>
+          <h2 className="text-sm font-bold" style={{ color: c.text }}>{editChq?.id ? 'Çek Düzenle' : 'Yeni Çek'}</h2>
+          <button onClick={onClose} style={{ color: c.muted }}><X size={15}/></button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          {/* Tür */}
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: c.muted }}>Tür</p>
+            <div className="flex gap-2">
+              {[{ v:'received', l:'Alınan', c2:'#10b981' }, { v:'given', l:'Verilen', c2:'#ef4444' }].map(o => (
+                <button key={o.v} onClick={() => s('direction', o.v)}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
+                  style={{ background: f.direction === o.v ? `${o.c2}18` : 'rgba(255,255,255,0.04)',
+                    border: `1px solid ${f.direction === o.v ? o.c2+'50' : 'rgba(148,163,184,0.1)'}`,
+                    color: f.direction === o.v ? o.c2 : c.muted }}>
+                  {o.l}
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* Tutar + Çek No */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Tutar *</p>
+              <input style={inp} type="number" step="0.01" placeholder="0.00" value={f.amount} onChange={e => s('amount', e.target.value)}/>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Çek No</p>
+              <input style={inp} placeholder="CHK-001" value={f.cheque_no} onChange={e => s('cheque_no', e.target.value)}/>
+            </div>
+          </div>
+          {/* Banka + Vade */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Banka</p>
+              <input style={inp} placeholder="İş Bankası" value={f.bank_name} onChange={e => s('bank_name', e.target.value)}/>
+            </div>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Vade Tarihi</p>
+              <input style={inp} type="date" value={f.due_date} onChange={e => s('due_date', e.target.value)}/>
+            </div>
+          </div>
+          {/* Alınan: Kimden */}
+          {f.direction === 'received' && (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Kimden (Müşteri) *</p>
+              <input style={inp} placeholder="Seva Aydınlatma" value={f.from_name} onChange={e => s('from_name', e.target.value)}/>
+            </div>
+          )}
+          {/* Verilen: Kime + Kaynak */}
+          {f.direction === 'given' && (
+            <>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Kime (Tedarikçi) *</p>
+                <input style={inp} placeholder="GMC Tedarik" value={f.to_name} onChange={e => s('to_name', e.target.value)}/>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Kaynak (Çekin Kökeni)</p>
+                <select style={{...inp, cursor:'pointer'}} value={sourceKey}
+                  onChange={e => handleSourceChange(e.target.value)}>
+                  <option value="">Seçin...</option>
+                  <option value="__biz__">Şirket (Kendi Çekimiz)</option>
+                  {receivedCheques.filter(ch2 => ch2.status === 'active').map(ch2 => (
+                    <option key={ch2.id} value={`__chq__${ch2.id}`}>
+                      {ch2.from_name||'?'} — {fmt(ch2.amount)} ₺ {ch2.cheque_no ? `#${ch2.cheque_no}` : ''}
+                    </option>
+                  ))}
+                </select>
+                {f.from_name && (
+                  <p className="text-[10px] mt-1 font-semibold" style={{ color: '#f59e0b' }}>
+                    Seçilen: {f.from_name}
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+          {/* Durum */}
+          {editChq?.id && (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: c.muted }}>Durum</p>
+              <div className="flex gap-1 flex-wrap">
+                {Object.entries(CHQ_STATUS).map(([k,v]) => (
+                  <button key={k} onClick={() => s('status', k)}
+                    className="px-2.5 py-1 rounded-lg text-[10px] font-bold"
+                    style={{ background: f.status === k ? `${v.color}18` : 'rgba(255,255,255,0.04)', color: f.status === k ? v.color : c.muted }}>
+                    {v.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* Görsel */}
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Çek Görseli (Opsiyonel)</p>
+            <div className="flex gap-2">
+              <label className="flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer border flex-1"
+                style={{ borderColor: c.border, background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc' }}>
+                <Upload size={13} style={{ color: '#a78bfa' }}/>
+                <span className="text-xs truncate" style={{ color: c.muted }}>{imgFile ? imgFile.name : 'Dosya yükle...'}</span>
+                <input type="file" accept="image/*" className="hidden"
+                  onChange={e => { if (e.target.files[0]) handleFileSelect(e.target.files[0]); }}/>
+              </label>
+              {imgFile && cropSrc && (
+                <button onClick={() => setShowCrop(true)}
+                  className="px-3 py-2 rounded-xl text-xs font-semibold border whitespace-nowrap flex items-center gap-1.5"
+                  style={{ borderColor: '#8b5cf6', color: '#8b5cf6' }}>
+                  <Scissors size={12}/> Kırp
+                </button>
+              )}
+              {editChq?.id && (
+                <button onClick={() => openChqImagePicker(editChq.id)}
+                  className="px-3 py-2 rounded-xl text-xs font-semibold border whitespace-nowrap"
+                  style={{ borderColor: c.border, color: '#a78bfa' }}>
+                  Galeri
+                </button>
+              )}
+            </div>
+            {imgFile && cropSrc && (
+              <div className="mt-2 rounded-xl overflow-hidden" style={{ border: `1px solid ${c.border}`, maxHeight: 120 }}>
+                <img src={cropSrc} alt="Önizleme" className="w-full object-contain" style={{ maxHeight: 120 }}/>
+              </div>
+            )}
+          </div>
+
+          {/* Kırpma Modal */}
+          {showCrop && cropSrc && (
+            <ImageCropper
+              imageSrc={cropSrc}
+              isDark={isDark}
+              onCropped={(croppedFile) => {
+                setImgFile(croppedFile);
+                const reader = new FileReader();
+                reader.onload = () => setCropSrc(reader.result);
+                reader.readAsDataURL(croppedFile);
+                setShowCrop(false);
+              }}
+              onClose={() => setShowCrop(false)}
+            />
+          )}
+          {/* Not */}
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: c.muted }}>Not</p>
+            <input style={inp} placeholder="Ek bilgi..." value={f.notes} onChange={e => s('notes', e.target.value)}/>
+          </div>
+          <button onClick={handleSave} disabled={saving || !f.amount}
+            className="w-full py-3 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
+            style={{ background: currentColor, opacity: saving || !f.amount ? 0.5 : 1 }}>
+            {saving ? <Loader2 size={14} className="animate-spin"/> : <CheckCircle2 size={14}/>}
+            {editChq?.id ? 'Güncelle' : 'Kaydet'}
+          </button>
+        </div>
+      </motion.div>
+    </div>
   );
 }
