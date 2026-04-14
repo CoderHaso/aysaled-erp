@@ -10,7 +10,8 @@ import { supabase } from '../lib/supabaseClient';
 import MediaPickerModal from '../components/MediaPickerModal';
 
 export default function App() {
-    const { themeStyle: c, isDark } = useTheme();
+    const { effectiveMode, currentColor } = useTheme();
+    const isDark = effectiveMode === 'dark';
 
     // html2pdf kütüphanesini güvenli bir şekilde yükleme
     const [pdfReady, setPdfReady] = useState(false);
@@ -708,7 +709,7 @@ export default function App() {
     const isClassic = settings.template === 'classic';
 
     return (
-        <div className="h-[91vh] w-full flex flex-col lg:flex-row font-sans overflow-hidden" style={c.bg}>
+        <div className="h-[91vh] w-full flex flex-col lg:flex-row font-sans overflow-hidden" style={{ background: isDark ? '#0f172a' : '#f8fafc' }}>
             
             {/* Medya Modal */}
             <MediaPickerModal 
