@@ -18,6 +18,7 @@ import Kasa           from './pages/Kasa';
 import Reports        from './pages/Reports';
 import HesapDefteri  from './pages/HesapDefteri';
 import IsEmri        from './pages/IsEmri';
+import Katalog        from './pages/Katalog';
 import { supabase }   from './lib/supabaseClient';
 
 const PAGES = {
@@ -34,6 +35,7 @@ const PAGES = {
   '/reports':    { title: 'Raporlar',       sub: 'Finans & Analiz' },
   '/ledger':     { title: 'Hesap Defteri',  sub: 'Cari & Tedarikçi Borç / Alacak Takibi' },
   '/is-emri':    { title: 'İş Emirleri',      sub: 'Atölye Üretim Takibi' },
+  '/katalog':    { title: 'Katalog Merkezi',  sub: 'Ürün Kataloğu Oluşturucu' },
   '/settings':   { title: 'Ayarlar',        sub: 'Sistem Yapılandırması' },
   '/notifications': { title: 'Bildirimler', sub: 'Ödeme Hatırlatmaları & Sistem Bildirimleri' },
 };
@@ -52,6 +54,7 @@ const ROUTE_TO_ID = {
   '/reports':   'reports',
   '/ledger':    'ledger',
   '/is-emri':   'is-emri',
+  '/katalog':   'katalog',
   '/settings':  'settings',
   '/notifications': 'notifications',
 };
@@ -127,6 +130,7 @@ function AppShell() {
       'outgoing-invoices': '/outgoing-invoices',
       sales: '/sales', quotes: '/quotes', media: '/media',
       reports: '/reports', settings: '/settings',
+      katalog: '/katalog',
     };
     navigate(routes[id] || '/');
     // Mobilde gezindikten sonra sidebar kapat
@@ -215,6 +219,7 @@ function AppShell() {
             <Route path="/reports"    element={<Reports />} />
             <Route path="/ledger"     element={<HesapDefteri />} />
             <Route path="/is-emri"    element={<IsEmri />} />
+            <Route path="/katalog"    element={<Katalog />} />
           </Routes>
         </main>
       </div>

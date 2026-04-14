@@ -20,6 +20,7 @@ const MENU = [
   { name: 'Gelen Fat.',   icon: FileDown,        id: 'outgoing-invoices' },
   { name: 'Satış',        icon: ShoppingCart,    id: 'sales'     },
   { name: 'Teklifler',    icon: FileText,        id: 'quotes'    },
+  { name: 'Katalog',      icon: BookOpen,        id: 'katalog'   },
   { name: 'Medya',        icon: Image,           id: 'media'     },
   { name: 'Raporlar',     icon: TrendingUp,      id: 'reports'   },
 ];
