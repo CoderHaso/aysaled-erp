@@ -1,13 +1,91 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     Plus, Trash2, Download, Settings,
     List, Package, FileImage, Building2,
     Phone, Mail, Globe, MapPin, AlignLeft,
-    Save, FolderOpen, Loader2
+    Save, Loader2
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import MediaPickerModal from '../components/MediaPickerModal';
+
+const TEMPLATES = {
+    modern: {
+        id: 'modern',
+        name: 'Modern (Yeşil Vurgu)',
+        colors: {
+            bgPrimary: '#0f172a', // slate-900 equivalent
+            bgSecondary: '#f8fafc', // slate-50
+            accent: '#16a34a', // green-600 equivalent
+            textMain: '#1e293b',
+            textLight: '#64748b',
+            textInverse: '#ffffff',
+            border: '#e2e8f0',
+            bgDark: '#020617', // slate-950
+            coverTextBody: '#cbd5e1'
+        }
+    },
+    classic: {
+        id: 'classic',
+        name: 'Klasik (Sade Beyaz)',
+        colors: {
+            bgPrimary: '#ffffff',
+            bgSecondary: '#ffffff',
+            accent: '#475569', // slate-600
+            textMain: '#000000',
+            textLight: '#64748b',
+            textInverse: '#ffffff',
+            border: '#cbd5e1',
+            bgDark: '#f8fafc',
+            coverTextBody: '#475569'
+        }
+    },
+    minimal: {
+        id: 'minimal',
+        name: 'Minimal (Açık Gri)',
+        colors: {
+            bgPrimary: '#f1f5f9',
+            bgSecondary: '#ffffff',
+            accent: '#0f172a', // slate-900
+            textMain: '#334155',
+            textLight: '#94a3b8',
+            textInverse: '#ffffff',
+            border: '#e2e8f0',
+            bgDark: '#e2e8f0',
+            coverTextBody: '#64748b'
+        }
+    },
+    energetic: {
+        id: 'energetic',
+        name: 'Enerjik (Turuncu Vurgu)',
+        colors: {
+            bgPrimary: '#fff7ed', // orange-50
+            bgSecondary: '#ffffff',
+            accent: '#ea580c', // orange-600
+            textMain: '#312e81', // indigo-900
+            textLight: '#94a3b8',
+            textInverse: '#ffffff',
+            border: '#fdba74', // orange-300
+            bgDark: '#ffedd5',
+            coverTextBody: '#ea580c'
+        }
+    },
+    night: {
+        id: 'night',
+        name: 'Gece (Koyu Lacivert)',
+        colors: {
+            bgPrimary: '#1e1b4b', // indigo-950
+            bgSecondary: '#e0e7ff', // indigo-100
+            accent: '#6366f1', // indigo-500
+            textMain: '#1e1b4b', // indigo-950
+            textLight: '#6366f1', // indigo-500
+            textInverse: '#ffffff',
+            border: '#c7d2fe', // indigo-200
+            bgDark: '#111827',
+            coverTextBody: '#a5b4fc'
+        }
+    }
+};
 
 export default function App() {
     const { effectiveMode, currentColor } = useTheme();
@@ -64,7 +142,7 @@ export default function App() {
 
     // --- Media Picker Modal State ---
     const [mediaModalOpen, setMediaModalOpen] = useState(false);
-    const [mediaTarget, setMediaTarget] = useState(null); // { type: 'logo' } veya { type: 'product', id, field: 'image'|'techImage' }
+    const [mediaTarget, setMediaTarget] = useState(null);
 
     // --- Supabase Catalogs State ---
     const [savedCatalogs, setSavedCatalogs] = useState([]);
@@ -82,7 +160,7 @@ export default function App() {
                 setSavedCatalogs(data);
             }
         } catch (err) {
-            console.error('Kataloglar yüklenirken hata:', err);
+            console.error('Kataloglar yüklenirken hata. Lütfen supabase tarafını kontrol edin.:', err);
         }
     };
 
@@ -105,7 +183,7 @@ export default function App() {
                     .eq('id', selectedCatalogId);
                 if (error) {
                     if(error.code === '42P01') {
-                        alert("Lütfen önce Supabase'de 'catalogs' tablosunu oluşturun. İlgili SQL kodunu yöneticinizden isteyebilirsiniz.");
+                        alert("Veritabanında 'catalogs' tablosu yok. Lütfen Supabase SQL editöründen tablonuzu oluşturun.");
                     } else throw error;
                 } else {
                     alert('Katalog başarıyla güncellendi!');
@@ -118,7 +196,7 @@ export default function App() {
                     .select();
                 if (error) {
                     if(error.code === '42P01') {
-                        alert("Lütfen önce Supabase'de 'catalogs' tablosunu oluşturun. İlgili SQL kodunu yöneticinizden isteyebilirsiniz.");
+                        alert("Veritabanında 'catalogs' tablosu yok. Lütfen Supabase SQL editöründen tablonuzu oluşturun.");
                     } else throw error;
                 } else if (data && data.length > 0) {
                     setSelectedCatalogId(data[0].id);
@@ -281,7 +359,6 @@ export default function App() {
         window.scrollTo(0, 0); // En tepeye kaydır
         setPdfLoading(true);
 
-        // UI'ın yükleniyor state'ini render edebilmesi için ufak bir bekleme
         setTimeout(async () => {
             try {
                 const opt = {
@@ -289,7 +366,7 @@ export default function App() {
                     filename: `${settings.companyName.replace(/\s+/g, '-')}-Katalog.pdf`,
                     image: { type: 'jpeg', quality: 0.90 }, 
                     html2canvas: {
-                        scale: 1.5, // 2 yerine 1.5 kullanmak performansı artırıp donmaları çok azaltır
+                        scale: 1.5,
                         useCORS: true,
                         logging: false,
                         scrollY: 0
@@ -301,7 +378,7 @@ export default function App() {
                 await window.html2pdf().set(opt).from(element).save();
             } catch (error) {
                 console.error("PDF oluşturma hatası:", error);
-                alert("PDF oluşturulurken bir hata oluştu.");
+                alert("PDF oluşturulurken bir hata oluştu. Lütfen konsolu kontrol edin.");
             } finally {
                 setPdfLoading(false);
             }
@@ -322,7 +399,7 @@ export default function App() {
         <div className="space-y-6 animate-fadeIn">
             <div>
                 <h3 className={`text-lg font-semibold mb-4 border-b pb-2 flex items-center ${isDark ? 'text-gray-100 border-gray-700' : 'text-gray-800 border-gray-200'}`}>
-                    <Settings size={18} className="mr-2 text-green-600" /> Katalog Ayarları & Şablon
+                    <Settings size={18} className="mr-2 text-blue-500" /> Katalog Ayarları & Şablon
                 </h3>
                 
                 <div className="space-y-4">
@@ -331,7 +408,7 @@ export default function App() {
                             <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Kayıtlı Kataloglar</label>
                             <div className="flex gap-2">
                                 <select 
-                                    className="w-full p-2 border rounded-md focus:ring-green-500 focus:border-green-500 outline-none"
+                                    className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 outline-none"
                                     style={{ background: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e2e8f0', color: isDark ? '#f8fafc' : '#000' }}
                                     value={selectedCatalogId || ''}
                                     onChange={(e) => {
@@ -358,11 +435,12 @@ export default function App() {
                             <select
                                 value={settings.template || 'modern'} 
                                 onChange={(e) => setSettings({ ...settings, template: e.target.value })}
-                                className="w-full p-2 border rounded-md focus:ring-green-500 focus:border-green-500 outline-none"
+                                className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 outline-none"
                                 style={{ background: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e2e8f0', color: isDark ? '#f8fafc' : '#000' }}
                             >
-                                <option value="modern">Modern (Yeşil Vurgulu Kapak)</option>
-                                <option value="classic">Klasik (Sade Beyaz)</option>
+                                {Object.values(TEMPLATES).map(tpl => (
+                                    <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
+                                ))}
                             </select>
                         </div>
                     </div>
@@ -391,7 +469,7 @@ export default function App() {
                             <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Kısa Firma Adı</label>
                             <input
                                 type="text" value={settings.companyName} onChange={(e) => setSettings({ ...settings, companyName: e.target.value })}
-                                className="w-full p-2 border rounded-md focus:ring-green-500 focus:border-green-500 outline-none"
+                                className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 outline-none"
                                 style={{ background: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e2e8f0', color: isDark ? '#f8fafc' : '#000' }}
                             />
                         </div>
@@ -399,7 +477,7 @@ export default function App() {
                             <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Katalog Ana Başlığı</label>
                             <input
                                 type="text" value={settings.catalogTitle} onChange={(e) => setSettings({ ...settings, catalogTitle: e.target.value })}
-                                className="w-full p-2 border rounded-md focus:ring-green-500 focus:border-green-500 outline-none"
+                                className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 outline-none"
                                 style={{ background: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e2e8f0', color: isDark ? '#f8fafc' : '#000' }}
                             />
                         </div>
@@ -407,7 +485,7 @@ export default function App() {
                             <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Katalog Alt Başlığı (Slogan vb.)</label>
                             <input
                                 type="text" value={settings.catalogSubtitle} onChange={(e) => setSettings({ ...settings, catalogSubtitle: e.target.value })}
-                                className="w-full p-2 border rounded-md focus:ring-green-500 focus:border-green-500 outline-none"
+                                className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 outline-none"
                                 style={{ background: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e2e8f0', color: isDark ? '#f8fafc' : '#000' }}
                             />
                         </div>
@@ -417,7 +495,7 @@ export default function App() {
                         <label className={`block text-sm font-medium mb-1 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Varsayılan Para Birimi</label>
                         <select
                             value={settings.defaultCurrency} onChange={(e) => setSettings({ ...settings, defaultCurrency: e.target.value })}
-                            className="w-full p-2 border rounded-md focus:ring-green-500 focus:border-green-500 outline-none"
+                            className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 outline-none"
                             style={{ background: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e2e8f0', color: isDark ? '#f8fafc' : '#000' }}
                         >
                             <option value="USD">Dolar ($)</option>
@@ -434,7 +512,7 @@ export default function App() {
         <div className="space-y-6 animate-fadeIn">
             <div>
                 <h3 className={`text-lg font-semibold mb-4 border-b pb-2 flex items-center ${isDark ? 'text-gray-100 border-gray-700' : 'text-gray-800 border-gray-200'}`}>
-                    <Building2 size={18} className="mr-2 text-green-600" /> Kurumsal Bilgiler
+                    <Building2 size={18} className="mr-2 text-blue-500" /> Kurumsal Bilgiler
                 </h3>
                 <p className={`text-xs mb-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Bu bilgiler kataloğun 2. sayfasında (Hakkımızda) ve arka kapakta gösterilir.</p>
 
@@ -444,7 +522,7 @@ export default function App() {
                         <textarea
                             rows={4}
                             value={companyInfo.about} onChange={(e) => updateCompanyInfo('about', e.target.value)}
-                            className="w-full p-2 border rounded-md focus:ring-green-500 focus:border-green-500 text-sm outline-none"
+                            className="w-full p-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-sm outline-none"
                             style={{ background: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e2e8f0', color: isDark ? '#f8fafc' : '#000' }}
                             placeholder="Firmanızı kısaca tanıtın..."
                         />
@@ -496,11 +574,11 @@ export default function App() {
         <div className="space-y-4 animate-fadeIn">
             <div className={`flex justify-between items-center border-b pb-2 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                 <h3 className={`text-lg font-semibold flex items-center ${isDark ? 'text-gray-100' : 'text-gray-800'}`}>
-                    <List size={18} className="mr-2 text-green-600" /> Kategoriler
+                    <List size={18} className="mr-2 text-blue-500" /> Kategoriler
                 </h3>
                 <button
                     onClick={addCategory}
-                    className="flex items-center px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition shadow-sm"
+                    className="flex items-center px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition shadow-sm"
                 >
                     <Plus size={16} className="mr-1" /> Ekle
                 </button>
@@ -529,11 +607,11 @@ export default function App() {
         <div className="space-y-6 animate-fadeIn">
             <div className={`flex justify-between items-center border-b pb-2 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                 <h3 className={`text-lg font-semibold flex items-center ${isDark ? 'text-gray-100' : 'text-gray-800'}`}>
-                    <Package size={18} className="mr-2 text-green-600" /> Ürün Yönetimi
+                    <Package size={18} className="mr-2 text-blue-500" /> Ürün Yönetimi
                 </h3>
                 <button
                     onClick={addProduct}
-                    className="flex items-center px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition shadow-sm"
+                    className="flex items-center px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition shadow-sm"
                 >
                     <Plus size={16} className="mr-1" /> Yeni Ürün
                 </button>
@@ -541,7 +619,7 @@ export default function App() {
 
             <div className="space-y-6 flex flex-col items-stretch w-full overflow-hidden">
                 {products.map((product) => (
-                    <div key={product.id} className={`border rounded-xl p-4 shadow-sm relative group transition hover:border-green-500/50 ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+                    <div key={product.id} className={`border rounded-xl p-4 shadow-sm relative group transition hover:border-blue-500/50 ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
                         <button
                             onClick={() => deleteProduct(product.id)}
                             className={`absolute -top-3 -right-3 border text-gray-400 hover:text-red-500 hover:border-red-200 rounded-full p-1.5 shadow-sm transition z-10 opacity-0 group-hover:opacity-100 cursor-pointer ${isDark ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'}`}
@@ -557,7 +635,7 @@ export default function App() {
                                     <select
                                         value={product.categoryId}
                                         onChange={(e) => updateProduct(product.id, 'categoryId', Number(e.target.value))}
-                                        className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-green-500 outline-none transition"
+                                        className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none transition"
                                         style={{ background: isDark ? '#1e293b' : '#f9fafb', borderColor: isDark ? '#334155' : '#e2e8f0', color: isDark ? '#f8fafc' : '#000' }}
                                     >
                                         {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -570,7 +648,7 @@ export default function App() {
                                         <input
                                             type="text" value={product.code} placeholder="Örn: AYS-01"
                                             onChange={(e) => updateProduct(product.id, 'code', e.target.value)}
-                                            className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-green-500 outline-none min-w-0"
+                                            className="w-full p-2 border rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none min-w-0"
                                             style={{ background: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e2e8f0', color: isDark ? '#f8fafc' : '#000' }}
                                         />
                                     </div>
@@ -579,7 +657,7 @@ export default function App() {
                                         <input
                                             type="text" value={product.name} placeholder="Ürün adı..."
                                             onChange={(e) => updateProduct(product.id, 'name', e.target.value)}
-                                            className="w-full p-2 border rounded-md text-sm font-medium focus:ring-2 focus:ring-green-500 outline-none min-w-0"
+                                            className="w-full p-2 border rounded-md text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none min-w-0"
                                             style={{ background: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e2e8f0', color: isDark ? '#f8fafc' : '#000' }}
                                         />
                                     </div>
@@ -592,7 +670,7 @@ export default function App() {
                                             <input
                                                 type="number" value={product.price} placeholder="0.00"
                                                 onChange={(e) => updateProduct(product.id, 'price', e.target.value)}
-                                                className="w-full min-w-[60px] p-1.5 border rounded-l-md text-sm focus:z-10 focus:ring-1 focus:ring-green-500 outline-none"
+                                                className="w-full min-w-[60px] p-1.5 border rounded-l-md text-sm focus:z-10 focus:ring-1 focus:ring-blue-500 outline-none"
                                                 style={{ background: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e2e8f0', color: isDark ? '#f8fafc' : '#000' }}
                                             />
                                             <select
@@ -613,7 +691,7 @@ export default function App() {
                                                 type="checkbox"
                                                 checked={product.showPrice}
                                                 onChange={(e) => updateProduct(product.id, 'showPrice', e.target.checked)}
-                                                className="rounded text-green-600 focus:ring-green-500 w-4 h-4 cursor-pointer"
+                                                className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
                                             />
                                             <span className={`font-medium text-xs ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Fiyatı Göster</span>
                                         </label>
@@ -627,12 +705,12 @@ export default function App() {
                                     <div className="flex items-center space-x-2">
                                         <div 
                                             onClick={() => openMediaModal({ type: 'product', id: product.id, field: 'image' })}
-                                            className={`h-24 flex-1 border-2 border-dashed rounded-lg flex flex-col items-center justify-center relative overflow-hidden group hover:border-green-400 transition cursor-pointer ${isDark ? 'border-gray-600 bg-gray-900/50' : 'border-gray-300 bg-gray-50'}`}
+                                            className={`h-24 flex-1 border-2 border-dashed rounded-lg flex flex-col items-center justify-center relative overflow-hidden group hover:border-blue-400 transition cursor-pointer ${isDark ? 'border-gray-600 bg-gray-900/50' : 'border-gray-300 bg-gray-50'}`}
                                         >
                                             {product.image ? (
                                                 <img src={product.image} alt="Product" className="object-cover w-full h-full p-1" />
                                             ) : (
-                                                <FileImage size={20} className="text-gray-400 group-hover:text-green-400 transition mb-1" />
+                                                <FileImage size={20} className="text-gray-400 group-hover:text-blue-400 transition mb-1" />
                                             )}
                                             <div className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[9px] text-center py-0.5 font-medium tracking-wider">
                                                 ANA GÖRSEL
@@ -641,12 +719,12 @@ export default function App() {
 
                                         <div 
                                             onClick={() => openMediaModal({ type: 'product', id: product.id, field: 'techImage' })}
-                                            className={`h-24 flex-1 border-2 border-dashed rounded-lg flex flex-col items-center justify-center relative overflow-hidden group hover:border-green-400 transition cursor-pointer ${isDark ? 'border-gray-600 bg-gray-900/50' : 'border-gray-300 bg-gray-50'}`}
+                                            className={`h-24 flex-1 border-2 border-dashed rounded-lg flex flex-col items-center justify-center relative overflow-hidden group hover:border-blue-400 transition cursor-pointer ${isDark ? 'border-gray-600 bg-gray-900/50' : 'border-gray-300 bg-gray-50'}`}
                                         >
                                             {product.techImage ? (
                                                 <img src={product.techImage} alt="Tech" className="object-cover w-full h-full p-1" />
                                             ) : (
-                                                <FileImage size={20} className="text-gray-400 group-hover:text-green-400 transition mb-1" />
+                                                <FileImage size={20} className="text-gray-400 group-hover:text-blue-400 transition mb-1" />
                                             )}
                                             <div className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[9px] text-center py-0.5 font-medium tracking-wider">
                                                 TEKNİK ÇİZİM
@@ -658,7 +736,7 @@ export default function App() {
                                 <div className="w-full">
                                     <div className="flex justify-between items-center mb-2">
                                         <label className={`block text-xs font-medium ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Teknik Özellik Tablosu</label>
-                                        <button onClick={() => addFeature(product.id)} className="text-[10px] uppercase font-bold bg-green-500/20 text-green-500 px-2 py-1 rounded hover:bg-green-500/30 transition">
+                                        <button onClick={() => addFeature(product.id)} className="text-[10px] uppercase font-bold bg-blue-500/20 text-blue-500 px-2 py-1 rounded hover:bg-blue-500/30 transition">
                                             + Satır Ekle
                                         </button>
                                     </div>
@@ -668,13 +746,13 @@ export default function App() {
                                                 <input
                                                     type="text" value={feat.key} placeholder="Özellik"
                                                     onChange={(e) => updateFeature(product.id, fIndex, 'key', e.target.value)}
-                                                    className="w-2/5 min-w-0 p-1.5 border rounded text-xs focus:ring-1 focus:ring-green-500 outline-none"
+                                                    className="w-2/5 min-w-0 p-1.5 border rounded text-xs focus:ring-1 focus:ring-blue-500 outline-none"
                                                     style={{ background: isDark ? '#1e293b' : '#f9fafb', borderColor: isDark ? '#334155' : '#e2e8f0', color: isDark ? '#f8fafc' : '#000' }}
                                                 />
                                                 <input
                                                     type="text" value={feat.value} placeholder="Değer"
                                                     onChange={(e) => updateFeature(product.id, fIndex, 'value', e.target.value)}
-                                                    className="flex-1 min-w-0 p-1.5 border rounded text-xs focus:ring-1 focus:ring-green-500 outline-none"
+                                                    className="flex-1 min-w-0 p-1.5 border rounded text-xs focus:ring-1 focus:ring-blue-500 outline-none"
                                                     style={{ background: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e2e8f0', color: isDark ? '#f8fafc' : '#000' }}
                                                 />
                                                 <button
@@ -697,7 +775,7 @@ export default function App() {
                         <Package className="mx-auto text-gray-400 mb-3" size={40} />
                         <p className={`font-medium ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>Kataloğunuzda henüz ürün yok.</p>
                         <p className={`text-sm mt-1 mb-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Müşterilerinize sunmak için ilk ürününüzü ekleyin.</p>
-                        <button onClick={addProduct} className="px-4 py-2 bg-green-600 text-white text-sm rounded-md shadow-sm hover:bg-green-700">
+                        <button onClick={addProduct} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-md shadow-sm hover:bg-blue-700">
                             Ürün Ekle
                         </button>
                     </div>
@@ -706,7 +784,8 @@ export default function App() {
         </div>
     );
 
-    const isClassic = settings.template === 'classic';
+    const tpl = TEMPLATES[settings.template] || TEMPLATES.modern;
+    const c = tpl.colors;
 
     return (
         <div className="h-[91vh] w-full flex flex-col lg:flex-row font-sans overflow-hidden" style={{ background: isDark ? '#0f172a' : '#f8fafc' }}>
@@ -726,14 +805,13 @@ export default function App() {
         #pdf-preview-container {
           font-family: 'Inter', sans-serif;
           width: 210mm;
-          background-color: white; /* PDF daima beyaz kağıda basılır */
+          background-color: #ffffff;
         }
         
-        /* Sabit sayfalar (Kapak, İçindekiler, Arka Kapak) için milimetrik A4 boyutu */
         .pdf-page {
           width: 210mm;
           height: 296mm; 
-          background: white;
+          background: #ffffff;
           position: relative;
           overflow: hidden;
           box-sizing: border-box;
@@ -741,20 +819,17 @@ export default function App() {
           break-after: page;
         }
 
-        /* Akan ürün içerik sayfaları için esnek yükseklik */
         .pdf-page-content {
           width: 210mm;
           min-height: 296mm; 
-          background: white;
+          background: #ffffff;
           position: relative;
           box-sizing: border-box;
           padding: 15mm;
         }
 
         @media screen {
-          .screen-divider {
-            border-bottom: 2px dashed #cbd5e1;
-          }
+          .screen-divider { border-bottom: 2px dashed #cbd5e1; }
         }
 
         @media print {
@@ -780,7 +855,7 @@ export default function App() {
 
             {/* --- SOL PANEL (KONTROLLER) --- */}
             <div className={`w-full lg:w-[450px] border-r flex flex-col h-[50vh] lg:h-full z-20 flex-shrink-0 ${isDark ? 'bg-[#0f172a] border-[#1e293b]' : 'bg-white border-gray-200 shadow-[4px_0_24px_rgba(0,0,0,0.05)]'}`}>
-                <div className={`p-4 text-white ${isDark ? 'bg-gradient-to-r from-gray-800 to-gray-900 border-b border-gray-700' : 'bg-gradient-to-r from-green-700 to-green-600'}`}>
+                <div className={`p-4 text-white ${isDark ? 'bg-gradient-to-r from-gray-800 to-gray-900 border-b border-gray-700' : 'bg-gradient-to-r from-blue-700 to-blue-600'}`}>
                     <h1 className="text-xl font-bold flex items-center">
                         <AlignLeft className="mr-2 opacity-80" /> Katalog Yönetimi
                     </h1>
@@ -790,25 +865,25 @@ export default function App() {
                 <div className={`flex border-b text-xs font-semibold uppercase tracking-wider ${isDark ? 'bg-[#0f172a] border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
                     <button
                         onClick={() => setActiveTab('settings')}
-                        className={`flex-1 py-3 flex justify-center items-center transition ${activeTab === 'settings' ? (isDark ? 'border-b-2 border-green-500 text-green-400 bg-gray-800' : 'border-b-2 border-green-600 text-green-700 bg-white') : (isDark ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100')}`}
+                        className={`flex-1 py-3 flex justify-center items-center transition ${activeTab === 'settings' ? (isDark ? 'border-b-2 border-blue-500 text-blue-400 bg-gray-800' : 'border-b-2 border-blue-600 text-blue-700 bg-white') : (isDark ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100')}`}
                     >
                         Genel
                     </button>
                     <button
                         onClick={() => setActiveTab('company')}
-                        className={`flex-1 py-3 flex justify-center items-center transition ${activeTab === 'company' ? (isDark ? 'border-b-2 border-green-500 text-green-400 bg-gray-800' : 'border-b-2 border-green-600 text-green-700 bg-white') : (isDark ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100')}`}
+                        className={`flex-1 py-3 flex justify-center items-center transition ${activeTab === 'company' ? (isDark ? 'border-b-2 border-blue-500 text-blue-400 bg-gray-800' : 'border-b-2 border-blue-600 text-blue-700 bg-white') : (isDark ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100')}`}
                     >
                         Firma
                     </button>
                     <button
                         onClick={() => setActiveTab('categories')}
-                        className={`flex-1 py-3 flex justify-center items-center transition ${activeTab === 'categories' ? (isDark ? 'border-b-2 border-green-500 text-green-400 bg-gray-800' : 'border-b-2 border-green-600 text-green-700 bg-white') : (isDark ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100')}`}
+                        className={`flex-1 py-3 flex justify-center items-center transition ${activeTab === 'categories' ? (isDark ? 'border-b-2 border-blue-500 text-blue-400 bg-gray-800' : 'border-b-2 border-blue-600 text-blue-700 bg-white') : (isDark ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100')}`}
                     >
                         Kat.
                     </button>
                     <button
                         onClick={() => setActiveTab('products')}
-                        className={`flex-1 py-3 flex justify-center items-center transition ${activeTab === 'products' ? (isDark ? 'border-b-2 border-green-500 text-green-400 bg-gray-800' : 'border-b-2 border-green-600 text-green-700 bg-white') : (isDark ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100')}`}
+                        className={`flex-1 py-3 flex justify-center items-center transition ${activeTab === 'products' ? (isDark ? 'border-b-2 border-blue-500 text-blue-400 bg-gray-800' : 'border-b-2 border-blue-600 text-blue-700 bg-white') : (isDark ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100')}`}
                     >
                         Ürünler
                     </button>
@@ -827,7 +902,7 @@ export default function App() {
                     <button
                         onClick={exportPDF}
                         disabled={pdfLoading}
-                        className={`w-full py-3 text-white font-bold rounded-lg flex justify-center items-center shadow-lg transition transform hover:-translate-y-0.5 ${isDark ? 'bg-green-600 hover:bg-green-500' : 'bg-gray-900 hover:bg-black'}`}
+                        className={`w-full py-3 text-white font-bold rounded-lg flex justify-center items-center shadow-lg transition transform hover:-translate-y-0.5 ${isDark ? 'bg-blue-600 hover:bg-blue-500' : 'bg-gray-900 hover:bg-black'}`}
                     >
                         {pdfLoading ? <Loader2 className="mr-2 animate-spin" size={20} /> : <Download className="mr-2" size={20} />} 
                         {pdfLoading ? 'Hızlı PDF Hazırlanıyor...' : 'PDF İndir'}
@@ -838,90 +913,89 @@ export default function App() {
 
             {pdfLoading && (
                 <div className="pdf-loader-overlay">
-                    <Loader2 size={48} className="animate-spin text-green-500 mb-4" />
+                    <Loader2 size={48} className="animate-spin text-blue-500 mb-4" />
                     <h2 className="text-2xl font-bold">PDF Hazırlanıyor...</h2>
                     <p className="text-gray-300 mt-2">Görsellerin boyutuna ve sayfaya göre işlem biraz sürebilir, lütfen sayfayı kapatmayın.</p>
                 </div>
             )}
 
-            {/* --- SAĞ PANEL (CANLI ÖNİZLEME) --- */}
-            {/* Bu Kısım (PDF Kapsayıcı) HER ZAMAN BEYAZ OLACAK SADECE ARKA PLAN GRİ */}
+            {/* --- SAĞ PANEL (CANLI ÖNİZLEME) - TAILWIND RENKLİ SINIFLARI KULLANILMAMALI --- */}
             <div className={`flex-1 h-[50vh] lg:h-full overflow-y-auto p-4 lg:p-10 flex flex-col items-center custom-scrollbar ${isDark ? 'bg-black/50' : 'bg-gray-500'}`}>
 
-                <div className="shadow-[0_20px_50px_rgba(0,0,0,0.3)] bg-white text-black">
-
-                    <div id="pdf-preview-container" className="flex flex-col bg-white">
+                <div className="shadow-[0_20px_50px_rgba(0,0,0,0.3)] bg-white text-black" style={{ backgroundColor: '#ffffff', color: '#000000' }}>
+                    <div id="pdf-preview-container" className="flex flex-col relative" style={{ backgroundColor: '#ffffff' }}>
 
                         {/* ================= 1. KAPAK SAYFASI (Front Cover) ================= */}
-                        <div className={`pdf-page flex flex-col relative screen-divider ${isClassic ? 'bg-white' : 'bg-slate-900'}`}>
+                        <div className="pdf-page flex flex-col relative screen-divider" style={{ backgroundColor: c.bgPrimary }}>
+                            
                             {/* Üst Dekoratif Alan */}
-                            {!isClassic && (
-                                <div className="absolute top-0 left-0 w-full h-80 z-0 pointer-events-none">
-                                    <svg preserveAspectRatio="none" viewBox="0 0 100 100" className="w-full h-full">
-                                        <polygon fill="#16a34a" points="0,0 100,0 100,100 0,60" />
+                            {settings.template !== 'classic' && (
+                                <div className="absolute top-0 left-0 w-full h-[300px] z-0 pointer-events-none">
+                                    <svg preserveAspectRatio="none" viewBox="0 0 100 100" className="w-full h-full" style={{ display: 'block' }}>
+                                        <polygon fill={c.accent} points="0,0 100,0 100,100 0,60" />
                                     </svg>
                                 </div>
                             )}
 
-                            <div className="flex-1 flex flex-col justify-center items-center px-16 text-center z-10 pt-16">
+                            <div className="flex-1 flex flex-col justify-center items-center px-[64px] text-center z-10 pt-[64px]">
                                 {/* Logo Alanı */}
-                                <div className={`p-8 rounded-2xl mb-12 min-h-[140px] w-4/5 flex items-center justify-center transform transition duration-500 ${isClassic ? '' : 'bg-white shadow-2xl hover:scale-105'}`}>
+                                <div className="p-[32px] rounded-[16px] mb-[48px] min-h-[140px] w-4/5 flex items-center justify-center transform transition duration-500 shadow-2xl hover:scale-105" style={{ backgroundColor: c.bgSecondary }}>
                                     {settings.logo ? (
-                                        <img src={settings.logo} alt="Firma Logosu" className="max-h-24 w-full object-contain" />
+                                        <img src={settings.logo} alt="Firma Logosu" className="max-h-[96px] w-full object-contain mix-blend-multiply" />
                                     ) : (
-                                        <h1 className="text-4xl font-black text-slate-800 tracking-wider uppercase">
+                                        <h1 className="text-4xl font-black tracking-wider uppercase m-0" style={{ color: c.textMain }}>
                                             {settings.companyName}
                                         </h1>
                                     )}
                                 </div>
 
                                 {/* Başlık Alanı */}
-                                <h1 className={`text-6xl font-black leading-tight tracking-tight mb-4 drop-shadow-lg ${isClassic ? 'text-slate-900' : 'text-white'}`}>
+                                <h1 className="text-6xl font-black leading-tight tracking-tight mb-[16px] drop-shadow-lg m-0" style={{ color: c.textInverse }}>
                                     {settings.catalogTitle.split(' ').map((word, i) => (
                                         <React.Fragment key={i}>
-                                            {i === 0 ? <span className="text-green-500">{word}</span> : word}{' '}
+                                            {i === 0 ? <span style={{ color: c.accent }}>{word}</span> : word}{' '}
                                         </React.Fragment>
                                     ))}
                                 </h1>
 
-                                <div className="w-24 h-1.5 bg-green-500 mb-6 rounded-full"></div>
+                                <div className="w-[96px] h-[6px] mb-[24px] rounded-full" style={{ backgroundColor: c.accent }}></div>
 
-                                <p className={`tracking-[0.25em] uppercase text-sm font-semibold ${isClassic ? 'text-slate-500' : 'text-gray-300'}`}>
+                                <p className="tracking-[0.25em] uppercase text-sm font-semibold m-0" style={{ color: c.coverTextBody }}>
                                     {settings.catalogSubtitle}
                                 </p>
                             </div>
 
                             {/* Alt Footer Bölümü */}
-                            <div className={`h-32 flex flex-col items-center justify-center pb-4 z-10 relative ${isClassic ? 'bg-slate-50 border-t border-slate-200' : 'bg-slate-950 border-t border-slate-800'}`}>
-                                <p className="text-green-500 tracking-widest text-xs uppercase font-bold mb-1">{settings.companyName}</p>
-                                <p className={`text-[10px] uppercase ${isClassic ? 'text-slate-400' : 'text-gray-500'}`}>{new Date().getFullYear()} Koleksiyonu</p>
+                            <div className="h-[128px] flex flex-col items-center justify-center pb-[16px] z-10 relative border-t" style={{ backgroundColor: c.bgDark, borderColor: c.border }}>
+                                <p className="tracking-widest text-xs uppercase font-bold mb-[4px] m-0" style={{ color: c.accent }}>{settings.companyName}</p>
+                                <p className="text-[10px] uppercase m-0" style={{ color: c.coverTextBody }}>{new Date().getFullYear()} Koleksiyonu</p>
                             </div>
                         </div>
 
                         {/* ================= 2. İÇİNDEKİLER VE HAKKIMIZDA (Index Page) ================= */}
-                        <div className="pdf-page bg-white p-[15mm] flex flex-col screen-divider">
-                            <div className="flex justify-between items-end border-b-2 border-slate-900 pb-4 mb-10">
-                                <h2 className="text-4xl font-black text-slate-900 tracking-tight">HAKKIMIZDA <span className="text-green-600">&</span> İÇİNDEKİLER</h2>
-                                {settings.logo && <img src={settings.logo} className="h-10 object-contain" alt="Logo mini" />}
+                        <div className="pdf-page flex flex-col screen-divider" style={{ backgroundColor: '#ffffff', padding: '15mm' }}>
+                            <div className="flex justify-between items-end border-b-[2px] pb-[16px] mb-[40px]" style={{ borderColor: c.textMain }}>
+                                <h2 className="text-4xl font-black tracking-tight m-0" style={{ color: c.textMain }}>HAKKIMIZDA <span style={{ color: c.accent }}>&</span> İÇİNDEKİLER</h2>
+                                {settings.logo && <img src={settings.logo} className="h-[40px] object-contain" alt="Logo mini" />}
                             </div>
 
-                            <div className="flex gap-12 flex-1">
+                            <div className="flex gap-[48px] flex-1">
                                 <div className="w-1/2 flex flex-col">
-                                    <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center">
-                                        <span className="w-8 h-1 bg-green-600 mr-3"></span> Biz Kimiz?
+                                    <h3 className="text-xl font-bold mb-[24px] flex items-center m-0" style={{ color: c.textMain }}>
+                                        <span className="w-[32px] h-[4px] mr-[12px]" style={{ backgroundColor: c.accent }}></span> Biz Kimiz?
                                     </h3>
-                                    <p className="text-slate-600 leading-relaxed text-sm text-justify mb-10">
+                                    <p className="leading-relaxed text-sm text-justify mb-[40px] m-0" style={{ color: '#475569' }}>
                                         {companyInfo.about}
                                     </p>
 
-                                    <div className="mt-auto bg-slate-50 p-6 rounded-xl border border-slate-100">
-                                        <h4 className="text-sm font-bold text-slate-800 mb-4 uppercase tracking-wider">İletişim</h4>
-                                        <div className="space-y-3 text-sm text-slate-600">
-                                            <div className="flex items-center"><Phone size={16} className="text-green-600 mr-3" /> {companyInfo.phone}</div>
-                                            <div className="flex items-center"><Mail size={16} className="text-green-600 mr-3" /> {companyInfo.email}</div>
-                                            <div className="flex items-center"><Globe size={16} className="text-green-600 mr-3" /> {companyInfo.website}</div>
-                                            <div className="flex items-start mt-2 pt-2 border-t border-slate-200">
-                                                <MapPin size={16} className="text-green-600 mr-3 mt-1 flex-shrink-0" />
+                                    <div className="mt-auto p-[24px] rounded-[12px] border" style={{ backgroundColor: '#f8fafc', borderColor: '#f1f5f9' }}>
+                                        <h4 className="text-sm font-bold mb-[16px] uppercase tracking-wider m-0" style={{ color: c.textMain }}>İletişim</h4>
+                                        <div className="space-y-[12px] text-sm" style={{ color: '#475569' }}>
+                                            <div className="flex items-center"><Phone size={16} className="mr-[12px]" style={{ color: c.accent }} /> {companyInfo.phone}</div>
+                                            <div className="flex items-center"><Mail size={16} className="mr-[12px]" style={{ color: c.accent }} /> {companyInfo.email}</div>
+                                            <div className="flex items-center"><Globe size={16} className="mr-[12px]" style={{ color: c.accent }} /> {companyInfo.website}</div>
+                                            <div className="flex items-start mt-[8px] pt-[8px] border-t" style={{ borderColor: '#e2e8f0' }}>
+                                                <MapPin size={16} className="mr-[12px] mt-[4px] flex-shrink-0" style={{ color: c.accent }} />
                                                 <span className="leading-snug">{companyInfo.address}</span>
                                             </div>
                                         </div>
@@ -929,99 +1003,99 @@ export default function App() {
                                 </div>
 
                                 <div className="w-1/2">
-                                    <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center">
-                                        <span className="w-8 h-1 bg-green-600 mr-3"></span> Kategoriler
+                                    <h3 className="text-xl font-bold mb-[24px] flex items-center m-0" style={{ color: c.textMain }}>
+                                        <span className="w-[32px] h-[4px] mr-[12px]" style={{ backgroundColor: c.accent }}></span> Kategoriler
                                     </h3>
-                                    <div className="space-y-4">
+                                    <div className="space-y-[16px]">
                                         {categories.map((cat, index) => (
                                             <div key={cat.id} className="flex items-center text-sm">
-                                                <span className="text-green-600 font-bold text-lg w-8">{(index + 1).toString().padStart(2, '0')}</span>
-                                                <span className="font-semibold text-slate-700 flex-1 uppercase tracking-wide">{cat.name}</span>
-                                                <div className="flex-1 border-b border-dotted border-gray-300 mx-3 relative top-2"></div>
-                                                <span className="text-gray-400 font-medium text-xs">Bölüm</span>
+                                                <span className="font-bold text-lg w-[32px]" style={{ color: c.accent }}>{(index + 1).toString().padStart(2, '0')}</span>
+                                                <span className="font-semibold flex-1 uppercase tracking-wide" style={{ color: c.textMain }}>{cat.name}</span>
+                                                <div className="flex-1 border-b border-dotted mx-[12px] relative top-[8px]" style={{ borderColor: '#cbd5e1' }}></div>
+                                                <span className="font-medium text-xs" style={{ color: '#94a3b8' }}>Bölüm</span>
                                             </div>
                                         ))}
                                     </div>
                                 </div>
                             </div>
-                            <div className="text-center text-[10px] text-gray-400 uppercase tracking-widest mt-8 border-t pt-4">Sayfa 02</div>
+                            <div className="text-center text-[10px] uppercase tracking-widest mt-[32px] border-t pt-[16px] m-0" style={{ color: '#94a3b8', borderColor: '#f1f5f9' }}>Sayfa 02</div>
                         </div>
 
                         {/* ================= 3. İÇERİK SAYFALARI ================= */}
-                        <div className="pdf-page-content screen-divider">
-                            <div className="space-y-16">
+                        <div className="pdf-page-content screen-divider" style={{ backgroundColor: '#ffffff', padding: '15mm' }}>
+                            <div className="space-y-[64px]">
                                 {categories.map((category, catIndex) => {
                                     const categoryProducts = products.filter(p => p.categoryId === category.id);
                                     if (categoryProducts.length === 0) return null;
 
                                     return (
-                                        <div key={category.id} className="page-break-avoid w-full mb-12">
-                                            <div className={`p-6 rounded-xl mb-8 flex items-center justify-between shadow-md border-l-8 border-green-500 ${isClassic ? 'bg-slate-100 text-slate-900 border border-slate-200' : 'bg-slate-900 text-white'}`}>
+                                        <div key={category.id} className="page-break-avoid w-full mb-[48px]">
+                                            <div className="p-[24px] rounded-[12px] mb-[32px] flex items-center justify-between shadow-md border-l-[8px]" style={{ backgroundColor: c.bgPrimary, borderColor: c.accent }}>
                                                 <div>
-                                                    <span className={`font-bold tracking-widest text-xs uppercase block mb-1 ${isClassic ? 'text-green-700' : 'text-green-400'}`}>Bölüm {(catIndex + 1).toString().padStart(2, '0')}</span>
-                                                    <h2 className="text-3xl font-black uppercase tracking-tight">{category.name}</h2>
+                                                    <span className="font-bold tracking-widest text-xs uppercase block mb-[4px] m-0" style={{ color: c.accent }}>Bölüm {(catIndex + 1).toString().padStart(2, '0')}</span>
+                                                    <h2 className="text-3xl font-black uppercase tracking-tight m-0" style={{ color: c.textInverse }}>{category.name}</h2>
                                                 </div>
-                                                <Package size={40} className={isClassic ? 'text-slate-300' : 'text-slate-700 opacity-50'} />
+                                                <Package size={40} style={{ color: c.textInverse, opacity: 0.5 }} />
                                             </div>
 
-                                            <div className="flex flex-col gap-6">
+                                            <div className="flex flex-col gap-[24px]">
                                                 {categoryProducts.map(product => (
-                                                    <div key={product.id} className="page-break-avoid flex flex-row items-stretch bg-white border-2 border-slate-100 rounded-xl overflow-hidden shadow-sm">
-                                                        <div className="w-5/12 bg-gray-50 p-4 relative flex gap-4 items-center justify-center border-r-2 border-slate-100 min-h-[220px]">
-                                                            <div className="absolute top-0 left-0 bg-green-600 text-white text-[10px] font-bold px-3 py-1 rounded-br-lg z-10 tracking-widest">
+                                                    <div key={product.id} className="page-break-avoid flex flex-row items-stretch border-[2px] rounded-[12px] overflow-hidden shadow-sm" style={{ backgroundColor: '#ffffff', borderColor: '#f1f5f9' }}>
+                                                        <div className="w-5/12 p-[16px] relative flex gap-[16px] items-center justify-center border-r-[2px] min-h-[220px]" style={{ backgroundColor: '#f8fafc', borderColor: '#f1f5f9' }}>
+                                                            <div className="absolute top-0 left-0 text-[10px] font-bold px-[12px] py-[4px] rounded-br-[8px] z-10 tracking-widest" style={{ backgroundColor: c.accent, color: '#ffffff' }}>
                                                                 {product.code || 'KOD YOK'}
                                                             </div>
 
                                                             {!product.image && !product.techImage ? (
-                                                                <div className="text-gray-300 flex flex-col items-center opacity-40">
-                                                                    <FileImage size={40} className="mb-2" />
-                                                                    <span className="uppercase tracking-widest text-[10px] font-bold">Görsel Yok</span>
+                                                                <div className="flex flex-col items-center opacity-40" style={{ color: '#cbd5e1' }}>
+                                                                    <FileImage size={40} className="mb-[8px]" />
+                                                                    <span className="uppercase tracking-widest text-[10px] font-bold m-0">Görsel Yok</span>
                                                                 </div>
                                                             ) : (
                                                                 <>
                                                                     {product.image && (
                                                                         <div className={`flex items-center justify-center h-full ${product.techImage ? 'w-1/2' : 'w-full'}`}>
-                                                                            <img src={product.image} alt={product.name} className="max-h-full max-w-full object-contain drop-shadow-md" />
+                                                                            <img src={product.image} alt={product.name} className="max-h-full max-w-full object-contain" />
                                                                         </div>
                                                                     )}
                                                                     {product.techImage && (
                                                                         <div className={`flex items-center justify-center h-full ${product.image ? 'w-1/2' : 'w-full'}`}>
-                                                                            <img src={product.techImage} alt={`${product.name} Teknik`} className="max-h-full max-w-full object-contain drop-shadow-sm mix-blend-multiply" />
+                                                                            <img src={product.techImage} alt={`${product.name} Teknik`} className="max-h-full max-w-full object-contain mix-blend-multiply" />
                                                                         </div>
                                                                     )}
                                                                 </>
                                                             )}
                                                         </div>
 
-                                                        <div className="w-7/12 p-6 flex flex-col flex-1">
-                                                            <div className="flex justify-between items-start gap-2 mb-4">
-                                                                <h3 className="text-xl font-black text-slate-800 leading-tight uppercase">{product.name}</h3>
+                                                        <div className="w-7/12 p-[24px] flex flex-col flex-1" style={{ backgroundColor: '#ffffff' }}>
+                                                            <div className="flex justify-between items-start gap-[8px] mb-[16px]">
+                                                                <h3 className="text-xl font-black leading-tight uppercase m-0" style={{ color: '#1e293b' }}>{product.name}</h3>
                                                                 {product.showPrice && product.price && (
-                                                                    <div className="text-right flex-shrink-0 bg-green-50 text-green-700 px-3 py-1.5 rounded border border-green-100">
-                                                                        <span className="text-lg font-black">
+                                                                    <div className="text-right flex-shrink-0 px-[12px] py-[6px] rounded border" style={{ backgroundColor: `${c.accent}10`, borderColor: `${c.accent}30`, color: c.accent }}>
+                                                                        <span className="text-lg font-black m-0">
                                                                             {getCurrencySymbol(product.currency)}{product.price}
                                                                         </span>
                                                                     </div>
                                                                 )}
                                                             </div>
 
-                                                            <div className="mt-auto pt-4 border-t-2 border-slate-100">
+                                                            <div className="mt-auto pt-[16px] border-t-[2px]" style={{ borderColor: '#f1f5f9' }}>
                                                                 {product.features && product.features.length > 0 && product.features[0].key !== '' ? (
-                                                                    <table className="w-full text-sm">
+                                                                    <table className="w-full text-sm" style={{ borderCollapse: 'collapse', borderSpacing: 0 }}>
                                                                         <tbody>
                                                                             {product.features.map((feat, idx) => {
                                                                                 if (!feat.key && !feat.value) return null;
                                                                                 return (
-                                                                                    <tr key={idx} className="border-b border-slate-50 last:border-0">
-                                                                                        <td className="py-2 text-slate-500 font-semibold w-2/5 pr-2">{feat.key}</td>
-                                                                                        <td className="py-2 text-slate-900 font-bold text-right">{feat.value}</td>
+                                                                                    <tr key={idx} className="border-b" style={{ borderColor: '#f8fafc' }}>
+                                                                                        <td className="py-[8px] font-semibold w-2/5 pr-[8px]" style={{ color: '#64748b' }}>{feat.key}</td>
+                                                                                        <td className="py-[8px] font-bold text-right" style={{ color: '#0f172a' }}>{feat.value}</td>
                                                                                     </tr>
                                                                                 );
                                                                             })}
                                                                         </tbody>
                                                                     </table>
                                                                 ) : (
-                                                                    <div className="text-sm text-gray-400 italic py-2">Teknik özellik belirtilmemiş.</div>
+                                                                    <div className="text-sm italic py-[8px]" style={{ color: '#94a3b8' }}>Teknik özellik belirtilmemiş.</div>
                                                                 )}
                                                             </div>
                                                         </div>
@@ -1033,9 +1107,9 @@ export default function App() {
                                 })}
 
                                 {products.length === 0 && (
-                                    <div className="text-center py-32 text-gray-400 border-2 border-dashed border-gray-300 rounded-xl mx-10">
-                                        <p className="text-2xl font-bold mb-2">Katalog İçeriği Boş</p>
-                                        <p className="text-sm">Yönetim panelinden kategoriler ve ürünler eklediğinizde burada listelenecektir.</p>
+                                    <div className="text-center py-[128px] border-[2px] border-dashed rounded-[12px] mx-[40px]" style={{ color: '#94a3b8', borderColor: '#cbd5e1' }}>
+                                        <p className="text-2xl font-bold mb-[8px] m-0">Katalog İçeriği Boş</p>
+                                        <p className="text-sm m-0">Yönetim panelinden kategoriler ve ürünler eklediğinizde burada listelenecektir.</p>
                                     </div>
                                 )}
                             </div>
@@ -1044,59 +1118,59 @@ export default function App() {
                         <div className="html2pdf__page-break"></div>
 
                         {/* ================= 4. ARKA KAPAK (Back Cover) ================= */}
-                        <div className={`pdf-page flex flex-col ${isClassic ? 'bg-white text-slate-900' : 'bg-slate-900 text-white'}`}>
-                            <div className="flex-1 flex flex-col justify-center items-center px-16 text-center">
+                        <div className="pdf-page flex flex-col" style={{ backgroundColor: c.bgPrimary }}>
+                            <div className="flex-1 flex flex-col justify-center items-center px-[64px] text-center">
 
-                                <div className="w-16 h-1 bg-green-500 mb-8 rounded-full"></div>
+                                <div className="w-[64px] h-[4px] mb-[32px] rounded-full" style={{ backgroundColor: c.accent }}></div>
 
-                                <h2 className="text-4xl font-black mb-4 uppercase tracking-wider">Bize Ulaşın</h2>
-                                <p className={`text-sm mb-12 max-w-md mx-auto font-light ${isClassic ? 'text-slate-600' : 'text-gray-400'}`}>
+                                <h2 className="text-4xl font-black mb-[16px] uppercase tracking-wider m-0" style={{ color: c.textInverse }}>Bize Ulaşın</h2>
+                                <p className="text-sm mb-[48px] max-w-md mx-auto font-light m-0" style={{ color: c.coverTextBody }}>
                                     Projeleriniz için özel aydınlatma çözümleri, fiyat teklifleri ve teknik destek almak için uzman ekibimizle iletişime geçin.
                                 </p>
 
-                                <div className={`p-8 rounded-2xl border w-full max-w-lg backdrop-blur-sm ${isClassic ? 'bg-slate-50 border-slate-200' : 'bg-slate-800/50 border-slate-700'}`}>
-                                    <div className="space-y-6 text-left">
+                                <div className="p-[32px] rounded-[16px] border w-full max-w-lg" style={{ backgroundColor: c.bgSecondary, borderColor: c.border }}>
+                                    <div className="space-y-[24px] text-left">
                                         <div className="flex items-center">
-                                            <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center mr-4 flex-shrink-0">
-                                                <Phone size={20} className="text-white" />
+                                            <div className="w-[40px] h-[40px] rounded-full flex items-center justify-center mr-[16px] flex-shrink-0" style={{ backgroundColor: c.accent }}>
+                                                <Phone size={20} style={{ color: '#ffffff' }} />
                                             </div>
                                             <div>
-                                                <p className={`text-xs uppercase tracking-wider font-bold mb-0.5 ${isClassic ? 'text-slate-500' : 'text-gray-400'}`}>Müşteri Hizmetleri</p>
-                                                <p className="font-semibold text-lg">{companyInfo.phone}</p>
+                                                <p className="text-xs uppercase tracking-wider font-bold mb-[2px] m-0" style={{ color: c.textLight }}>Müşteri Hizmetleri</p>
+                                                <p className="font-semibold text-lg m-0" style={{ color: c.textMain }}>{companyInfo.phone}</p>
                                             </div>
                                         </div>
 
                                         <div className="flex items-center">
-                                            <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center mr-4 flex-shrink-0">
-                                                <Mail size={20} className="text-white" />
+                                            <div className="w-[40px] h-[40px] rounded-full flex items-center justify-center mr-[16px] flex-shrink-0" style={{ backgroundColor: c.accent }}>
+                                                <Mail size={20} style={{ color: '#ffffff' }} />
                                             </div>
                                             <div>
-                                                <p className={`text-xs uppercase tracking-wider font-bold mb-0.5 ${isClassic ? 'text-slate-500' : 'text-gray-400'}`}>E-Posta</p>
-                                                <p className="font-semibold text-lg">{companyInfo.email}</p>
+                                                <p className="text-xs uppercase tracking-wider font-bold mb-[2px] m-0" style={{ color: c.textLight }}>E-Posta</p>
+                                                <p className="font-semibold text-lg m-0" style={{ color: c.textMain }}>{companyInfo.email}</p>
                                             </div>
                                         </div>
 
                                         <div className="flex items-center">
-                                            <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center mr-4 flex-shrink-0">
-                                                <MapPin size={20} className="text-white" />
+                                            <div className="w-[40px] h-[40px] rounded-full flex items-center justify-center mr-[16px] flex-shrink-0" style={{ backgroundColor: c.accent }}>
+                                                <MapPin size={20} style={{ color: '#ffffff' }} />
                                             </div>
                                             <div>
-                                                <p className={`text-xs uppercase tracking-wider font-bold mb-0.5 ${isClassic ? 'text-slate-500' : 'text-gray-400'}`}>Merkez Ofis & Fabrika</p>
-                                                <p className="font-semibold text-sm leading-snug">{companyInfo.address}</p>
+                                                <p className="text-xs uppercase tracking-wider font-bold mb-[2px] m-0" style={{ color: c.textLight }}>Merkez Ofis & Fabrika</p>
+                                                <p className="font-semibold text-sm leading-snug m-0" style={{ color: c.textMain }}>{companyInfo.address}</p>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
-                            <div className={`h-40 flex flex-col items-center justify-center relative overflow-hidden ${isClassic ? 'bg-slate-100 border-t border-slate-200' : 'bg-slate-950'}`}>
-                                {!isClassic && <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]"></div>}
+                            <div className="h-[160px] flex flex-col items-center justify-center relative overflow-hidden border-t" style={{ backgroundColor: c.bgDark, borderColor: c.border }}>
+                                {settings.template !== 'classic' && settings.template !== 'minimal' && <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]" style={{ display: 'block' }}></div>}
                                 {settings.logo ? (
-                                    <img src={settings.logo} className={`h-12 object-contain mb-3 z-10 ${isClassic ? '' : 'brightness-0 invert opacity-70'}`} alt="Logo" />
+                                    <img src={settings.logo} className="h-[48px] object-contain mb-[12px] z-10" style={settings.template!=='classic' && settings.template!=='minimal' ? { filter: 'brightness(0) invert(1)', opacity: 0.7 } : {}} alt="Logo" />
                                 ) : (
-                                    <h3 className="text-xl font-bold tracking-widest text-gray-500 z-10">{settings.companyName}</h3>
+                                    <h3 className="text-xl font-bold tracking-widest z-10 m-0" style={{ color: c.textLight }}>{settings.companyName}</h3>
                                 )}
-                                <p className="text-green-600 text-xs tracking-widest font-bold z-10">{companyInfo.website}</p>
+                                <p className="text-xs tracking-widest font-bold z-10 m-0" style={{ color: c.accent }}>{companyInfo.website}</p>
                             </div>
                         </div>
 
