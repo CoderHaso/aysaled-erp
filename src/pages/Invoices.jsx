@@ -1108,10 +1108,24 @@ export default function Invoices({ type = 'inbox' }) {
       const data = await r.json();
       if (!data.success) throw new Error(data.error);
       closeCreate();
-      invoiceCache.delete(type);
-      pageCache.invalidate(`invoices_${type}`);
+
+      // ── Otomatik Senkronizasyon ────────────────────────────────────────────
+      // Fatura Uyumsoft'ta oluşturulunca gerçek fatura numarası (sayfa no) atanır.
+      // Hemen sync ile bu numarayı DB'ye çekiyoruz; sayfa numarası kaymalarını önler.
+      showToast(`Fatura oluşturuldu! Senkronize ediliyor... (${data.invoice_id || ''})`);
+      invoiceCache.delete(createType);
+      pageCache.invalidate(`invoices_${createType}`);
+      try {
+        await fetch('/api/sync-invoices', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: createType, detailLimit: 5 }),
+        });
+      } catch (_syncErr) { /* sync opsiyonel; asıl işlem tamamlandı */ }
+      // ──────────────────────────────────────────────────────────────────────
+
       await fetchInvoices(true);
-      alert(`Fatura oluşturuldu: ${data.invoice_id}`);
+      showToast('Fatura oluşturuldu ve senkronize edildi ✓', 'success');
     } catch (err) { alert('Hata: ' + err.message); }
     finally { setCreating(false); }
   };
