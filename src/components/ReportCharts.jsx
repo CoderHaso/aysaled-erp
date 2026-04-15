@@ -3,12 +3,14 @@ import { useTheme } from '../contexts/ThemeContext';
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
 export const fmt  = (n) => n != null ? Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : '0';
-export const fmtK = (n) => {
-  if (!n) return '0';
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1000)      return `${(n / 1000).toFixed(1)}K`;
-  return fmt(n);
+export const fmtK = (n, dec = 2) => {
+  if (n == null) return '0';
+  return Number(n).toLocaleString('tr-TR', {
+    minimumFractionDigits: dec,
+    maximumFractionDigits: dec,
+  });
 };
+
 export const MONTH_NAMES = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara'];
 export const monthKey   = (d) => d?.substring(0, 7);
 export const lastNMonths = (n) => {
@@ -139,11 +141,11 @@ export function DonutChart({ slices = [], size = 110 }) {
           );
         })}
         <circle cx="60" cy="60" r="29" fill={isDark ? '#0c1526' : '#f8fafc'} />
-        <text x="60" y="56" textAnchor="middle" fontSize="11" fill={isDark ? '#f1f5f9' : '#1e293b'} fontWeight="bold">
-          {hovered !== null ? fmtK(slices[hovered]?.value) : fmtK(total)}
+        <text x="60" y="56" textAnchor="middle" fontSize="8" fill={isDark ? '#f1f5f9' : '#1e293b'} fontWeight="bold">
+          {hovered !== null ? fmtK(slices[hovered]?.value) : slices.length}
         </text>
-        <text x="60" y="67" textAnchor="middle" fontSize="7" fill="#64748b">
-          {hovered !== null ? slices[hovered]?.label.slice(0, 10) : 'toplam'}
+        <text x="60" y="67" textAnchor="middle" fontSize="6.5" fill="#64748b">
+          {hovered !== null ? slices[hovered]?.label?.slice(0, 10) : 'kategori'}
         </text>
       </svg>
       <div className="flex-1 space-y-1.5">

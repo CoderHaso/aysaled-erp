@@ -214,12 +214,12 @@ export default function Reports() {
         supabase.from('customers').select('id,name,source,created_at,is_faturasiz'),
         supabase.from('suppliers').select('id,name,source,created_at,is_faturasiz'),
         supabase.from('cash_transactions').select('id,direction,amount,category,person,tx_date,is_settled').gte('tx_date', cutoffStr),
-        // İş Emri — mevcut tabloyu dene, yoksa boş
-        supabase.from('work_orders').select('id,created_at,status,total_cost,customer_name').gte('created_at', cutoffStr + 'T00:00:00Z').then(r => r).catch(() => ({ data: [] })),
-        // Çekler
-        supabase.from('checks').select('id,created_at,amount,status,drawer_name,due_date').gte('created_at', cutoffStr + 'T00:00:00Z').then(r => r).catch(() => ({ data: [] })),
-        // Hesap Defteri hareketleri
-        supabase.from('cari_hareketler').select('id,tarih,borc,alacak,currency,kaynak,baslik').gte('tarih', cutoffStr).then(r => r).catch(() => ({ data: [] })),
+        // İş Emri — mevcut tabloyu dene, eksik kolon varsa boş dön
+        supabase.from('work_orders').select('id,created_at,status').gte('created_at', cutoffStr + 'T00:00:00Z').then(r => r).catch(() => ({ data: [] })),
+        // Çekler — tablo yoksa boş dön (404 bekleniyor)
+        supabase.from('checks').select('id,created_at,amount,status,drawer_name,due_date').gte('created_at', cutoffStr + 'T00:00:00Z').then(r => r.error?.code === '42P01' ? { data: [] } : r).catch(() => ({ data: [] })),
+        // Hesap Defteri hareketleri — musteri/tedarikci id ile birlikte
+        supabase.from('cari_hareketler').select('id,tarih,borc,alacak,currency,kaynak,baslik,musteri_id,tedarikci_id').gte('tarih', cutoffStr).then(r => r).catch(() => ({ data: [] })),
       ]);
 
       setInvoices(invR.data || []);
@@ -778,38 +778,34 @@ function TeklifTab({ currentColor, quotes, acceptedQuotes, rejectedQuotes, activ
 function IsEmriTab({ currentColor, isEmriRows, emriCompleted, emriPending, emriByMonth }) {
   const { effectiveMode } = useTheme();
   const isDark = effectiveMode === 'dark';
-  const totalCost = isEmriRows.reduce((s,e) => s+Number(e.total_cost||0), 0);
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiCard label="Toplam İş Emri"  value={isEmriRows.length}        icon={Hammer}    color="#f97316" />
         <KpiCard label="Tamamlanan"       value={emriCompleted.length}      icon={TrendingUp} color="#10b981" />
         <KpiCard label="Devam Eden"       value={emriPending.length}        icon={RefreshCw} color="#3b82f6" />
-        <KpiCard label="Toplam Maliyet"  value={`TL ${fmtK(totalCost)}`}  icon={Package}   color="#f97316" />
+        <KpiCard label="İptal"            value={isEmriRows.filter(e=>e.status==='cancelled').length} icon={AlertTriangle} color="#ef4444" />
       </div>
       {isEmriRows.length === 0 ? (
         <div className="glass-card p-8 text-center">
           <Hammer size={40} className="mx-auto mb-3 opacity-20 text-slate-400" />
           <p className="text-slate-500">Seçili dönemde iş emri bulunamadı.</p>
-          <p className="text-xs text-slate-400 mt-1">work_orders tablosu henüz mevcut değil ya da veri yok.</p>
+          <p className="text-xs text-slate-400 mt-1">Farklı bir dönem deneyin veya veri bekleniyor.</p>
         </div>
       ) : (
         <>
           <div className="glass-card p-4">
-            <SectionTitle icon={Hammer} title="Aylık İş Emri" sub="Turuncu = toplam, Yeşil = tamamlanan" color="#f97316" />
+            <SectionTitle icon={Hammer} title="Aylık İş Emri Sayısı" sub="Turuncu = toplam, Yeşil = tamamlanan" color="#f97316" />
             <BarChart data={emriByMonth} color="#f97316" color2="#10b981" label1="Toplam" label2="Tamamlanan" />
           </div>
           <div className="glass-card p-4">
             <SectionTitle icon={PieChart} title="Durum Dağılımı" color="#f97316" />
             <DonutChart slices={[
-              { label:'Tamamlanan', value: emriCompleted.length,    color:'#10b981' },
+              { label:'Tamamlandı', value: emriCompleted.length,    color:'#10b981' },
               { label:'Devam Eden', value: emriPending.length,      color:'#3b82f6' },
+              { label:'Bekliyor',   value: isEmriRows.filter(e=>e.status==='pending').length, color:'#f59e0b' },
               { label:'İptal',      value: isEmriRows.filter(e=>e.status==='cancelled').length, color:'#ef4444' },
             ].filter(s=>s.value>0)} />
-          </div>
-          <div className="glass-card p-4">
-            <SectionTitle icon={Users} title="En Çok İş Emri Verilen Müşteri" color={currentColor} />
-            <TopList color={currentColor} unit="TL " items={topN(isEmriRows,'customer_name','total_cost')} />
           </div>
         </>
       )}
@@ -874,35 +870,73 @@ function CekTab({ currentColor, cekRows, cekWaiting, cekPaid, cekBounced, cekTot
   );
 }
 
-// ─── HESAP DEFTERİ TAB ────────────────────────────────────────────────────────
+// ─── HESAP DEFTERİ TAB ────────────────────────────────────────────────
 function HesapTab({ currentColor, hareketRows, hdAlacak, hdVerecek, hdByMonth }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
   const net = hdAlacak - hdVerecek;
-  const faturaliH  = hareketRows.filter(h => h.kaynak === 'invoice');
-  const manuelH    = hareketRows.filter(h => h.kaynak === 'manual' || !h.kaynak);
+
+  // Cari (musteri) hareketleri: borc = Alacak (alacağımız), alacak = Alınan (aldığımız)
+  const cariH     = hareketRows.filter(h => h.musteri_id);
+  const cariAlacak = cariH.reduce((s, h) => s + Number(h.borc   || 0), 0); // alacağımız
+  const cariAlinan = cariH.reduce((s, h) => s + Number(h.alacak || 0), 0); // aldığımız
+
+  // Tedarikçi hareketleri: alacak = Verecek (ödeyeceğimiz), borc = Verilen (verdiğimiz)
+  const tedarikH   = hareketRows.filter(h => h.tedarikci_id);
+  const tedVerecek  = tedarikH.reduce((s, h) => s + Number(h.alacak || 0), 0); // ödeyeceğimiz
+  const tedVerilen  = tedarikH.reduce((s, h) => s + Number(h.borc   || 0), 0); // verdiğimiz
+
+  const faturaliH = hareketRows.filter(h => h.kaynak === 'invoice');
+  const manuelH   = hareketRows.filter(h => h.kaynak === 'manual' || !h.kaynak);
+
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label="Toplam Alacak"   value={`TL ${fmtK(hdAlacak)}`}        icon={TrendingUp}  color="#10b981" />
-        <KpiCard label="Toplam Verecek"  value={`TL ${fmtK(hdVerecek)}`}       icon={TrendingDown} color="#ef4444" />
-        <KpiCard label="Net Bakiye"      value={`TL ${fmtK(Math.abs(net))}`}   sub={net>=0?'Alacak':'Verecek'} icon={BookOpen} color={net>=0?'#10b981':'#ef4444'} />
-        <KpiCard label="Toplam Hareket"  value={hareketRows.length}              icon={BarChart2}   color="#8b5cf6" />
+        <KpiCard label="Cari Alacak"    value={`TL ${fmtK(cariAlacak)}`}  sub="Müşteriden alacağımız" icon={TrendingUp}  color="#10b981" />
+        <KpiCard label="Cari Alınan"    value={`TL ${fmtK(cariAlinan)}`}  sub="Müşteriden alınan"     icon={TrendingDown} color="#3b82f6" />
+        <KpiCard label="Tedarikçi Verecek" value={`TL ${fmtK(tedVerecek)}`} sub="Tedarikçiye ödeyeceğimiz" icon={TrendingDown} color="#ef4444" />
+        <KpiCard label="Tedarikçi Verilen" value={`TL ${fmtK(tedVerilen)}`} sub="Tedarikçiye verilen"    icon={TrendingUp}  color="#f97316" />
       </div>
+
+      {/* Özet net */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {[
+          { label: 'Net Cari Bakiye',    val: cariAlacak - cariAlinan,    sub: 'Alacak − Alınan',        posLabel: 'Hâlâ alacağımız var', negLabel: 'Fazla alınmış' },
+          { label: 'Net Tedarikçi',      val: tedVerilen - tedVerecek,    sub: 'Verilen − Verecek',      posLabel: 'Fazla ödeme yapılmış', negLabel: 'Hâlâ borcumuz var' },
+          { label: 'Genel Net Bakiye',   val: net,                         sub: 'Tüm alacak − verecek',  posLabel: 'Net alacaklısınız', negLabel: 'Net borçlusunuz' },
+        ].map(row => {
+          const pos = row.val >= 0;
+          const color = pos ? '#10b981' : '#ef4444';
+          return (
+            <div key={row.label} className="glass-card p-4 rounded-2xl"
+              style={{ border: `1px solid ${color}22` }}>
+              <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color }}>{row.label}</p>
+              <p className="text-[10px] text-slate-500 mb-2">{row.sub}</p>
+              <p className="text-xl font-black" style={{ color }}>{row.val < 0 ? '-' : '+'}TL {fmtK(Math.abs(row.val))}</p>
+              <p className="text-[10px] mt-1" style={{ color }}>{pos ? row.posLabel : row.negLabel}</p>
+            </div>
+          );
+        })}
+      </div>
+
       <div className="glass-card p-4">
-        <SectionTitle icon={BookOpen} title="Aylık Alacak / Verecek" sub="Yeşil = Alacak, Kırmızı = Verecek" color="#10b981" />
-        <BarChart data={hdByMonth} color="#10b981" color2="#ef4444" label1="Alacak" label2="Verecek" unit="TL " />
+        <SectionTitle icon={BookOpen} title="Aylık Alacak / Alınan (Cari)" sub="Yeşil = Alacak (alacağımız), Kırmızı = Alınan (tahsilat)" color="#10b981" />
+        <BarChart data={hdByMonth} color="#10b981" color2="#ef4444" label1="Alacak" label2="Alınan" unit="TL " />
       </div>
+
       <div className="grid lg:grid-cols-2 gap-4">
         <div className="glass-card p-4">
-          <SectionTitle icon={PieChart} title="Hareket Kaynağı" color={currentColor} />
+          <SectionTitle icon={PieChart} title="Hareket Tipi Dağılımı" color={currentColor} />
           <DonutChart slices={[
-            { label:'Faturadan',  value:faturaliH.length, color:'#3b82f6' },
-            { label:'Manuel',     value:manuelH.length,   color:'#8b5cf6' },
+            { label:'Cari (Müşteri)',   value: cariH.length,    color:'#3b82f6' },
+            { label:'Tedarikçi',        value: tedarikH.length, color:'#f97316' },
+            { label:'Manuel/Diğer',     value: manuelH.length,  color:'#8b5cf6' },
           ].filter(s=>s.value>0)} />
         </div>
         <div className="glass-card p-4">
-          <SectionTitle icon={TrendingUp} title="Alacak Büyüklüğü" color="#10b981" />
+          <SectionTitle icon={TrendingUp} title="En Büyük Alacak Tutarları" color="#10b981" />
           <TopList color="#10b981" unit="TL "
-            items={topN(hareketRows.filter(h=>h.borc>0),'baslik','borc')} />
+            items={topN(hareketRows.filter(h => h.borc > 0), 'baslik', 'borc')} />
         </div>
       </div>
     </div>
