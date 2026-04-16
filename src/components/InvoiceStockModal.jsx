@@ -170,7 +170,7 @@ export default function InvoiceStockModal({
             <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: currentColor }}>
               {isInbox ? 'Gelen Fatura' : 'Giden Fatura'} → Stoğa İşle
             </p>
-            <h3 className="text-sm font-bold mt-0.5" style={{ color: isDark ? '#ffffff' : '#1e293b' }}>{inv.cari_name || inv.invoice_id}</h3>
+            <h3 className="text-sm font-bold mt-0.5 break-words whitespace-normal pr-4" style={{ color: isDark ? '#ffffff' : '#1e293b' }}>{inv.cari_name || inv.invoice_id}</h3>
             <p className="text-xs text-slate-500">{fmt(inv.amount)} {currency} · {inv.issue_date?.slice(0,10)}</p>
           </div>
           <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/5 transition-colors">

@@ -183,6 +183,7 @@ function IsleWizard({ inv, allItems, supabase, onClose, onDone }) {
   const [saving, setSaving]     = useState(false);
   const [err, setErr]           = useState('');
   const [showStokModal, setShowStokModal] = useState(false);
+  const [creatingContact, setCreatingContact] = useState(false);
 
   // Faturanın cari/tedarikçi ID'sini bul
   const [contactId, setContactId] = useState(null);
@@ -244,7 +245,7 @@ function IsleWizard({ inv, allItems, supabase, onClose, onDone }) {
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Fatura İşle</p>
-            <h3 className="text-sm font-bold mt-0.5 truncate" style={{ color: isDark ? '#ffffff' : '#1e293b' }}>{inv.cari_name || inv.invoice_id}</h3>
+            <h3 className="text-sm font-bold mt-0.5 break-words whitespace-normal pr-4" style={{ color: isDark ? '#ffffff' : '#1e293b' }}>{inv.cari_name || inv.invoice_id}</h3>
             <p className="text-xs text-slate-500 mt-0.5">
               {fmtN(inv.amount)} {inv.currency} · {inv.issue_date?.slice(0,10)}
             </p>
@@ -286,9 +287,42 @@ function IsleWizard({ inv, allItems, supabase, onClose, onDone }) {
                   value={alacak} onChange={e => setAlacak(e.target.value)} placeholder="0.00"/>
               </div>
               {!contactId && inv.vkntckn && (
-                <p className="col-span-2 text-[11px] text-amber-400 flex items-center gap-1">
-                  <AlertCircle size={11}/> {isOutbox ? 'Müşteri' : 'Tedarikçi'} kaydı bulunamadı — hareket yine de not olarak kaydedilebilir.
-                </p>
+                <div className="col-span-2 flex flex-col gap-2 p-3 rounded-lg" style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)' }}>
+                  <p className="text-[11px] text-amber-400 flex items-center gap-1 font-bold">
+                    <AlertCircle size={13}/> 
+                    {isOutbox ? 'Müşteri' : 'Tedarikçi'} kaydı bulunamadı (VKN: {inv.vkntckn})
+                  </p>
+                  <p className="text-[10px] text-amber-500/80">İşlem yapabilmek için carinin kaydı "Hesap Defteri" alanında oluşturulmuş olması gerekir.</p>
+                  <button type="button" disabled={creatingContact}
+                    onClick={async () => {
+                      setCreatingContact(true); setErr('');
+                      try {
+                        const tbl = isOutbox ? 'customers' : 'suppliers';
+                        const payload = {
+                          name: inv.cari_name || 'İsimsiz',
+                          company_name: inv.cari_name || 'İsimsiz',
+                          vkntckn: inv.vkntckn,
+                        };
+                        // Varsa vergi dairesini de alalım
+                        const rawNode = inv.raw_detail?.AccountingCustomerParty || inv.raw_detail?.['cac:AccountingCustomerParty'] 
+                                     || inv.raw_detail?.AccountingSupplierParty || inv.raw_detail?.['cac:AccountingSupplierParty'];
+                        if (rawNode?.Party?.PartyTaxScheme?.TaxScheme?.Name) {
+                          payload.vergi_dairesi = rawNode.Party.PartyTaxScheme.TaxScheme.Name || rawNode.Party.PartyTaxScheme.TaxScheme.Name['#text'];
+                        }
+                        const { data, error } = await supabase.from(tbl).insert(payload).select('id').single();
+                        if (error) throw error;
+                        setContactId(data.id);
+                      } catch(e) {
+                        setErr('Hızlı ekleme hatası: ' + e.message);
+                      } finally {
+                        setCreatingContact(false);
+                      }
+                    }}
+                    className="self-start mt-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow shadow-amber-900/20"
+                    style={{ background: '#f59e0b', color: '#fff' }}>
+                    {creatingContact ? 'Ekleniyor...' : `+ Hızlı Ekle`}
+                  </button>
+                </div>
               )}
             </div>
           )}
@@ -836,7 +870,7 @@ export default function Invoices({ type = 'inbox' }) {
       const r = await fetch('/api/invoices-api?action=detail', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ invoiceId: inv.invoice_id }),
+        body:    JSON.stringify({ invoiceId: inv.invoice_id, type: inv.type, documentId: inv.documentId }),
       });
       const d = await r.json();
       if (d.success) {
