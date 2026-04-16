@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 import {
@@ -184,14 +184,18 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
           {open && (
             <motion.div initial={{ opacity:0, y:-4 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:-4 }}
               className="absolute z-40 w-full mt-1 rounded-xl overflow-hidden"
-              style={{ background: isDark ? '#0c1a2e' : '#ffffff', border: '1px solid rgba(148,163,184,0.15)', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}>
+              style={{
+                background: isDark ? '#0c1a2e' : '#ffffff',
+                border: `1px solid ${isDark ? 'rgba(148,163,184,0.18)' : '#e2e8f0'}`,
+                boxShadow: isDark ? '0 20px 40px rgba(0,0,0,0.5)' : '0 10px 30px rgba(0,0,0,0.12)',
+              }}>
               <div className="p-2">
                 <input autoFocus value={q} onChange={e => setQ(e.target.value)}
                   placeholder="Ara..." className="w-full px-3 py-1.5 rounded-lg text-sm outline-none"
-                  style={{ background: isDark ? 'rgba(255,255,255,0.07)' : '#f1f5f9', color: isDark ? '#f1f5f9' : '#1e293b' }} />
+                  style={{ background: isDark ? 'rgba(255,255,255,0.07)' : '#f1f5f9', color: isDark ? '#f1f5f9' : '#1e293b', border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}` }} />
               </div>
               <div className="max-h-48 overflow-y-auto">
-                {matches.length === 0 && q && <p className="px-4 py-3 text-xs text-slate-500">Sonuç yok</p>}
+                {matches.length === 0 && q && <p className="px-4 py-3 text-xs" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>Sonuç yok</p>}
 
                 {q.trim().length > 0 && (
                   <>
@@ -202,10 +206,12 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
                         setOpen(false); setQ('');
                       }}
                       className="flex items-center gap-2 px-4 py-2.5 cursor-pointer transition-colors"
-                      style={{ borderBottom: '1px solid rgba(148,163,184,0.06)' }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(148,163,184,0.07)'}
+                      style={{ borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.06)' : '#f1f5f9'}` }}
+                      onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(148,163,184,0.07)' : 'rgba(0,0,0,0.03)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                      <span className="text-sm text-slate-400">📋 <strong className="text-slate-300">&quot;{q}&quot;</strong> — Kayıtsız devam et</span>
+                      <span className="text-sm" style={{ color: isDark ? '#94a3b8' : '#475569' }}>
+                        📋 <strong style={{ color: isDark ? '#cbd5e1' : '#1e293b' }}>&quot;{q}&quot;</strong> — Kayıtsız devam et
+                      </span>
                     </div>
                     {/* Yeni ürün / hammadde oluştur */}
                     <div onClick={() => {
@@ -213,10 +219,10 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
                         setOpen(false); setQ('');
                       }}
                       className="flex items-center gap-2 px-4 py-2.5 cursor-pointer transition-colors"
-                      style={{ borderBottom: '1px solid rgba(148,163,184,0.06)' }}
+                      style={{ borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.06)' : '#f1f5f9'}` }}
                       onMouseEnter={e => e.currentTarget.style.background = 'rgba(16,185,129,0.08)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                      <span className="text-sm text-emerald-400">➕ Stok'a Yeni Ürün / Hammadde Ekle</span>
+                      <span className="text-sm text-emerald-500">➕ Stok'a Yeni Ürün / Hammadde Ekle</span>
                     </div>
                   </>
                 )}
@@ -230,12 +236,12 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
                     setOpen(false); setQ('');
                   }}
                     className="flex items-center justify-between px-4 py-2.5 cursor-pointer transition-colors"
-                    style={{ borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.06)' : '#e2e8f0'}` }}
-                    onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)'}
+                    style={{ borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.06)' : '#f1f5f9'}` }}
+                    onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.025)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                     <div>
                       <p className="text-sm font-semibold truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{item.name}</p>
-                      <p className="text-[10px]" style={{ color: '#64748b' }}>
+                      <p className="text-[10px]" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>
                         {item.item_type === 'product' ? '⚡' : '🔩'} {item.unit}
                         {item.sku ? ` · ${item.sku}` : ''}
                         {item.base_currency && item.base_currency !== 'TRY' ? (

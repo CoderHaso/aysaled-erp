@@ -205,26 +205,30 @@ export default function Reports() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const base = { start: cutoffStr };
+      const { start: startStr, end: endStr } = calcDateRange(period);
+
+      // Fatura sorgusu: her zaman tarih filtresi uygula
+      let invQuery = supabase
+        .from('invoices')
+        .select('invoice_id,issue_date,amount,currency,status,type,cari_name,vkntckn,tax_total,tax_exclusive_amount')
+        .gte('issue_date', startStr);
+      if (endStr) invQuery = invQuery.lte('issue_date', endStr);
 
       const [invR, ordR, qR, custR, suppR, cashR, emriR, cekR, harR] = await Promise.all([
-        supabase.from('invoices').select('invoice_id,issue_date,amount,currency,status,type,cari_name,vkntckn,tax_total,tax_exclusive_amount'),
-        supabase.from('orders').select('id,created_at,grand_total,status,customer_name,customer_id').gte('created_at', cutoffStr + 'T00:00:00Z'),
+        invQuery,
+        supabase.from('orders').select('id,created_at,grand_total,status,customer_name,customer_id').gte('created_at', startStr + 'T00:00:00Z'),
         supabase.from('quotes').select('id,created_at,grand_total,status,company_name,currency'),
         supabase.from('customers').select('id,name,source,created_at,is_faturasiz'),
         supabase.from('suppliers').select('id,name,source,created_at,is_faturasiz'),
-        supabase.from('cash_transactions').select('id,direction,amount,category,person,tx_date,is_settled').gte('tx_date', cutoffStr),
-        // İş Emri — mevcut tabloyu dene, eksik kolon varsa boş dön
-        supabase.from('work_orders').select('id,created_at,status').gte('created_at', cutoffStr + 'T00:00:00Z').then(r => r).catch(() => ({ data: [] })),
-        // Çekler — tablo yoksa boş dön (404 bekleniyor)
-        supabase.from('checks').select('id,created_at,amount,status,drawer_name,due_date').gte('created_at', cutoffStr + 'T00:00:00Z').then(r => r.error?.code === '42P01' ? { data: [] } : r).catch(() => ({ data: [] })),
-        // Hesap Defteri hareketleri — musteri/tedarikci id ile birlikte
-        supabase.from('cari_hareketler').select('id,tarih,borc,alacak,currency,kaynak,baslik,musteri_id,tedarikci_id').gte('tarih', cutoffStr).then(r => r).catch(() => ({ data: [] })),
+        supabase.from('cash_transactions').select('id,direction,amount,category,person,tx_date,is_settled').gte('tx_date', startStr),
+        supabase.from('work_orders').select('id,created_at,status').gte('created_at', startStr + 'T00:00:00Z').then(r => r).catch(() => ({ data: [] })),
+        supabase.from('checks').select('id,created_at,amount,status,drawer_name,due_date').gte('created_at', startStr + 'T00:00:00Z').then(r => r.error?.code === '42P01' ? { data: [] } : r).catch(() => ({ data: [] })),
+        supabase.from('cari_hareketler').select('id,tarih,borc,alacak,currency,kaynak,baslik,musteri_id,tedarikci_id').gte('tarih', startStr).then(r => r).catch(() => ({ data: [] })),
       ]);
 
       setInvoices(invR.data || []);
       setOrders(ordR.data || []);
-      const cutoffMs = new Date(cutoffStr).getTime();
+      const cutoffMs = new Date(startStr).getTime();
       setQuotes((qR.data || []).filter(q => q.created_at ? new Date(q.created_at).getTime() >= cutoffMs : true));
       setCustomers(custR.data || []);
       setSuppliers(suppR.data || []);
@@ -234,7 +238,7 @@ export default function Reports() {
       setHareketRows(harR?.data || []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [cutoffStr]);
+  }, [period]);
 
   useEffect(() => { load(); }, [load]);
 

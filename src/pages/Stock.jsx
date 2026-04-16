@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
@@ -1653,21 +1654,40 @@ function BulkUpdateModal({ allItems, c, currentColor, isDark, supabase, onClose,
                           placeholder="Ürün / hammadde ara..."
                           className="w-full px-2.5 py-1.5 text-xs rounded-lg outline-none"
                           style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}/>
-                        {results.length > 0 && (
-                          <div className="absolute left-0 right-0 z-[100] rounded-xl shadow-2xl"
-                            style={{ background: isDark ? '#0f1e36' : '#fff', border: `1px solid ${c.border}`, maxHeight: 220, overflowY: 'auto', top: '100%', marginTop: 4 }}>
-                            {results.map(item => (
-                              <button key={item.id} onClick={() => selectItem(row._key, item)}
-                                className="w-full text-left px-3 py-2.5 text-xs transition-colors"
-                                onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'}
-                                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                                style={{ borderBottom: `1px solid ${c.border}`, color: c.text }}>
-                                <span className="font-semibold">{item.name}</span>
-                                <span className="ml-2 text-[10px]" style={{ color: c.muted }}>{item.unit} · Stok: {item.stock_count ?? '—'}</span>
-                              </button>
-                            ))}
-                          </div>
-                        )}
+                        {results.length > 0 && (() => {
+                          // Dropdown'u portal ile body'e render et (overflow clip sorunu)
+                          const inputEl = document.activeElement;
+                          const rect = inputEl?.getBoundingClientRect?.() || {};
+                          return createPortal(
+                            <div
+                              style={{
+                                position: 'fixed',
+                                top: (rect.bottom || 0) + 4,
+                                left: rect.left || 0,
+                                width: rect.width || 280,
+                                zIndex: 9999,
+                                background: isDark ? '#0f1e36' : '#fff',
+                                border: `1px solid ${c.border}`,
+                                borderRadius: 12,
+                                boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+                                maxHeight: 220,
+                                overflowY: 'auto',
+                              }}
+                            >
+                              {results.map(item => (
+                                <button key={item.id} onClick={() => selectItem(row._key, item)}
+                                  className="w-full text-left px-3 py-2.5 text-xs transition-colors"
+                                  onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'}
+                                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                  style={{ borderBottom: `1px solid ${c.border}`, color: c.text }}>
+                                  <span className="font-semibold">{item.name}</span>
+                                  <span className="ml-2 text-[10px]" style={{ color: c.muted }}>{item.unit} · Stok: {item.stock_count ?? '—'}</span>
+                                </button>
+                              ))}
+                            </div>,
+                            document.body
+                          );
+                        })()}
                       </div>
                     )}
                   </div>

@@ -40,7 +40,7 @@ const TYPE_ICON = {
 const QUICK_ACTIONS = [
   { n: 'Satış Yap',  icon: ShoppingCart, color: '#3b82f6', to: '/sales',               state: { openNew: true } },
   { n: 'Stok Ekle',  icon: Plus,         color: '#f59e0b', to: '/stock',               state: { openQuickAdd: true } },
-  { n: 'Cari Ara',   icon: Search,       color: '#10b981', to: '/customers',           state: {} },
+  { n: 'Cari Ara',   icon: Search,       color: '#10b981', to: '/contacts',            state: {} },
   { n: 'Fatura Kes', icon: FileText,     color: '#8b5cf6', to: '/outgoing-invoices',   state: { openCreate: true } },
 ];
 
