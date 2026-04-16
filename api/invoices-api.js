@@ -273,9 +273,11 @@ async function handleCreate(body, res) {
     line_total: (l.quantity || 0) * (l.unitPrice || 0),
   }));
 
-  // Workaround for missing columns in Supabase: stuff the extra UI fields into the first line item's JSON
+  // Adres ve AÇIKLAMA bilgilerini ilk satır kalemine gömüyoruz
+  // (message kolonu Supabase'de olmasa bile bu yedekten okunabilir)
   if (lineItems.length > 0) {
     lineItems[0].customer_info = { city, district, address, tax_office };
+    if (notes) lineItems[0]._invoice_notes = notes;  // ← açıklama yedek
   }
 
   const row = {
@@ -283,15 +285,26 @@ async function handleCreate(body, res) {
     issue_date: issue_date || new Date().toISOString().slice(0, 10),
     amount: grandTotal, tax_exclusive_amount: subtotal, tax_total: taxTotal,
     currency, status: 'Draft', line_items: lineItems,
-    message: notes,
+    message: notes || null,  // colum yoksa Supabase ignore eder ama deneriz
+    notes: notes || null,    // alternatif kolon adı
     updated_at: new Date().toISOString()
   };
   // Döviz kuru varsa ekle
   if (exchange_rate && currency !== 'TRY') row.exchange_rate = exchange_rate;
 
-  const { error } = await supabase.from('invoices')
+  // notes / message kolonları Supabase'de olmayabilir — önce tüm alanlarla dene,
+  // hata alırsa bu alanlar olmadan tekrar yaz
+  let insertResult = await supabase.from('invoices')
     .upsert(row, { onConflict: 'invoice_id,type', ignoreDuplicates: false });
-  if (error) return res.status(500).json({ success: false, error: error.message });
+
+  if (insertResult.error) {
+    // Bilinmeyen kolon hatası mı? Temiz row dene
+    const { message: _m, notes: _n, ...cleanRow } = row;
+    const retry = await supabase.from('invoices')
+      .upsert(cleanRow, { onConflict: 'invoice_id,type', ignoreDuplicates: false });
+    if (retry.error) return res.status(500).json({ success: false, error: retry.error.message });
+  }
+
   return res.json({ success: true, invoice_id });
 }
 
@@ -352,6 +365,11 @@ async function handleFormalize(body, res) {
 
   const trTime = new Intl.DateTimeFormat('tr-TR', { timeZone: 'Europe/Istanbul', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date());
 
+  // Açıklama: önce message, yoksa notes, yoksa line_items[0]._invoice_notes
+  const invoiceNote = inv.message || inv.notes
+    || inv.line_items?.[0]?._invoice_notes
+    || '';
+
   const ublXml = `
     <Invoice xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
              xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
@@ -362,7 +380,7 @@ async function handleFormalize(body, res) {
       <cbc:CopyIndicator>false</cbc:CopyIndicator>
       <cbc:IssueDate>${issueDate}</cbc:IssueDate>
       <cbc:IssueTime>${trTime}</cbc:IssueTime>
-      ${inv.message ? `<cbc:Note>${encodeXml(inv.message)}</cbc:Note>` : ''}
+      ${invoiceNote ? `<cbc:Note>${encodeXml(invoiceNote)}</cbc:Note>` : ''}
       <cbc:InvoiceTypeCode>SATIS</cbc:InvoiceTypeCode>
       <cbc:DocumentCurrencyCode>${currency}</cbc:DocumentCurrencyCode>
       <cbc:LineCountNumeric>${lines.length}</cbc:LineCountNumeric>
