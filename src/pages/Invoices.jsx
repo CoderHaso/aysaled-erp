@@ -12,6 +12,7 @@ import InvoiceStockModal from '../components/InvoiceStockModal';
 import { useLocation } from 'react-router-dom';
 import { pageCache } from '../lib/pageCache';
 import CustomDialog from '../components/CustomDialog';
+import { useFxRates } from '../hooks/useFxRates';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const STATUS_MAP = {
@@ -687,9 +688,24 @@ export default function Invoices({ type = 'inbox' }) {
   const EMPTY_LINE = () => ({ id: Date.now(), name: '', quantity: 1, unit: 'Adet', unitPrice: 0, taxRate: 20 });
   const [createModal, setCreateModal] = useState(false);
   const [createForm, setCreateForm]   = useState({ customer_id: null, cari_name: '', vkntckn: '', city: '', district: '', address: '', tax_office: '', issue_date: new Date().toISOString().slice(0,10), currency: 'TRY', notes: '', exchange_rate: '', lines: [EMPTY_LINE()] });
-  const [exchangeRate, setExchangeRate] = useState(null);  // { rate, buyRate, source, date }
-  const [fxRates, setFxRates]           = useState({});    // { USD: 38.5, EUR: 42.1 } — TL cinsinden
   const [fetchingRate, setFetchingRate] = useState(false);
+
+  // ── Döviz kurları: createModal açılınca anında tüm kurlar çekilir ──────────────
+  const { fxRates, exchangeRate, loadingRates, refreshRates } = useFxRates({
+    currency: createForm.currency,
+    date: createForm.issue_date,
+    enabled: createModal,   // modal açılınca hemen başlar
+  });
+
+  // exchange_rate alanını hook'tan gelen değerle senkronize et
+  useEffect(() => {
+    if (exchangeRate?.rate && createForm.currency !== 'TRY') {
+      setCreateForm(p => ({ ...p, exchange_rate: String(exchangeRate.rate) }));
+    } else if (createForm.currency === 'TRY') {
+      setCreateForm(p => ({ ...p, exchange_rate: '' }));
+    }
+  }, [exchangeRate, createForm.currency]);
+
   const [creating, setCreating]       = useState(false);
   const [createType, setCreateType]   = useState('outbox'); // Hangi sekme açtı
   const [formalizing, setFormalizing] = useState(null); // invoice_id
@@ -884,8 +900,7 @@ export default function Invoices({ type = 'inbox' }) {
     const unique = Array.from(new Map(raw.map(e => [e.id, e])).values());
     setEntities(unique);
     setDbItems(itemRes.data || []);
-    // Tüm döviz kurlarını arka planda çek
-    fetchAllFxRates(new Date().toISOString().slice(0, 10));
+    // Kurlar zaten useFxRates hook’u ile çekilmekte — manuel fetch gerekmiyor
   };
   const closeCreate = () => {
     setCreateModal(false);
@@ -1027,37 +1042,22 @@ export default function Invoices({ type = 'inbox' }) {
     return !q || dbItems.some(it => trNorm(it.name) === q);
   };
 
-  // Döviz kuru çek (TCMB)
+  // Döviz kuru manuel güncelleme (para birimi değişince)
   const fetchExchangeRate = async (curr, date) => {
-    if (curr === 'TRY') { setExchangeRate(null); setCreateForm(p => ({...p, exchange_rate: ''})); return; }
+    if (curr === 'TRY') {
+      setCreateForm(p => ({...p, exchange_rate: ''}));
+      return;
+    }
     setFetchingRate(true);
     try {
       const url = `/api/exchange-rate?currency=${curr}${date ? `&date=${date}` : ''}`;
       const r = await fetch(url);
       const data = await r.json();
-      if (data.success) {
-        setExchangeRate(data);
+      if (data.success || data.rate) {
         setCreateForm(p => ({...p, exchange_rate: String(data.rate)}));
-      } else {
-        setExchangeRate(null);
       }
-    } catch { setExchangeRate(null); }
+    } catch { /* sessiz hata */ }
     finally { setFetchingRate(false); }
-  };
-
-  // Tüm döviz kurlarını çek (stok fiyatı dönüştürme için)
-  const fetchAllFxRates = async (date) => {
-    const currencies = ['USD', 'EUR', 'GBP'];
-    const map = {};
-    await Promise.all(currencies.map(async (cur) => {
-      try {
-        const url = `/api/exchange-rate?currency=${cur}${date ? `&date=${date}` : ''}`;
-        const r   = await fetch(url);
-        const d   = await r.json();
-        if (d?.rate) map[cur] = Number(d.rate);
-      } catch {}
-    }));
-    setFxRates(map);
   };
 
   const queryCustomerInfo = async () => {
@@ -1733,9 +1733,8 @@ export default function Invoices({ type = 'inbox' }) {
                   <div>
                     <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Para Birimi</label>
                     <select value={createForm.currency} onChange={e => {
-                      const cur = e.target.value;
-                      setCreateForm(p => ({...p, currency: cur}));
-                      fetchExchangeRate(cur, createForm.issue_date);
+                      setCreateForm(p => ({...p, currency: e.target.value}));
+                      // Hook currency değişince otomatik kuru günceller — fetchExchangeRate'e gerek yok
                     }}
                       className="w-full px-3 py-2 text-sm rounded-xl border outline-none"
                       style={{ background: c.card, borderColor: c.border, color: c.text }}>
@@ -1751,19 +1750,18 @@ export default function Invoices({ type = 'inbox' }) {
                           className="flex-1 px-3 py-2 text-sm rounded-xl border outline-none font-mono"
                           style={{ background: c.card, borderColor: c.border, color: c.text }}
                           placeholder="Ör: 32.45" step="0.0001" />
-                        <button onClick={() => fetchExchangeRate(createForm.currency, createForm.issue_date)}
-                          disabled={fetchingRate}
+                        <button onClick={() => { refreshRates(); fetchExchangeRate(createForm.currency, createForm.issue_date); }}
+                          disabled={loadingRates || fetchingRate}
                           className="px-3 py-2 text-xs font-bold rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-colors"
                           style={{ background: 'rgba(99,102,241,0.12)', color: '#818cf8' }}>
-                          {fetchingRate
+                          {(loadingRates || fetchingRate)
                             ? <><svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> Alınıyor...</>
                             : <><svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg> TCMB Kuru Al</>}
                         </button>
                       </div>
                       {exchangeRate && (
                         <p className="text-[10px] mt-1 font-mono" style={{ color: c.muted }}>
-                          Kaynak: {exchangeRate.source === 'tcmb' ? 'TCMB' : 'Alternatif'} • Tarih: {exchangeRate.date}
-                          {exchangeRate.buyRate > 0 && <> • Alış: {exchangeRate.buyRate.toFixed(4)}</>}
+                          Kaynak: {exchangeRate.source === 'tcmb' ? 'TCMB' : 'Manuel'} • 1 {createForm.currency} = {exchangeRate.rate?.toFixed(4)} ₺
                         </p>
                       )}
                     </div>

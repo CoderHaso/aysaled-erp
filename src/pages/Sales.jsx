@@ -12,6 +12,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import { pageCache } from '../lib/pageCache';
+import { useFxRates } from '../hooks/useFxRates';
 import InvoicePreviewModal from '../components/InvoicePreviewModal';
 import CustomDialog from '../components/CustomDialog';
 import RecipePickerModal from '../components/RecipePickerModal';
@@ -457,52 +458,20 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
   const [draftLoading,  setDraftLoading]  = useState(false);
   const [draftPreviewUrl, setDraftPreviewUrl] = useState(null);  // string URL veya null
 
-  // Döviz kurları: { USD: 38.5, EUR: 42.1, GBP: 49.0 } — daima TL cinsinden
-  const [exchangeRate, setExchangeRate] = useState(null); // sipariş para birimi için (geriye dön.)
-  const [fxRates, setFxRates]           = useState({});   // { USD: rate, EUR: rate, GBP: rate }
-
-  const fetchFxRates = async (date) => {
-    const currencies = ['USD', 'EUR', 'GBP'];
-    const map = {};
-    await Promise.all(currencies.map(async (curr) => {
-      try {
-        const qs = new URLSearchParams({ currency: curr });
-        if (date) qs.append('date', date);
-        const res = await fetch(`/api/exchange-rate?${qs.toString()}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data?.rate) map[curr] = data.rate;
-        }
-      } catch {}
-    }));
-    setFxRates(map);
-    // Geriye dönük uyumluluk: sipariş para birimi için exchangeRate
-    if (form.currency !== 'TRY' && map[form.currency]) {
-      setExchangeRate({ rate: map[form.currency], source: 'tcmb' });
-    } else if (form.currency === 'TRY') {
-      setExchangeRate(null);
-    }
-  };
-
-  const fetchExchangeRate = async (curr, date) => {
-    if (curr === 'TRY') { setExchangeRate(null); return; }
-    try {
-      const qs = new URLSearchParams({ currency: curr });
-      if (date) qs.append('date', date);
-      const res = await fetch(`/api/exchange-rate?${qs.toString()}`);
-      if (res.ok) {
-        const data = await res.json();
-        setExchangeRate(data);
-              } else { setExchangeRate(null); }
-            } catch {
-              setExchangeRate(null);
-            }
-          };
-
-  useEffect(() => {
-    fetchExchangeRate(form.currency, form.due_date);
-    fetchFxRates(form.due_date);  // Her zaman tüm kurları çek
-  }, [form.currency, form.due_date]);
+  // ── Döviz kurları: modal açılır açılmaz tüm kurlar çekilir ─────────────────
+  const { fxRates, exchangeRate: hookRate, loadingRates, refreshRates } = useFxRates({
+    currency: form.currency,
+    date: form.due_date,
+    enabled: true,  // OrderForm mount olunca anında fetch başlar
+  });
+  // Kullanıcı manuel kur girebilir — girince hook değerini override eder
+  const [manualRate, setManualRate] = useState(null);
+  // form.currency değişince manuel override'u temizle
+  useEffect(() => { setManualRate(null); }, [form.currency]);
+  // Efektif kur: manuel girilen > hook'tan gelen > 1
+  const exchangeRate = manualRate
+    ? { rate: manualRate, source: 'manual' }
+    : hookRate;
 
   // Müşteri seçince: sipariş no üret + adres/iletişim auto-fill
   const selectCustomer = async (cust) => {
@@ -924,9 +893,10 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
                  </div>
               </div>
               {form.currency !== 'TRY' && (
-                <Field label="Kur (Manuel Düzenle)" type="number" 
-                  value={exchangeRate?.rate || ''} 
-                  onChange={v => setExchangeRate({ rate: Number(v), source: 'manual', date: new Date().toISOString() })} 
+                <Field label="Kur (Manuel Düzenle)"
+                  type="number"
+                  value={manualRate ?? exchangeRate?.rate ?? ''}
+                  onChange={v => setManualRate(v ? Number(v) : null)}
                   placeholder="Örn: 32.45" />
               )}
             </div>
