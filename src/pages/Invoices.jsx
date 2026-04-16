@@ -190,7 +190,7 @@ function IsleWizard({ inv, allItems, supabase, onClose, onDone }) {
   useEffect(() => {
     if (!inv.vkntckn) return;
     const table = isOutbox ? 'customers' : 'suppliers';
-    supabase.from(table).select('id').eq('vkntckn', inv.vkntckn).single()
+    supabase.from(table).select('id').eq('vkntckn', inv.vkntckn).maybeSingle()
       .then(({ data }) => setContactId(data?.id || null));
   }, [inv.vkntckn, isOutbox]);
 
@@ -870,7 +870,7 @@ export default function Invoices({ type = 'inbox' }) {
       const r = await fetch('/api/invoices-api?action=detail', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ invoiceId: inv.invoice_id, type: inv.type, documentId: inv.documentId }),
+        body:    JSON.stringify({ invoiceId: inv.invoice_id, type: inv.type, documentId: inv.document_id }),
       });
       const d = await r.json();
       if (d.success) {
