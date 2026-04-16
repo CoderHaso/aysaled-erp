@@ -8,17 +8,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../../lib/supabaseClient';
-import {
-  Plus, Trash2, Copy, ChevronDown, ChevronRight,
-  Search, X, Check, AlertCircle, Loader2, Tag, Edit2
-} from 'lucide-react';
+import { Plus, Trash2, Copy, ChevronDown, ChevronRight, Search, X, Check, AlertCircle, Loader2, Tag, Edit2 } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useFxRates } from '../../hooks/useFxRates';
 
 const UNITS = ['Adet','Metre','cm','mm','Kg','g','Litre','ml','m²','m³','Rulo','Paket','Kutu','Set','Takım'];
+const CURRENCY_SYM = { TRY: '₺', USD: '$', EUR: '€' };
 
-export default function RecipeEditor({ productId, productName, c, currentColor }) {
+export default function RecipeEditor({ productId, productName, productCurrency, c, currentColor }) {
   const { effectiveMode } = useTheme();
   const isDark = effectiveMode === 'dark';
+  const { convert } = useFxRates();
 
   const [recipes,  setRecipes]  = useState([]);
   const [loading,  setLoading]  = useState(true);
@@ -34,7 +34,7 @@ export default function RecipeEditor({ productId, productName, c, currentColor }
     setLoading(true);
     const { data } = await supabase
       .from('product_recipes')
-      .select('*, recipe_items(*, item:item_id(id,name,unit))')
+      .select('*, recipe_items(*, item:item_id(id,name,unit,purchase_price,base_currency))')
       .eq('product_id', productId)
       .order('created_at');
     setRecipes(data || []);
@@ -45,7 +45,7 @@ export default function RecipeEditor({ productId, productName, c, currentColor }
 
   useEffect(() => {
     // Hammadde listesi
-    supabase.from('items').select('id,name,unit,sku').neq('item_type','product').order('name')
+    supabase.from('items').select('id,name,unit,sku,purchase_price,base_currency').neq('item_type','product').order('name')
       .then(({ data }) => setRawItems(data || []));
     // Kopyalama için tüm ürünler
     supabase.from('items').select('id,name').eq('item_type','product').neq('id', productId || 'none').order('name')
@@ -219,6 +219,8 @@ export default function RecipeEditor({ productId, productName, c, currentColor }
           onToggleTag={toggleTag}
           onCopyThisRecipe={(r) => copyRecipe(r.id, r.name, productId)}
           rawItems={rawItems}
+          convert={convert}
+          productCurrency={productCurrency}
           c={c} currentColor={currentColor} isDark={isDark}
         />
       ))}
@@ -239,7 +241,7 @@ export default function RecipeEditor({ productId, productName, c, currentColor }
 // ═══════════════════════ RECIPE CARD ═══════════════════════
 function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
   onAddItem, onUpdateItem, onSaveItem, onDeleteItem, onToggleTag, onCopyThisRecipe,
-  rawItems, c, currentColor, isDark }) {
+  rawItems, convert, productCurrency, c, currentColor, isDark }) {
 
   const [tagInput, setTagInput] = useState('');
   const [editingName, setEditingName] = useState(false);
@@ -380,15 +382,25 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
           </div>
 
           {/* Toplam */}
-          {(recipe.recipe_items || []).length > 0 && (
-            <div className="rounded-xl px-3 py-2 flex items-center justify-between"
-              style={{ background: `${currentColor}08`, border: `1px solid ${currentColor}25` }}>
-              <span className="text-xs font-semibold" style={{ color: c.muted }}>Toplam Kalem</span>
-              <span className="text-sm font-bold" style={{ color: currentColor }}>
-                {(recipe.recipe_items || []).length} çeşit malzeme
-              </span>
-            </div>
-          )}
+          {(recipe.recipe_items || []).length > 0 && (() => {
+            const totalCost = (recipe.recipe_items || []).reduce((acc, ri) => {
+               const cost = (Number(ri.item?.purchase_price) || 0) * Number(ri.quantity || 1);
+               const cur = ri.item?.base_currency || 'TRY';
+               return acc + convert(cost, cur, productCurrency || 'TRY');
+            }, 0);
+            return (
+              <div className="rounded-xl px-3 py-2 flex items-center justify-between"
+                style={{ background: `${currentColor}08`, border: `1px solid ${currentColor}25` }}>
+                <span className="text-xs font-semibold" style={{ color: c.muted }}>Maliyet Toplamı ({CURRENCY_SYM[productCurrency || 'TRY'] || '₺'})</span>
+                <div className="text-right">
+                  <span className="text-[10px] mr-3" style={{ color: c.muted }}>{totalItems} kalem</span>
+                  <span className="text-sm font-black" style={{ color: currentColor }}>
+                    {CURRENCY_SYM[productCurrency || 'TRY'] || '₺'}{totalCost.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>
@@ -467,7 +479,14 @@ function RecipeItemRow({ item, index, rawItems, onChange, onBlur, onDelete, c, c
                       onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.07)' : '#f1f5f9'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                       <span className="font-semibold" style={{ color: c.text }}>{r.name}</span>
-                      <span style={{ color: c.muted }}>{r.unit}</span>
+                      <div className="text-right flex flex-col">
+                        <span style={{ color: c.muted, fontSize: 10 }}>{r.unit}</span>
+                        {r.purchase_price > 0 && (
+                          <span style={{ color: currentColor, fontSize: 9, fontWeight: 'bold' }}>
+                            {CURRENCY_SYM[r.base_currency || 'TRY'] || '₺'}{r.purchase_price}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   ))}
                   {itemSearch && (
@@ -487,9 +506,14 @@ function RecipeItemRow({ item, index, rawItems, onChange, onBlur, onDelete, c, c
           </div>
         ) : (
           <button ref={btnRef} onClick={openDrop}
-            className="w-full text-left px-2 py-1 text-xs rounded-lg border truncate"
+            className="w-full h-full text-left px-2 py-1 flex items-center justify-between text-xs rounded-lg border min-w-0"
             style={{ background: 'transparent', borderColor: c.border, color: item.item_name ? c.text : c.muted }}>
-            {item.item_name || 'Malzeme seç...'}
+            <span className="truncate pr-1">{item.item_name || 'Malzeme seç...'}</span>
+            {item.item?.purchase_price > 0 && (
+              <span className="text-[9px] font-bold flex-shrink-0" style={{ color: currentColor, opacity: 0.8 }}>
+                {CURRENCY_SYM[item.item?.base_currency || 'TRY'] || '₺'}{item.item?.purchase_price}
+              </span>
+            )}
           </button>
         )}
       </div>

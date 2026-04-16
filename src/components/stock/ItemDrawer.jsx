@@ -575,6 +575,7 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
           <RecipeEditor
             productId={draftId}
             productName={form.name}
+            productCurrency={form.base_currency}
             c={c}
             currentColor={currentColor}
           />
