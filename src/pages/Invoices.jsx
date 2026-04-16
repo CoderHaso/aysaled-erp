@@ -1100,6 +1100,29 @@ export default function Invoices({ type = 'inbox' }) {
     }
   };
 
+  // ── Tutar yazıya çevirme (fatura açıklaması için) ──────────────────────────
+  const buildAmountWords = (total, currency) => {
+    const ONES = ['','Bir','Iki','Uc','Dort','Bes','Alti','Yedi','Sekiz','Dokuz'];
+    const TENS = ['','On','Yirmi','Otuz','Kirk','Elli','Altmis','Yetmis','Seksen','Doksan'];
+    const toWords = (n) => {
+      let res = '';
+      if (n >= 1000000000) { res += toWords(Math.floor(n/1000000000)) + ' Milyar '; n %= 1000000000; }
+      if (n >= 1000000)    { res += toWords(Math.floor(n/1000000))    + ' Milyon '; n %= 1000000; }
+      if (n >= 1000) { const t = Math.floor(n/1000); res += (t === 1 ? '' : toWords(t) + ' ') + 'Bin '; n %= 1000; }
+      if (n >= 100)  { res += (Math.floor(n/100) === 1 ? 'Yuz' : ONES[Math.floor(n/100)] + ' Yuz') + ' '; n %= 100; }
+      if (n >= 10)   { res += TENS[Math.floor(n/10)] + ' '; n %= 10; }
+      if (n > 0)     res += ONES[n] + ' ';
+      return res.trim();
+    };
+    const intPart = Math.floor(total);
+    const decPart = Math.round((total - intPart) * 100);
+    const currName  = { TRY: 'Turk Lirasi', USD: 'Amerikan Dolari', EUR: 'Euro', GBP: 'Sterlin' }[currency] || currency;
+    const centName  = { TRY: 'Kurus',       USD: 'Sent',            EUR: 'Sent', GBP: 'Peni'    }[currency] || 'Kurus';
+    let words = '#' + (intPart === 0 ? 'Sifir' : toWords(intPart)) + ' ' + currName;
+    if (decPart > 0) words += ' ' + toWords(decPart) + ' ' + centName;
+    return words + '#';
+  };
+
   const handleCreate = async () => {
     if (!createForm.cari_name) return alert('Cari adı zorunlu');
     if (createType === 'outbox' && (!createForm.city || !createForm.district || !createForm.address || !createForm.tax_office)) {
@@ -1126,34 +1149,37 @@ export default function Invoices({ type = 'inbox' }) {
 
     setCreating(true);
     try {
+      const filteredLines = createForm.lines.filter(l => l.name);
+      const subtotal   = filteredLines.reduce((s, l) => s + Number(l.quantity) * Number(l.unitPrice), 0);
+      const taxTotal   = filteredLines.reduce((s, l) => s + Number(l.quantity) * Number(l.unitPrice) * Number(l.taxRate) / 100, 0);
+      const grandTotal = subtotal + taxTotal;
+
+      // Tutar yazısını notes'un başına ekle (#Bes Yuz Turk Lirasi# gibi)
+      const amountText     = buildAmountWords(grandTotal, createForm.currency);
+      const notesWithAmount = createForm.notes
+        ? `${amountText} ${createForm.notes}`.trim()
+        : amountText;
+
       const body = {
         ...createForm,
+        notes: notesWithAmount,
         type: createType,
         exchange_rate: createForm.currency !== 'TRY' ? Number(createForm.exchange_rate) : undefined,
-        lines: createForm.lines.filter(l => l.name).map(l => ({ ...l, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), taxRate: Number(l.taxRate) }))
+        lines: filteredLines.map(l => ({ ...l, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), taxRate: Number(l.taxRate) }))
       };
-      const r = await fetch('/api/invoices-api?action=create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const r = await fetch('/api/invoices-api?action=create', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
       const data = await r.json();
       if (!data.success) throw new Error(data.error);
       closeCreate();
 
-      // ── Otomatik Senkronizasyon ────────────────────────────────────────────
-      // Fatura Uyumsoft'ta oluşturulunca gerçek fatura numarası (sayfa no) atanır.
-      // Hemen sync ile bu numarayı DB'ye çekiyoruz; sayfa numarası kaymalarını önler.
-      showToast(`Fatura oluşturuldu! Senkronize ediliyor... (${data.invoice_id || ''})`);
+      // Sadece Supabase listesini yenile — Uyumsoft'a gitmiyor
+      // Kullanıcı listeden "Taslak Gönder" ile Uyumsoft'a gönderecek
       invoiceCache.delete(createType);
       pageCache.invalidate(`invoices_${createType}`);
-      try {
-        await fetch('/api/sync-invoices', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: createType, detailLimit: 5 }),
-        });
-      } catch (_syncErr) { /* sync opsiyonel; asıl işlem tamamlandı */ }
-      // ──────────────────────────────────────────────────────────────────────
-
       await fetchInvoices(true);
-      showToast('Fatura oluşturuldu ve senkronize edildi ✓', 'success');
+      showToast(`Taslak kaydedildi ✓ — Listeden "Taslak Gönder" ile Uyumsoft'a iletebilirsiniz.`, 'success');
     } catch (err) { alert('Hata: ' + err.message); }
     finally { setCreating(false); }
   };
@@ -2016,11 +2042,11 @@ export default function Invoices({ type = 'inbox' }) {
 
                 {/* Notlar */}
                 <div>
-                  <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Notlar</label>
+                  <label className="text-xs font-semibold mb-1 block" style={{ color: c.muted }}>Notlar / Açıklama</label>
                   <textarea value={createForm.notes} onChange={e => setCreateForm(p => ({...p, notes: e.target.value}))}
                     rows={2} className="w-full px-3 py-2 text-sm rounded-xl border outline-none resize-none"
                     style={{ background: c.card, borderColor: c.border, color: c.text }}
-                    placeholder="İsteğe bağlı not..." />
+                    placeholder="İsteğe bağlı ek not... (kaydedince başa #tutar Turk Lirasi# otomatik eklenir)" />
                 </div>
 
                 <div className="flex gap-3 pt-2">
