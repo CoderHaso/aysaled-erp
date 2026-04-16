@@ -1680,16 +1680,6 @@ export default function Invoices({ type = 'inbox' }) {
                         className="flex-1 px-3 py-2 text-sm rounded-xl border outline-none font-mono"
                         style={{ background: c.card, borderColor: c.border, color: c.text }}
                         placeholder="1234567890" />
-                      {createType === 'outbox' && (
-                        <button onClick={queryCustomerInfo}
-                          disabled={queryingVkn}
-                          className="px-3 py-2 text-xs font-bold rounded-xl flex items-center gap-1.5 whitespace-nowrap transition-colors"
-                          style={{ background: 'rgba(56,189,248,0.12)', color: '#38bdf8' }}
-                          title="Firma/Kişi bilgilerini Uyumsoft üzerinden ücretsiz sorgula">
-                          {queryingVkn ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />}
-                          <span className="hidden sm:inline">Sorgula</span>
-                        </button>
-                      )}
                     </div>
                   </div>
                   {createType === 'outbox' && (
@@ -1910,11 +1900,11 @@ export default function Invoices({ type = 'inbox' }) {
                                         {(() => {
                                           const p = (type === 'outbox' ? it.sale_price : it.purchase_price) || it.purchase_price || 0;
                                           if (p <= 0) return null;
-                                          const rate = parseFloat(createForm.exchange_rate) || exchangeRate?.rate || 1;
-                                          const conv = (createForm.currency !== 'TRY' && rate > 0) ? (p / rate) : p;
+                                          const nativeCurr = (type === 'outbox' ? it.sale_currency : it.base_currency) || it.base_currency || 'TRY';
+                                          
                                           return (
                                             <span className="text-[11px] font-bold tabular-nums" style={{ color: currentColor }}>
-                                              {conv.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {createForm.currency}
+                                              {p.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {nativeCurr}
                                             </span>
                                           );
                                         })()}

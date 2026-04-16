@@ -78,6 +78,29 @@ function parseTurkishAddress(addr) {
   return { address, district, city };
 }
 
+// ── Tutar yazıya çevirme (fatura açıklaması için) ──────────────────────────
+const buildAmountWords = (total, currency) => {
+  const ONES = ['','Bir','Iki','Uc','Dort','Bes','Alti','Yedi','Sekiz','Dokuz'];
+  const TENS = ['','On','Yirmi','Otuz','Kirk','Elli','Altmis','Yetmis','Seksen','Doksan'];
+  const toWords = (n) => {
+    let res = '';
+    if (n >= 1000000000) { res += toWords(Math.floor(n/1000000000)) + ' Milyar '; n %= 1000000000; }
+    if (n >= 1000000)    { res += toWords(Math.floor(n/1000000))    + ' Milyon '; n %= 1000000; }
+    if (n >= 1000) { const t = Math.floor(n/1000); res += (t === 1 ? '' : toWords(t) + ' ') + 'Bin '; n %= 1000; }
+    if (n >= 100)  { res += (Math.floor(n/100) === 1 ? 'Yuz' : ONES[Math.floor(n/100)] + ' Yuz') + ' '; n %= 100; }
+    if (n >= 10)   { res += TENS[Math.floor(n/10)] + ' '; n %= 10; }
+    if (n > 0)     res += ONES[n] + ' ';
+    return res.trim();
+  };
+  const intPart = Math.floor(total);
+  const decPart = Math.round((total - intPart) * 100);
+  const currName  = { TRY: 'Turk Lirasi', USD: 'Amerikan Dolari', EUR: 'Euro', GBP: 'Sterlin' }[currency] || currency;
+  const centName  = { TRY: 'Kurus',       USD: 'Sent',            EUR: 'Sent', GBP: 'Peni'    }[currency] || 'Kurus';
+  let words = '#' + (intPart === 0 ? 'Sifir' : toWords(intPart)) + ' ' + currName;
+  if (decPart > 0) words += ' ' + toWords(decPart) + ' ' + centName;
+  return words + '#';
+};
+
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 function StatusBadge({ status, urgent }) {
   const s = STATUS[status] || STATUS.pending;
@@ -654,6 +677,9 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
       // ── UYUMSOFT INVOICE DRAFT CREATION ──
       if (invoiceToggle && !isEdit) {
         try {
+          const amntWords = buildAmountWords(Math.round((subtotal + taxTotal) * 100) / 100, form.currency);
+          const finalNotes = form.notes ? `${amntWords} ${form.notes}`.trim() : amntWords;
+          
           const invBody = {
             type: 'outbox',
             cari_name: form.customer_name,
@@ -663,7 +689,7 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
             address: form.customer_address?.trim(),
             tax_office: form.customer_tax_office?.trim(),
             currency: form.currency,
-            notes: form.notes,
+            notes: finalNotes,
             exchange_rate: exchangeRate?.rate || 1,
             lines: orderLines.map(l => ({
               name: l.item_name,
@@ -750,6 +776,48 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
 
         {/* Müşteri + Sipariş No */}
         <SectionCard title="Sipariş Bilgileri" icon={FileText} isDark={isDark}>
+          
+          {/* Fatura Toggle - En Üste Alındı */}
+          <div className="flex items-center justify-between mb-4 p-3 rounded-xl" style={{ background: isDark ? 'rgba(16,185,129,0.05)' : 'rgba(16,185,129,0.05)', border: `1px solid rgba(16,185,129,0.2)` }}>
+            <div>
+              <p className="text-sm font-semibold" style={{ color: isDark ? '#10b981' : '#059669' }}>Resmi Fatura Kesilecek</p>
+              <p className="text-xs mt-0.5" style={{ color: isDark ? '#64748b' : '#64748b' }}>
+                Kapalıysa sadece iç sipariş kaydı. Açıksa Uyumsoft'a taslak gönderilebilir.
+              </p>
+            </div>
+            {/* Toggle Switch */}
+            <button onClick={() => { setInvoiceToggle(v => !v); setDraftPreviewUrl(null); }}
+              className="relative w-12 h-6 rounded-full transition-all flex-shrink-0"
+              style={{ background: invoiceToggle ? '#10b981' : 'rgba(148,163,184,0.2)' }}>
+              <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-all"
+                style={{ left: invoiceToggle ? '1.625rem' : '0.125rem' }} />
+            </button>
+          </div>
+
+          <AnimatePresence>
+            {invoiceToggle && (
+              <motion.div initial={{ opacity:0, height:0 }} animate={{ opacity:1, height:'auto' }} exit={{ opacity:0, height:0 }} className="overflow-hidden mb-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-xl" style={{ border: '1px solid rgba(139,92,246,0.25)', background: 'rgba(139,92,246,0.05)' }}>
+                  <Field label="VKN / TCKN *" value={form.customer_vkntckn} onChange={v => setForm(f => ({ ...f, customer_vkntckn: v }))} placeholder="10 veya 11 hane" />
+                  <Field label="Vergi Dairesi *" value={form.customer_tax_office} onChange={v => setForm(f => ({ ...f, customer_tax_office: v }))} placeholder="Ornegin: BORNOVA" />
+                  <div>
+                    <label className="text-xs font-semibold block mb-1" style={{ color: isDark ? 'rgba(148,163,184,0.7)' : '#475569' }}>Ülke</label>
+                    <input value={form.customer_country} onChange={e => setForm(f => ({ ...f, customer_country: e.target.value }))} className="w-full px-3 py-2 text-sm rounded-xl outline-none border font-mono uppercase" style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#f1f5f9', borderColor: isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0', color: isDark ? '#e2e8f0' : '#1e293b' }} />
+                  </div>
+                  <Field label="Sehir *" value={form.customer_city} onChange={v => setForm(f => ({ ...f, customer_city: v }))} placeholder="Ornegin: IZMIR" />
+                  <Field label="Mahalle / Ilce *" value={form.customer_district} onChange={v => setForm(f => ({ ...f, customer_district: v }))} placeholder="Ornegin: KONAK" />
+                  <div className="sm:col-span-2">
+                    <Field label="Cadde / Sokak / Acik Adres *" value={form.customer_address} onChange={v => setForm(f => ({ ...f, customer_address: v }))} placeholder="Cadde, sokak, bina kapi no..." />
+                  </div>
+                  <Field label="Bina Adi" value={form.customer_building_name} onChange={v => setForm(f => ({ ...f, customer_building_name: v }))} placeholder="Opsiyonel" />
+                  <Field label="Bina / Kapi No" value={form.customer_building_no} onChange={v => setForm(f => ({ ...f, customer_building_no: v }))} placeholder="Opsiyonel" />
+                  <Field label="Posta Kodu" value={form.customer_postal_code} onChange={v => setForm(f => ({ ...f, customer_postal_code: v }))} placeholder="35000" />
+                  <Field label="Tel" value={form.customer_phone} onChange={v => setForm(f => ({ ...f, customer_phone: v }))} placeholder="0232 xxx xx xx" />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Müşteri seçici */}
             <div className="relative">
@@ -968,6 +1036,9 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
               background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(248,250,252,0.9)'
             }}>
               <SumRow isDark={isDark} label="GENEL TOPLAM" value={fmt(grandTotal, form.currency)} bold accent />
+              <div className="px-4 py-2 border-b text-center text-[10.5px] font-bold text-violet-500 uppercase tracking-widest" style={{ borderColor: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9' }}>
+                {buildAmountWords(grandTotal, form.currency)}
+              </div>
               {form.currency !== 'TRY' && (
                 <div className="px-4 py-2 flex justify-between items-center text-[10px] font-bold uppercase tracking-wider"
                   style={{
@@ -984,100 +1055,7 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
           </div>
         </SectionCard>
 
-        {/* Fatura Toggle */}
-        <SectionCard title="Resmi Fatura" icon={Receipt} isDark={isDark}>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-semibold" style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}>Resmi Fatura Kesilecek</p>
-              <p className="text-xs mt-0.5" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>
-                Kapalıysa sadece iç sipariş kaydı. Açıksa Uyumsoft'a taslak gönderilebilir.
-              </p>
-            </div>
-            {/* Toggle Switch */}
-            <button onClick={() => { setInvoiceToggle(v => !v); setDraftPreviewUrl(null); }}
-              className="relative w-12 h-6 rounded-full transition-all flex-shrink-0"
-              style={{ background: invoiceToggle ? '#10b981' : 'rgba(148,163,184,0.2)' }}>
-              <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-all"
-                style={{ left: invoiceToggle ? '1.625rem' : '0.125rem' }} />
-            </button>
-          </div>
 
-          <AnimatePresence>
-            {invoiceToggle && (
-              <motion.div initial={{ opacity:0, height:0 }} animate={{ opacity:1, height:'auto' }} exit={{ opacity:0, height:0 }}
-                className="overflow-hidden">
-                <div className="pt-4 flex flex-col gap-3">
-                  <p className="text-xs" style={{ color: isDark ? '#94a3b8' : '#475569' }}>
-                    Siparişi kaydettiğinizde Uyumsoft'ta Giden Taslak Fatura olarak da gönderilecektir. Uyumsoft portalı üzerinden daha sonra resmileştirebilmeniz için lütfen zorunlu alanları eksiksiz girin:
-                  </p>
-                  
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2 p-4 rounded-xl" style={{ border: '1px solid rgba(139,92,246,0.25)', background: 'rgba(139,92,246,0.05)' }}>
-                      <div className="relative">
-                        <Field label="VKN / TCKN *" value={form.customer_vkntckn} onChange={v => setForm(f => ({ ...f, customer_vkntckn: v }))} placeholder="10 veya 11 hane" />
-                        <button onClick={async () => {
-                          const vkn = form.customer_vkntckn?.trim();
-                          if (!vkn || vkn.length < 10) {
-                              setDialog({ open: true, title: 'Gecersiz Giris', message: 'Lutfen gecerli bir VKN (10 hane) veya TCKN (11 hane) girin.', type: 'alert' });
-                              return;
-                          }
-                          setDraftLoading(true);
-                          try {
-                            const r = await fetch('/api/invoices-api?action=fetchCustomerInfo', { method: 'POST', body: JSON.stringify({ vkn }), headers: {'Content-Type': 'application/json'} });
-                            const d = await r.json();
-                            if (d.success) {
-                              setForm(f => ({
-                                ...f,
-                                customer_name:          d.data.unvan        || f.customer_name,
-                                customer_city:          d.data.sehir        || f.customer_city,
-                                customer_district:      d.data.ilce         || f.customer_district,
-                                customer_address:       d.data.adres        || f.customer_address,
-                                customer_tax_office:    d.data.vergiDairesi || f.customer_tax_office,
-                                customer_country:       d.data.ulke         || f.customer_country || 'Turkiye',
-                                customer_building_name: d.data.binAdi       || f.customer_building_name || '',
-                                customer_building_no:   d.data.binaNo       || f.customer_building_no  || '',
-                                customer_postal_code:   d.data.postaKodu    || f.customer_postal_code  || '',
-                                customer_phone:         d.data.telefon      || f.customer_phone || '',
-                                customer_email:         d.data.eposta       || f.customer_email || '',
-                              }));
-                            } else throw new Error(d.error);
-                          } catch (e) { 
-                              setDialog({ open: true, title: 'Sorgu Hatasi', message: e.message, type: 'alert' }); 
-                          }
-                          finally { setDraftLoading(false); }
-                        }}
-                          disabled={draftLoading || saving}
-                          className="absolute right-0 top-6 px-3 py-1 rounded-lg text-[10px] font-bold bg-violet-600 text-white hover:bg-violet-700 transition-colors disabled:opacity-50">
-                          {draftLoading ? 'Sorgulanıyor...' : 'DB / XML Sorgula'}
-                        </button>
-                      </div>
-                      <Field label="Vergi Dairesi *" value={form.customer_tax_office} onChange={v => setForm(f => ({ ...f, customer_tax_office: v }))} placeholder="Ornegin: BORNOVA" />
-                      <div>
-                        <label className="text-xs font-semibold block mb-1"
-                          style={{ color: isDark ? 'rgba(148,163,184,0.7)' : '#475569' }}>Ülke</label>
-                        <input value={form.customer_country} onChange={e => setForm(f => ({ ...f, customer_country: e.target.value }))}
-                          className="w-full px-3 py-2 text-sm rounded-xl outline-none border font-mono uppercase"
-                          style={{
-                            background: isDark ? 'rgba(255,255,255,0.03)' : '#f1f5f9',
-                            borderColor: isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0',
-                            color: isDark ? '#e2e8f0' : '#1e293b'
-                          }} />
-                      </div>
-                      <Field label="Sehir *" value={form.customer_city} onChange={v => setForm(f => ({ ...f, customer_city: v }))} placeholder="Ornegin: IZMIR" />
-                      <Field label="Mahalle / Ilce *" value={form.customer_district} onChange={v => setForm(f => ({ ...f, customer_district: v }))} placeholder="Ornegin: KONAK" />
-                      <div className="sm:col-span-2">
-                        <Field label="Cadde / Sokak / Acik Adres *" value={form.customer_address} onChange={v => setForm(f => ({ ...f, customer_address: v }))} placeholder="Cadde, sokak, bina kapi no..." />
-                      </div>
-                      <Field label="Bina Adi" value={form.customer_building_name} onChange={v => setForm(f => ({ ...f, customer_building_name: v }))} placeholder="Opsiyonel" />
-                      <Field label="Bina / Kapi No" value={form.customer_building_no} onChange={v => setForm(f => ({ ...f, customer_building_no: v }))} placeholder="Opsiyonel" />
-                      <Field label="Posta Kodu" value={form.customer_postal_code} onChange={v => setForm(f => ({ ...f, customer_postal_code: v }))} placeholder="35000" />
-                      <Field label="Tel" value={form.customer_phone} onChange={v => setForm(f => ({ ...f, customer_phone: v }))} placeholder="0232 xxx xx xx" />
-                  </div>
-                  
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </SectionCard>
 
         {/* Kaydet */}
         <div className="flex gap-3 pb-8">
