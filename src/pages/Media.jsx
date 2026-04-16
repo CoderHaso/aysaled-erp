@@ -54,7 +54,7 @@ export default function Media() {
 
   useEffect(() => { load(); }, [load]);
 
-  const uploadFile = async (file) => {
+  const uploadFile = useCallback(async (file) => {
     if (!file) return;
     setUploading(true);
     try {
@@ -71,11 +71,11 @@ export default function Media() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          fileName: file.name,
-          mimeType: file.type,
+          fileName: file.name || `Pasted_Media_${Date.now()}.png`,
+          mimeType: file.type || 'image/png',
           fileSize: file.size,
           fileData: base64,
-          name: file.name.replace(/\.[^.]+$/, ''),
+          name: (file.name || `Pasted_Media_${Date.now()}`).replace(/\.[^.]+$/, ''),
         }),
       });
       const json = await r.json();
@@ -88,7 +88,26 @@ export default function Media() {
     } finally {
       setUploading(false);
     }
-  };
+  }, [load, showToast]);
+
+  useEffect(() => {
+    const handlePaste = (e) => {
+      const items = e.clipboardData?.items || [];
+      const files = [];
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const file = items[i].getAsFile();
+          if (file) files.push(file);
+        }
+      }
+      if (files.length > 0) {
+        e.preventDefault();
+        files.forEach(uploadFile);
+      }
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [uploadFile]);
 
   const handleFileInput = (e) => {
     Array.from(e.target.files || []).forEach(uploadFile);

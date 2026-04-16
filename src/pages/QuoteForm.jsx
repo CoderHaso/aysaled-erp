@@ -8,6 +8,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import CustomDialog from '../components/CustomDialog';
+import MediaPickerModal from '../components/MediaPickerModal';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt     = (n, d = 2) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -543,10 +544,6 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
   const [dialog, setDialog]     = useState({ open: false, title: '', message: '', type: 'confirm', onConfirm: null, loading: false });
   const [preview, setPreview]   = useState(false);
   const [imageModal, setImageModal] = useState(null);
-  const [mediaItems, setMediaItems] = useState([]);
-  const [mediaSearch, setMediaSearch] = useState('');
-  const [uploadingImg, setUploadingImg] = useState(false);
-  const imgUploadRef = useRef();
 
   // Quick modals
   const [quickItemForm, setQuickItemForm] = useState(null);     // { lineId, name, type, code, price }
@@ -727,49 +724,12 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
   const grandTotal = subtotal + vatAmt;
 
   // Görsel modal
-  const openImageModal = async (lineId) => {
+  const openImageModal = (lineId) => {
     setImageModal(lineId);
-    const { data } = await supabase.from('media').select('*').order('created_at', { ascending: false });
-    setMediaItems(data || []);
   };
   const selectMedia = (url, lineId) => {
     updateLine(lineId, { image_url: url });
     setImageModal(null);
-  };
-
-  // Görsel modal içinde direkt yükleme (base64 → API → B2)
-  const uploadImageDirect = async (file) => {
-    if (!file || !imageModal) return;
-    setUploadingImg(true);
-    try {
-      const base64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload  = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-
-      const r = await fetch('/api/media', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fileName: file.name,
-          mimeType: file.type,
-          fileSize: file.size,
-          fileData: base64,
-          name: file.name.replace(/\.[^.]+$/, ''),
-        }),
-      });
-      const { publicUrl, error } = await r.json();
-      if (error) throw new Error(error);
-      // Görseli satıra ata ve modalı kapat
-      updateLine(imageModal, { image_url: publicUrl });
-      setImageModal(null);
-      const { data } = await supabase.from('media').select('*').order('created_at', { ascending: false });
-      setMediaItems(data || []);
-    } catch (e) {
-      setDialog({ open: true, title: 'Yükleme Hatası', message: 'Yükleme hatası: ' + e.message, type: 'alert' });
-    } finally { setUploadingImg(false); }
   };
 
   // Kaydet
@@ -1091,68 +1051,11 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
       )}
 
       {/* ── Görsel Seçme Modalı ── */}
-      {imageModal && (
-        <div className="fixed inset-0 z-[400] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.72)' }}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[88vh] overflow-hidden flex flex-col">
-            {/* Modal header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
-              <p className="font-bold text-gray-800">Görsel Seç</p>
-              <div className="flex items-center gap-2">
-                {/* Direkt yükleme */}
-                <button
-                  onClick={() => imgUploadRef.current?.click()}
-                  disabled={uploadingImg}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
-                  style={{ background: '#1a6b2c' }}>
-                  {uploadingImg ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
-                  Yükle
-                </button>
-                <input ref={imgUploadRef} type="file" accept="image/*" className="hidden"
-                  onChange={e => { const f = e.target.files?.[0]; if (f) uploadImageDirect(f); e.target.value = ''; }} />
-                <button onClick={() => setImageModal(null)}><X size={18} /></button>
-              </div>
-            </div>
-
-            {/* Arama */}
-            <div className="px-4 py-3 border-b border-gray-200">
-              <input value={mediaSearch} onChange={e => setMediaSearch(e.target.value)}
-                placeholder="Görsel ara..." className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm outline-none" />
-            </div>
-
-            {/* Grid */}
-            <div className="flex-1 overflow-auto p-4">
-              {uploadingImg ? (
-                <div className="flex items-center justify-center py-16">
-                  <Loader2 size={28} className="animate-spin text-green-600" />
-                  <span className="ml-2 text-gray-500 text-sm">Yükleniyor...</span>
-                </div>
-              ) : (
-                <div className="grid grid-cols-4 gap-3">
-                  {mediaItems
-                    .filter(m => m.mime_type?.startsWith('image/') && (m.name || '').toLowerCase().includes(mediaSearch.toLowerCase()))
-                    .map(m => (
-                      <div key={m.id} onClick={() => selectMedia(m.file_url, imageModal)}
-                        className="aspect-square rounded-xl overflow-hidden cursor-pointer border-2 border-transparent hover:border-green-500 transition-all group relative">
-                        <img src={m.file_url} alt={m.name} className="w-full h-full object-cover" />
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-1">
-                          <p className="text-[10px] text-white truncate">{m.name}</p>
-                        </div>
-                      </div>
-                    ))}
-                  {/* Boş durum */}
-                  {mediaItems.filter(m => m.mime_type?.startsWith('image/')).length === 0 && (
-                    <div className="col-span-4 text-center py-12 text-gray-400">
-                      <ImageIcon size={36} className="mx-auto mb-2 opacity-30" />
-                      <p className="text-sm">Henüz görsel yok</p>
-                      <p className="text-xs">Yukarıdaki "Yükle" butonuyla ekleyebilirsiniz</p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <MediaPickerModal 
+        isOpen={!!imageModal} 
+        onClose={() => setImageModal(null)} 
+        onSelect={(item) => selectMedia(item.url || item.file_url, imageModal)} 
+      />
 
       {/* ── Hızlı Ürün Ekle Modal ── */}
       {quickItemForm && (

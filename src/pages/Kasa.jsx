@@ -12,6 +12,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import CustomDialog from '../components/CustomDialog';
 import ImageCropper from '../components/ImageCropper';
+import MediaPickerModal from '../components/MediaPickerModal';
 
 // ─── Sabitler ─────────────────────────────────────────────────────────────────
 const CATEGORIES = [
@@ -433,74 +434,21 @@ export default function Kasa() {
     } catch(e) { showToast('Görsel yüklenemedi: ' + e.message, 'error'); return null; }
   };
 
-  // Media items for image picker
-  const [chqMediaItems, setChqMediaItems] = useState([]);
   const [chqImagePicker, setChqImagePicker] = useState(null); // cheque id OR '__form__'
-  const [chqMediaSearch, setChqMediaSearch] = useState('');
-  const [chqUploading, setChqUploading] = useState(false);
   const [chqPickerCallback, setChqPickerCallback] = useState(null); // form mode callback
   const [previewImgUrl, setPreviewImgUrl] = useState(null); // full image preview modal
 
-  // Liste modunda: chqId ile açılır, DB'ye kaydeder
-  const openChqImagePicker = async (chqId) => {
-    setChqImagePicker(chqId);
-    setChqPickerCallback(null);
-    const { data } = await supabase.from('media').select('*').order('created_at', { ascending: false });
-    setChqMediaItems(data || []);
-  };
-
-  // Form modunda: callback ile açılır, URL'i callback'e verir
   const openChqImagePickerForForm = async (callback) => {
     setChqImagePicker('__form__');
     setChqPickerCallback(() => callback);
-    const { data } = await supabase.from('media').select('*').order('created_at', { ascending: false });
-    setChqMediaItems(data || []);
   };
 
   const selectChqMedia = async (url) => {
     if (!chqImagePicker) return;
     if (chqPickerCallback) {
-      // Form mode — URL'i callback'e ver
       chqPickerCallback(url);
       setChqImagePicker(null); setChqPickerCallback(null);
-    } else {
-      // List mode — DB'ye kaydet
-      await supabase.from('cheques').update({ image_url: url }).eq('id', chqImagePicker);
-      setCheques(prev => prev.map(c2 => c2.id === chqImagePicker ? { ...c2, image_url: url } : c2));
-      setChqImagePicker(null);
-      showToast('Görsel seçildi ✓');
     }
-  };
-
-  const uploadChqDirect = async (file) => {
-    if (!file || !chqImagePicker) return;
-    setChqUploading(true);
-    try {
-      // Upload to B2 via API
-      const base64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-      const r = await fetch('/api/media', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fileName: `cheque_upload_${Date.now()}.${file.name.split('.').pop()}`,
-          mimeType: file.type, fileSize: file.size, fileData: base64,
-          name: file.name.replace(/\.[^.]+$/, ''),
-        }),
-      });
-      const { publicUrl, error } = await r.json();
-      if (error) throw new Error(error);
-      // İlgili moda göre ata
-      selectChqMedia(publicUrl);
-      // Media listesini güncelle
-      const { data } = await supabase.from('media').select('*').order('created_at', { ascending: false });
-      setChqMediaItems(data || []);
-    } catch(e) { showToast('Yüklenemedi: ' + e.message, 'error'); }
-    finally { setChqUploading(false); }
   };
 
   const CHQ_STATUS = {
@@ -946,62 +894,11 @@ export default function Kasa() {
         return <TransferModal/>;
       })()}
 
-      {/* ── Çek Görsel Seç/Yükle Modal ── */}
-      {chqImagePicker && (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.72)' }}>
-          <div className="rounded-2xl shadow-2xl w-full max-w-2xl max-h-[88vh] overflow-hidden flex flex-col"
-            style={{ background: isDark ? '#0c1526' : '#fff', border: `1px solid ${c.border}` }}>
-            <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: `1px solid ${c.border}` }}>
-              <p className="font-bold text-sm" style={{ color: c.text }}>Görsel Seç / Yükle</p>
-              <div className="flex items-center gap-2">
-                <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white cursor-pointer"
-                  style={{ background: currentColor }}>
-                  {chqUploading ? <Loader2 size={12} className="animate-spin"/> : <Upload size={12}/>}
-                  Yükle
-                  <input type="file" accept="image/*" className="hidden"
-                    onChange={e => { const f2 = e.target.files?.[0]; if (f2) uploadChqDirect(f2); e.target.value = ''; }}/>
-                </label>
-                <button onClick={() => setChqImagePicker(null)} style={{ color: c.muted }}><X size={18}/></button>
-              </div>
-            </div>
-            <div className="px-4 py-3" style={{ borderBottom: `1px solid ${c.border}` }}>
-              <input value={chqMediaSearch} onChange={e => setChqMediaSearch(e.target.value)}
-                placeholder="Görsel ara..." className="w-full px-3 py-2 rounded-lg text-sm outline-none border"
-                style={{ background: c.card, borderColor: c.border, color: c.text }}/>
-            </div>
-            <div className="flex-1 overflow-auto p-4">
-              {chqUploading ? (
-                <div className="flex items-center justify-center py-16">
-                  <Loader2 size={28} className="animate-spin" style={{ color: currentColor }}/>
-                  <span className="ml-2 text-sm" style={{ color: c.muted }}>Yükleniyor...</span>
-                </div>
-              ) : (
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                  {chqMediaItems
-                    .filter(m => m.mime_type?.startsWith('image/') && (m.name || '').toLowerCase().includes(chqMediaSearch.toLowerCase()))
-                    .map(m => (
-                      <div key={m.id} onClick={() => selectChqMedia(m.file_url)}
-                        className="aspect-square rounded-xl overflow-hidden cursor-pointer border-2 border-transparent hover:border-purple-500 transition-all group relative"
-                        style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9' }}>
-                        <img src={m.file_url} alt={m.name} className="w-full h-full object-cover"/>
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-1">
-                          <p className="text-[10px] text-white truncate">{m.name}</p>
-                        </div>
-                      </div>
-                    ))}
-                  {chqMediaItems.filter(m => m.mime_type?.startsWith('image/')).length === 0 && (
-                    <div className="col-span-4 text-center py-12">
-                      <Upload size={36} className="mx-auto mb-2 opacity-20" style={{ color: c.muted }}/>
-                      <p className="text-sm font-semibold" style={{ color: c.muted }}>Henüz görsel yok</p>
-                      <p className="text-xs mt-1" style={{ color: c.muted }}>Yukarıdaki "Yükle" butonuyla ekleyebilirsiniz</p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <MediaPickerModal 
+        isOpen={!!chqImagePicker}
+        onClose={() => { setChqImagePicker(null); setChqPickerCallback(null); }}
+        onSelect={(item) => selectChqMedia(item.url || item.file_url)}
+      />
 
       {/* ── Görsel Önizleme Modal ── */}
       {previewImgUrl && (
