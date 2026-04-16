@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useStock } from '../hooks/useStock';
+import { useFxRates } from '../hooks/useFxRates';
 import { supabase } from '../lib/supabaseClient';
 import { pageCache } from '../lib/pageCache';
 import ItemDrawer from '../components/stock/ItemDrawer';
@@ -503,6 +504,7 @@ export default function Stock() {
                           if (changes.purchase_price !== undefined) patch.purchase_price = Number(changes.purchase_price);
                           if (changes.sale_price !== undefined) patch.sale_price = Number(changes.sale_price);
                           if (changes.base_currency !== undefined) patch.base_currency = changes.base_currency;
+                          if (changes.sale_currency !== undefined) patch.sale_currency = changes.sale_currency;
                           if (Object.keys(patch).length > 0) {
                             await supabase.from('items').update(patch).eq('id', itemId);
                           }
@@ -551,7 +553,7 @@ export default function Stock() {
                       { key: 'stock_count',    label: 'Stok',     w: quickEditMode ? '100px' : '140px' },
                       { key: 'purchase_price', label: 'Alış',    w: quickEditMode ? '100px' : '85px'  },
                       { key: 'sale_price',     label: 'Satış',   w: quickEditMode ? '100px' : '85px' },
-                      ...(quickEditMode ? [{ key: 'base_currency', label: 'Döviz', w: '75px' }] : []),
+                      ...(quickEditMode ? [{ key: 'base_currency', label: 'A.Döviz', w: '70px' }, { key: 'sale_currency', label: 'S.Döviz', w: '70px' }] : []),
                       { key: null,             label: '',         w: '72px'  },
                     ].map((col, i) => (
                       <th key={i}
@@ -674,20 +676,30 @@ export default function Stock() {
                               style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: '#3b82f6' }}/>
                           ) : (
                             <span className="text-sm font-semibold" style={{ color: c.text }}>
-                              {item.sale_price > 0 ? `₺${item.sale_price}` : '—'}
+                              {item.sale_price > 0 ? `${saleSym}${item.sale_price}` : '—'}
                             </span>
                           )}
                         </td>
                         {/* Döviz (sadece quick edit) */}
                         {quickEditMode && (
-                          <td className="px-3 py-3.5" onClick={e => e.stopPropagation()}>
-                            <select value={ed.base_currency ?? item.base_currency ?? 'TRY'}
-                              onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), base_currency: e.target.value}}))}
-                              className="w-full px-1 py-1 text-xs rounded-lg outline-none"
-                              style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
-                              {['TRY','USD','EUR','GBP'].map(cu => <option key={cu} value={cu}>{cu}</option>)}
-                            </select>
-                          </td>
+                          <>
+                            <td className="px-3 py-3.5" onClick={e => e.stopPropagation()}>
+                              <select value={ed.base_currency ?? item.base_currency ?? 'TRY'}
+                                onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), base_currency: e.target.value}}))}
+                                className="w-full px-1 py-1 text-xs rounded-lg outline-none"
+                                style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
+                                {['TRY','USD','EUR','GBP'].map(cu => <option key={cu} value={cu}>{cu}</option>)}
+                              </select>
+                            </td>
+                            <td className="px-3 py-3.5" onClick={e => e.stopPropagation()}>
+                              <select value={ed.sale_currency ?? item.sale_currency ?? 'TRY'}
+                                onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), sale_currency: e.target.value}}))}
+                                className="w-full px-1 py-1 text-xs rounded-lg outline-none"
+                                style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
+                                {['TRY','USD','EUR','GBP'].map(cu => <option key={cu} value={cu}>{cu}</option>)}
+                              </select>
+                            </td>
+                          </>
                         )}
                         <td className="px-3 py-3.5" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-1">
@@ -840,8 +852,10 @@ function ABtn({ icon: Icon, color, onClick }) {
 
 // ─── Detay Yan Paneli ─────────────────────────────────────────────────────────
 function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
+  const { convert } = useFxRates();
   const clr = stockColor(item.stock_count, item.critical_limit);
   const sym = CURRENCY_SYM[item.base_currency] || '₺';
+  const saleSym = CURRENCY_SYM[item.sale_currency] || '₺';
   const [tab, setTab] = React.useState('detail');
   const [movements, setMovements] = React.useState([]);
   const [mvLoading, setMvLoading] = React.useState(false);
@@ -867,6 +881,8 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
       stock_count: item.stock_count ?? 0,
       purchase_price: item.purchase_price ?? '',
       sale_price: item.sale_price ?? '',
+      base_currency: item.base_currency || 'TRY',
+      sale_currency: item.sale_currency || 'TRY',
       critical_limit: item.critical_limit ?? '',
       sku: item.sku || '',
       location: item.location || '',
@@ -1063,15 +1079,21 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
   // Ortalama maliyet hesapla (reçeteli ürünlerde)
   const avgCost = React.useMemo(() => {
     if (!isProduct || recipes.length === 0) return null;
-    let totalCost = 0; let totalCount = 0;
+    let totalCostInBase = 0; let totalCount = 0;
     recipes.forEach(r => {
-      const cost = (r.recipe_items || []).reduce((s, ri) => s + (Number(ri.purchase_price || 0) * Number(ri.quantity || 1)), 0);
+      const costInBase = (r.recipe_items || []).reduce((s, ri) => {
+        const itemVal = Number(ri.purchase_price || 0) * Number(ri.quantity || 1);
+        const itemCur = ri.base_currency || 'TRY';
+        // Convert item cost to product's base_currency
+        return s + convert(itemVal, itemCur, item.base_currency || 'TRY');
+      }, 0);
       const rs = recipeStocks.find(rs2 => rs2.recipe_id === r.id);
       const stk = rs?.stock_count || 0;
-      if (stk > 0) { totalCost += cost * stk; totalCount += stk; }
+      if (stk > 0) { totalCostInBase += costInBase * stk; totalCount += stk; }
+      else { totalCostInBase += costInBase; totalCount += 1; } // Ağırlıksız (stok yoksa birim olarak al)
     });
-    return totalCount > 0 ? (totalCost / totalCount).toFixed(2) : null;
-  }, [recipes, recipeStocks, isProduct]);
+    return totalCount > 0 ? (totalCostInBase / totalCount).toFixed(2) : null;
+  }, [recipes, recipeStocks, isProduct, convert, item.base_currency]);
 
   const hasRecipes = isProduct && recipes.length > 0;
   const rows = [
@@ -1083,7 +1105,7 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
     hasRecipes
       ? { icon: DollarSign, label: 'Ort. Maliyet', value: avgCost ? `${sym}${avgCost}` : '—', color: '#94a3b8', disabled: true }
       : { icon: DollarSign, label: 'Alış Fiyatı',  value: item.purchase_price > 0 ? `${sym}${item.purchase_price}` : '—', color: '#10b981', field: 'purchase_price', prefix: sym, numField: true },
-    { icon: DollarSign,    label: 'Satış Fiyatı',   value: item.sale_price > 0 ? `₺${item.sale_price}` : '—', color: '#3b82f6', field: 'sale_price', prefix: '₺', numField: true },
+    { icon: DollarSign,    label: 'Satış Fiyatı',   value: item.sale_price > 0 ? `${saleSym}${item.sale_price}` : '—', color: '#3b82f6', field: 'sale_price', prefix: saleSym, numField: true },
     { icon: MapPin,        label: 'Konum',          value: item.location || '—', field: 'location' },
     { icon: Package,       label: 'Tedarikçi',      value: item.supplier_name || '—', field: 'supplier_name' },
   ];
@@ -1377,19 +1399,25 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
                     </div>
                     {/* Malzemeler */}
                     <div className="px-3 pb-2.5 space-y-0.5" style={{ borderTop: '1px solid rgba(139,92,246,0.1)' }}>
-                      {(r.recipe_items || []).map((ri, j) => (
-                        <div key={j} className="flex items-center justify-between text-[10px] py-0.5" style={{ color: c.muted }}>
-                          <span>• {ri.item_name}</span>
-                          <span className="font-bold">{ri.quantity} {ri.unit}</span>
-                        </div>
-                      ))}
+                      {(r.recipe_items || []).map((ri, j) => {
+                        const riSym = CURRENCY_SYM[ri.base_currency || 'TRY'] || '₺';
+                        return (
+                          <div key={j} className="flex items-center justify-between text-[10px] py-0.5" style={{ color: c.muted }}>
+                            <span className="flex-1 truncate pr-2">• {ri.item_name} <span className="opacity-50">({riSym}{ri.purchase_price || 0})</span></span>
+                            <span className="font-bold flex-shrink-0">{ri.quantity} {ri.unit}</span>
+                          </div>
+                        );
+                      })}
                     </div>
                     {(() => {
-                      const cost = (r.recipe_items || []).reduce((s, ri) => s + (Number(ri.purchase_price || 0) * Number(ri.quantity || 1)), 0);
-                      return cost > 0 ? (
+                      const costInBase = (r.recipe_items || []).reduce((s, ri) => {
+                        const itemVal = Number(ri.purchase_price || 0) * Number(ri.quantity || 1);
+                        return s + convert(itemVal, ri.base_currency || 'TRY', item.base_currency || 'TRY');
+                      }, 0);
+                      return costInBase > 0 ? (
                         <div className="px-3 pb-2 flex items-center justify-between" style={{ borderTop: '1px solid rgba(139,92,246,0.06)' }}>
-                          <span className="text-[9px] font-bold" style={{ color: '#94a3b8' }}>Birim Maliyet</span>
-                          <span className="text-[10px] font-black" style={{ color: '#a78bfa' }}>{sym}{cost.toFixed(2)}</span>
+                          <span className="text-[9px] font-bold" style={{ color: '#94a3b8' }}>Birim Maliyet ({sym})</span>
+                          <span className="text-[10px] font-black" style={{ color: '#a78bfa' }}>{sym}{costInBase.toFixed(2)}</span>
                         </div>
                       ) : null;
                     })()}
@@ -1561,6 +1589,7 @@ function BulkUpdateModal({ allItems, c, currentColor, isDark, supabase, onClose,
     updateRow(rowKey, 'sale_price', String(item.sale_price ?? ''));
     updateRow(rowKey, 'unit', item.unit || 'Adet');
     updateRow(rowKey, 'base_currency', item.base_currency || 'TRY');
+    updateRow(rowKey, 'sale_currency', item.sale_currency || 'TRY');
     updateRow(rowKey, '_name', item.name);
     setSearchStates(p => ({ ...p, [rowKey]: '' }));
   };
@@ -1577,6 +1606,7 @@ function BulkUpdateModal({ allItems, c, currentColor, isDark, supabase, onClose,
         if (r.sale_price !== '') patch.sale_price = Number(r.sale_price);
         if (r.unit) patch.unit = r.unit;
         if (r.base_currency) patch.base_currency = r.base_currency;
+        if (r.sale_currency) patch.sale_currency = r.sale_currency;
         if (Object.keys(patch).length > 0) {
           await supabase.from('items').update(patch).eq('id', r.itemId);
         }
@@ -1702,7 +1732,7 @@ function BulkUpdateModal({ allItems, c, currentColor, isDark, supabase, onClose,
 
                 {/* Alanlar */}
                 {row.itemId && (
-                  <div className="grid grid-cols-5 gap-2 pl-7">
+                  <div className="grid grid-cols-6 gap-2 pl-7">
                     <div>
                       <p className="text-[10px] font-bold mb-0.5" style={{ color: c.muted }}>Stok</p>
                       <input type="number" step="0.01" value={row.stock_count}
@@ -1736,9 +1766,20 @@ function BulkUpdateModal({ allItems, c, currentColor, isDark, supabase, onClose,
                       </select>
                     </div>
                     <div>
-                      <p className="text-[10px] font-bold mb-0.5" style={{ color: c.muted }}>Döviz</p>
+                      <p className="text-[10px] font-bold mb-0.5" style={{ color: c.muted }}>A. Döviz</p>
                       <select value={row.base_currency || 'TRY'}
                         onChange={e => updateRow(row._key, 'base_currency', e.target.value)}
+                        className="w-full px-2 py-1 text-xs rounded-lg outline-none"
+                        style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
+                        {['TRY','USD','EUR','GBP'].map(cu =>
+                          <option key={cu} value={cu}>{cu}</option>
+                        )}
+                      </select>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold mb-0.5" style={{ color: c.muted }}>S. Döviz</p>
+                      <select value={row.sale_currency || 'TRY'}
+                        onChange={e => updateRow(row._key, 'sale_currency', e.target.value)}
                         className="w-full px-2 py-1 text-xs rounded-lg outline-none"
                         style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
                         {['TRY','USD','EUR','GBP'].map(cu =>

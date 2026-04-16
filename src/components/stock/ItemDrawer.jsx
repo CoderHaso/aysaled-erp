@@ -49,6 +49,7 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
     purchase_price: item?.purchase_price || '',
     sale_price:     item?.sale_price     || '',
     base_currency:  item?.base_currency  || 'TRY',
+    sale_currency:  item?.sale_currency  || 'TRY',
     vat_rate:       item?.vat_rate       ?? 20,
     stock_count:    item?.stock_count    ?? 0,
     critical_limit: item?.critical_limit || 0,
@@ -179,6 +180,8 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
       description:    form.description?.trim()     || null,
       purchase_price:  parseFloat(form.purchase_price)  || 0,
       sale_price:      parseFloat(form.sale_price)      || 0,
+      base_currency:   form.base_currency,
+      sale_currency:   form.sale_currency,
       stock_count:     parseFloat(form.stock_count)     || 0,
       critical_limit:  parseFloat(form.critical_limit)  || 0,
       vat_rate:        parseFloat(form.vat_rate)        || 0,
@@ -445,29 +448,47 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
         {/* ━━ FİYAT ━━ */}
         {section === 'price' && (
           <>
-            <FField label="Para Birimi">
-              <div className="flex gap-2">
-                {CURRENCIES.map(cur => (
-                  <button key={cur} onClick={() => set('base_currency', cur)}
-                    className="flex-1 py-2.5 rounded-xl text-sm font-bold border transition-all"
-                    style={{
-                      background:  form.base_currency === cur ? currentColor : 'transparent',
-                      color:       form.base_currency === cur ? 'white' : c.muted,
-                      borderColor: form.base_currency === cur ? currentColor : c.border,
-                    }}>
-                    {cur}
-                  </button>
-                ))}
-              </div>
-            </FField>
+            <div className="grid grid-cols-2 gap-3 mb-2">
+              <FField label="Alış Para Birimi">
+                <div className="flex gap-1.5 mt-1">
+                  {CURRENCIES.map(cur => (
+                    <button key={cur} onClick={() => set('base_currency', cur)}
+                      className="flex-1 py-2 rounded-lg text-xs font-bold border transition-all"
+                      style={{
+                        background:  form.base_currency === cur ? currentColor : 'transparent',
+                        color:       form.base_currency === cur ? 'white' : c.muted,
+                        borderColor: form.base_currency === cur ? currentColor : c.border,
+                      }}>
+                      {cur}
+                    </button>
+                  ))}
+                </div>
+              </FField>
+              <FField label="Satış Para Birimi">
+                <div className="flex gap-1.5 mt-1">
+                  {CURRENCIES.map(cur => (
+                    <button key={cur} onClick={() => set('sale_currency', cur)}
+                      className="flex-1 py-2 rounded-lg text-xs font-bold border transition-all"
+                      style={{
+                        background:  form.sale_currency === cur ? currentColor : 'transparent',
+                        color:       form.sale_currency === cur ? 'white' : c.muted,
+                        borderColor: form.sale_currency === cur ? currentColor : c.border,
+                      }}>
+                      {cur}
+                    </button>
+                  ))}
+                </div>
+              </FField>
+            </div>
+            
             <div className="grid grid-cols-2 gap-3">
-              <FField label={`Alış Fiyatı (${form.base_currency})`}>
+              <FField label={`Alış (${form.base_currency})`}>
                 <input type="number" min="0" step="0.01" value={form.purchase_price}
                   onChange={e => set('purchase_price', e.target.value)}
                   className="form-input" style={{ background: c.inputBg, borderColor: c.border, color: c.text }}
                   placeholder="0.00" />
               </FField>
-              <FField label={`Satış Fiyatı (${form.base_currency})`}>
+              <FField label={`Satış (${form.sale_currency})`}>
                 <input type="number" min="0" step="0.01" value={form.sale_price}
                   onChange={e => set('sale_price', e.target.value)}
                   className="form-input" style={{ background: c.inputBg, borderColor: c.border, color: c.text }}
@@ -493,9 +514,9 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
               <div className="grid grid-cols-3 gap-3 rounded-2xl p-4"
                 style={{ background: c.section, border: `1px solid ${c.border}` }}>
                 {[
-                  { label: 'Kâr',    val: `${(form.sale_price - form.purchase_price).toFixed(2)} ${form.base_currency}` },
+                  { label: 'Fark (Brüt)', val: `${(form.sale_price - form.purchase_price).toFixed(2)}` },
                   { label: 'Margin', val: `%${(((form.sale_price - form.purchase_price) / form.purchase_price) * 100).toFixed(1)}` },
-                  { label: "KDV'li", val: `${(form.sale_price * (1 + form.vat_rate / 100)).toFixed(2)}` },
+                  { label: "KDV'li Satış", val: `${(form.sale_price * (1 + form.vat_rate / 100)).toFixed(2)} ${form.sale_currency}` },
                 ].map(({ label, val }) => (
                   <div key={label} className="text-center">
                     <p className="text-xs font-semibold" style={{ color: c.muted }}>{label}</p>
