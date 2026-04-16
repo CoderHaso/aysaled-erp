@@ -78,6 +78,12 @@ function parseTurkishAddress(addr) {
   return { address, district, city };
 }
 
+// Türkçe dahil case-insensitive normalize (YİĞİT = yiğit = YİĞİT)
+const trNorm = (s = '') => s
+  .toLocaleLowerCase('tr-TR')
+  .replace(/ı/g, 'i').replace(/ş/g, 's').replace(/ç/g, 'c')
+  .replace(/ö/g, 'o').replace(/ü/g, 'u').replace(/ğ/g, 'g');
+
 // ── Tutar yazıya çevirme (fatura açıklaması için) ──────────────────────────
 const buildAmountWords = (total, currency) => {
   const ONES = ['','Bir','Iki','Uc','Dort','Bes','Alti','Yedi','Sekiz','Dokuz'];
@@ -533,9 +539,10 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
     setCustOpen(false); setCustQ('');
   };
 
-  const filteredCusts = customers.filter(c =>
-    !custQ || c.name.toLowerCase().includes(custQ.toLowerCase()) || (c.vkntckn||'').includes(custQ)
-  ).slice(0, 8);
+  const filteredCusts = customers.filter(c => {
+    const nq = trNorm(custQ);
+    return !nq || trNorm(c.name).includes(nq) || (c.vkntckn||'').includes(custQ);
+  }).slice(0, 8);
 
   const updateLine = (idx, patch) =>
     setLines(ls => ls.map((l, i) => i === idx ? { ...l, ...patch } : l));
@@ -1653,7 +1660,7 @@ export default function Sales() {
     setLoading(true);
     const [ordRes, custRes, itemRes, recRes, woRes] = await Promise.all([
       supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }),
-      supabase.from('customers').select('id, name, vkntckn, tax_office, phone, email, address, city').order('name'),
+      supabase.from('customers').select('id, name, vkntckn, tax_office, phone, email, address, city, district, country').order('name'),
       supabase.from('items').select('id, name, item_type, unit, sale_price, purchase_price, stock_count, sku, base_currency, vat_rate, category').order('name'),
       supabase.from('product_recipes').select('id, product_id, name, tags, recipe_items(id, item_id, item_name, quantity, unit)').order('name'),
       supabase.from('work_orders').select('id, order_id, status, production_note, recipe_id, recipe_change_note').order('created_at', { ascending: false }),
@@ -1848,8 +1855,8 @@ export default function Sales() {
   const filtered = useMemo(() => {
     let list = orders;
     if (search) {
-      const q = search.toLowerCase();
-      list = list.filter(o => o.order_number.toLowerCase().includes(q) || o.customer_name.toLowerCase().includes(q));
+      const q = trNorm(search);
+      list = list.filter(o => trNorm(o.order_number).includes(q) || trNorm(o.customer_name).includes(q));
     }
     if (dateFrom) list = list.filter(o => new Date(o.created_at) >= new Date(dateFrom));
     if (dateTo) list = list.filter(o => new Date(o.created_at) <= new Date(dateTo + 'T23:59:59'));
