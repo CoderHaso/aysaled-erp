@@ -37,7 +37,7 @@ export default function MediaPickerModal({ isOpen, onClose, onSelect }) {
     }
   }, [isOpen, load]);
 
-  const uploadFile = async (file) => {
+  const uploadFile = useCallback(async (file) => {
     if (!file) return;
     setUploading(true);
     try {
@@ -52,11 +52,11 @@ export default function MediaPickerModal({ isOpen, onClose, onSelect }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          fileName: file.name,
-          mimeType: file.type,
+          fileName: file.name || `Pasted_Image_${Date.now()}.png`,
+          mimeType: file.type || 'image/png',
           fileSize: file.size,
           fileData: base64,
-          name: file.name.replace(/\.[^.]+$/, ''),
+          name: (file.name || `Pasted_Image_${Date.now()}`).replace(/\.[^.]+$/, ''),
         }),
       });
       const json = await r.json();
@@ -68,7 +68,27 @@ export default function MediaPickerModal({ isOpen, onClose, onSelect }) {
     } finally {
       setUploading(false);
     }
-  };
+  }, [load]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handlePaste = (e) => {
+      const items = e.clipboardData?.items || [];
+      const files = [];
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const file = items[i].getAsFile();
+          if (file) files.push(file);
+        }
+      }
+      if (files.length > 0) {
+        e.preventDefault();
+        files.forEach(uploadFile);
+      }
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [isOpen, uploadFile]);
 
   const handleFileInput = (e) => {
     Array.from(e.target.files || []).forEach(uploadFile);
@@ -100,7 +120,14 @@ export default function MediaPickerModal({ isOpen, onClose, onSelect }) {
           >
             {/* Header */}
             <div className={`flex items-center justify-between p-4 border-b shrink-0 ${isDark ? 'border-gray-800' : 'border-gray-200'}`}>
-              <h3 className={`font-bold text-lg ${isDark ? 'text-white' : 'text-gray-900'}`}>Görsel Seç</h3>
+              <div>
+                <h3 className={`font-bold text-lg flex items-center gap-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                  Görsel Seç
+                  <span className="text-[10px] font-normal px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500 tracking-wide border border-blue-500/20">
+                    Kopyalayarak (Ctrl+V) Yapıştırabilirsiniz
+                  </span>
+                </h3>
+              </div>
               <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-500/20 text-gray-400 hover:text-white transition-colors">
                 <X size={20} />
               </button>
