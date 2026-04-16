@@ -805,6 +805,7 @@ export default function Stock() {
         {detailItem && (
           <ItemDetailPanel
             item={detailItem}
+            allMaterials={rawItems}
             c={c}
             currentColor={currentColor}
             isDark={isDark}
@@ -853,7 +854,7 @@ function ABtn({ icon: Icon, color, onClick }) {
 }
 
 // ─── Detay Yan Paneli ─────────────────────────────────────────────────────────
-function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
+function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose, onEdit }) {
   const { convert } = useFxRates();
   const clr = stockColor(item.stock_count, item.critical_limit);
   const sym = CURRENCY_SYM[item.base_currency] || '₺';
@@ -988,7 +989,7 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
     // Reçeteleri her zaman yükle (geçmişte de lazım)
     if (isProduct && recipes.length === 0) {
       supabase.from('product_recipes')
-        .select('id, name, tags, recipe_items(id, item_id, item_name, quantity, unit)')
+        .select('id, name, tags, recipe_items(id, item_id, item_name, quantity, unit, item:item_id(base_currency, purchase_price))')
         .eq('product_id', item.id).order('name')
         .then(({ data }) => setRecipes(data || []));
     }
@@ -1084,8 +1085,8 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
     let totalCostInBase = 0; let totalCount = 0;
     recipes.forEach(r => {
       const costInBase = (r.recipe_items || []).reduce((s, ri) => {
-        const itemVal = Number(ri.purchase_price || 0) * Number(ri.quantity || 1);
-        const itemCur = ri.base_currency || 'TRY';
+        const itemVal = Number(ri.item?.purchase_price || 0) * Number(ri.quantity || 1);
+        const itemCur = ri.item?.base_currency || 'TRY';
         // Convert item cost to product's base_currency
         return s + convert(itemVal, itemCur, item.base_currency || 'TRY');
       }, 0);
@@ -1104,13 +1105,12 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
     { icon: Ruler,         label: 'Birim',          value: item.unit },
     { icon: Boxes,         label: 'Stok',           value: `${item.stock_count} ${item.unit}`, color: clr, field: 'stock_count', suffix: item.unit, numField: true },
     { icon: AlertTriangle, label: 'Kritik Limit',   value: item.critical_limit > 0 ? `${item.critical_limit} ${item.unit}` : '—', field: 'critical_limit', suffix: item.unit, numField: true },
-    hasRecipes
-      ? { icon: DollarSign, label: 'Ort. Maliyet', value: avgCost ? `${sym}${avgCost}` : '—', color: '#94a3b8', disabled: true }
-      : { icon: DollarSign, label: 'Alış Fiyatı',  value: item.purchase_price > 0 ? `${sym}${item.purchase_price}` : '—', color: '#10b981', field: 'purchase_price', prefix: sym, numField: true },
+    hasRecipes ? { icon: DollarSign, label: 'Ort. Maliyet', value: avgCost ? `${sym}${avgCost}` : '—', color: '#94a3b8', disabled: true } : null,
+    { icon: DollarSign, label: 'Alış Fiyatı',  value: item.purchase_price > 0 ? `${sym}${item.purchase_price}` : '—', color: '#10b981', field: 'purchase_price', prefix: sym, numField: true },
     { icon: DollarSign,    label: 'Satış Fiyatı',   value: item.sale_price > 0 ? `${saleSym}${item.sale_price}` : '—', color: '#3b82f6', field: 'sale_price', prefix: saleSym, numField: true },
     { icon: MapPin,        label: 'Konum',          value: item.location || '—', field: 'location' },
     { icon: Package,       label: 'Tedarikçi',      value: item.supplier_name || '—', field: 'supplier_name' },
-  ];
+  ].filter(Boolean);
   const inputStyle = { background: isDark ? 'rgba(255,255,255,0.06)' : '#f1f5f9', border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`, color: c.text, borderRadius: 8, padding: '4px 8px', fontSize: 12, fontWeight: 600, textAlign: 'right', width: 110, outline: 'none' };
 
   return (
@@ -1209,6 +1209,13 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
                     </div>
                     {qe && r.field ? (
                       <div className="flex items-center gap-1">
+                        {r.field === 'purchase_price' && hasRecipes && avgCost ? (
+                          <button onClick={() => setQeForm(f => ({ ...f, purchase_price: avgCost }))}
+                            className="px-1.5 py-0.5 rounded text-[9px] font-bold"
+                            style={{ background: `${currentColor}15`, color: currentColor }} title="Ort. Maliyeti Kullan">
+                            Ort
+                          </button>
+                        ) : null}
                         {r.prefix && <span className="text-xs font-bold" style={{ color: c.muted }}>{r.prefix}</span>}
                         <input type={r.numField ? 'number' : 'text'} value={qeForm[r.field] ?? ''}
                           onChange={e => setQeForm(f => ({ ...f, [r.field]: e.target.value }))}
@@ -1402,10 +1409,10 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
                     {/* Malzemeler */}
                     <div className="px-3 pb-2.5 space-y-0.5" style={{ borderTop: '1px solid rgba(139,92,246,0.1)' }}>
                       {(r.recipe_items || []).map((ri, j) => {
-                        const riSym = CURRENCY_SYM[ri.base_currency || 'TRY'] || '₺';
+                        const riSym = CURRENCY_SYM[ri.item?.base_currency || 'TRY'] || '₺';
                         return (
                           <div key={j} className="flex items-center justify-between text-[10px] py-0.5" style={{ color: c.muted }}>
-                            <span className="flex-1 truncate pr-2">• {ri.item_name} <span className="opacity-50">({riSym}{ri.purchase_price || 0})</span></span>
+                            <span className="flex-1 truncate pr-2">• {ri.item_name} <span className="opacity-50">({riSym}{ri.item?.purchase_price || 0})</span></span>
                             <span className="font-bold flex-shrink-0">{ri.quantity} {ri.unit}</span>
                           </div>
                         );
@@ -1413,8 +1420,8 @@ function ItemDetailPanel({ item, c, currentColor, isDark, onClose, onEdit }) {
                     </div>
                     {(() => {
                       const costInBase = (r.recipe_items || []).reduce((s, ri) => {
-                        const itemVal = Number(ri.purchase_price || 0) * Number(ri.quantity || 1);
-                        return s + convert(itemVal, ri.base_currency || 'TRY', item.base_currency || 'TRY');
+                        const itemVal = Number(ri.item?.purchase_price || 0) * Number(ri.quantity || 1);
+                        return s + convert(itemVal, ri.item?.base_currency || 'TRY', item.base_currency || 'TRY');
                       }, 0);
                       return costInBase > 0 ? (
                         <div className="px-3 pb-2 flex items-center justify-between" style={{ borderTop: '1px solid rgba(139,92,246,0.06)' }}>

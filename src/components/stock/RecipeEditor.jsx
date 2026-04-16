@@ -18,7 +18,7 @@ const CURRENCY_SYM = { TRY: '₺', USD: '$', EUR: '€' };
 export default function RecipeEditor({ productId, productName, productCurrency, c, currentColor }) {
   const { effectiveMode } = useTheme();
   const isDark = effectiveMode === 'dark';
-  const { convert } = useFxRates();
+  const { convert, fxRates } = useFxRates();
 
   const [recipes,  setRecipes]  = useState([]);
   const [loading,  setLoading]  = useState(true);
@@ -220,6 +220,7 @@ export default function RecipeEditor({ productId, productName, productCurrency, 
           onCopyThisRecipe={(r) => copyRecipe(r.id, r.name, productId)}
           rawItems={rawItems}
           convert={convert}
+          fxRates={fxRates}
           productCurrency={productCurrency}
           c={c} currentColor={currentColor} isDark={isDark}
         />
@@ -241,7 +242,7 @@ export default function RecipeEditor({ productId, productName, productCurrency, 
 // ═══════════════════════ RECIPE CARD ═══════════════════════
 function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
   onAddItem, onUpdateItem, onSaveItem, onDeleteItem, onToggleTag, onCopyThisRecipe,
-  rawItems, convert, productCurrency, c, currentColor, isDark }) {
+  rawItems, convert, fxRates, productCurrency, c, currentColor, isDark }) {
 
   const [tagInput, setTagInput] = useState('');
   const [editingName, setEditingName] = useState(false);
@@ -388,6 +389,11 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
                const cur = ri.item?.base_currency || 'TRY';
                return acc + convert(cost, cur, productCurrency || 'TRY');
             }, 0);
+            
+            const isForeign = productCurrency && productCurrency !== 'TRY';
+            const tryEq = totalCost > 0 ? convert(totalCost, productCurrency, 'TRY').toFixed(2) : '0.00';
+            const kur = fxRates && fxRates[productCurrency] ? fxRates[productCurrency].toFixed(2) : '1.00';
+            
             return (
               <div className="rounded-xl px-3 py-2 flex items-center justify-between"
                 style={{ background: `${currentColor}08`, border: `1px solid ${currentColor}25` }}>
@@ -397,6 +403,11 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
                   <span className="text-sm font-black" style={{ color: currentColor }}>
                     {CURRENCY_SYM[productCurrency || 'TRY'] || '₺'}{totalCost.toFixed(2)}
                   </span>
+                  {isForeign && totalCost > 0 && (
+                    <div className="text-[9px] font-bold mt-0.5" style={{ color: c.muted }}>
+                      ≈ ₺{tryEq} (Kur: {kur})
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -422,9 +433,14 @@ function RecipeItemRow({ item, index, rawItems, onChange, onBlur, onDelete, c, c
     : rawItems.slice(0, 10);
 
   const selectRaw = (raw) => {
-    const patch = { item_id: raw.id, item_name: raw.name, unit: raw.unit || 'Adet' };
-    onChange(patch);
-    onBlur(patch);
+    // Local patch fills item so UI updates immediately
+    const localPatch = { 
+      item_id: raw.id, item_name: raw.name, unit: raw.unit || 'Adet',
+      item: { purchase_price: raw.purchase_price, base_currency: raw.base_currency } 
+    };
+    onChange(localPatch);
+    // DB patch ignores 'item'
+    onBlur({ item_id: raw.id, item_name: raw.name, unit: raw.unit || 'Adet' });
     setDropOpen(false);
     setItemSearch('');
   };
