@@ -98,5 +98,22 @@ export function useFxRates({ currency = 'TRY', date = '', enabled = true } = {})
     loadRates(dateKey);
   }, [dateKey, loadRates]);
 
-  return { fxRates, exchangeRate, loadingRates, refreshRates };
+  const convert = useCallback((amount, fromCur, toCur) => {
+    if (!amount) return 0;
+    if (fromCur === toCur) return amount;
+    
+    // convert to TRY first (local base)
+    let valInTry = amount;
+    if (fromCur !== 'TRY') {
+      const rate = fxRates[fromCur] || 1; 
+      valInTry = amount * rate;
+    }
+    
+    // convert from TRY to target currency
+    if (toCur === 'TRY') return valInTry;
+    const toRate = fxRates[toCur] || 1;
+    return valInTry / toRate;
+  }, [fxRates]);
+
+  return { fxRates, exchangeRate, loadingRates, refreshRates, convert };
 }
