@@ -374,7 +374,11 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
         <input value={line.notes || ''} onChange={e => onChange({ notes: e.target.value })}
           placeholder="Satır notu (opsiyonel)"
           className="flex-1 px-3 py-1.5 rounded-xl text-xs outline-none"
-          style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(148,163,184,0.1)', color: '#94a3b8' }} />
+          style={{
+            background: isDark ? 'rgba(255,255,255,0.04)' : '#f1f5f9',
+            border: `1px solid ${isDark ? 'rgba(148,163,184,0.1)' : '#e2e8f0'}`,
+            color: isDark ? '#94a3b8' : '#475569'
+          }} />
         <button onClick={onRemove}
           className="p-1.5 rounded-lg text-red-400 hover:bg-red-400/10 transition-colors">
           <Trash2 size={14} />
@@ -842,26 +846,41 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
         </SectionCard>
 
         {/* Adres & Notlar */}
-        <SectionCard title="Adres & Notlar" icon={MapPin}>
+        <SectionCard title="Adres & Notlar" icon={MapPin} isDark={isDark}>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Teslimat Adresi</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider mb-1"
+                style={{ color: isDark ? '#64748b' : '#94a3b8' }}>Teslimat Adresi</p>
               <textarea className="w-full px-3 py-2 rounded-xl text-sm outline-none resize-none"
-                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)', color: '#f1f5f9' }}
+                style={{
+                  background: isDark ? 'rgba(255,255,255,0.05)' : '#f8fafc',
+                  border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`,
+                  color: isDark ? '#f1f5f9' : '#1e293b'
+                }}
                 rows={2} placeholder="Opsiyonel..."
                 value={form.delivery_address} onChange={e => setForm(f => ({ ...f, delivery_address: e.target.value }))} />
             </div>
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Fatura Adresi</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider mb-1"
+                style={{ color: isDark ? '#64748b' : '#94a3b8' }}>Fatura Adresi</p>
               <textarea className="w-full px-3 py-2 rounded-xl text-sm outline-none resize-none"
-                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)', color: '#f1f5f9' }}
+                style={{
+                  background: isDark ? 'rgba(255,255,255,0.05)' : '#f8fafc',
+                  border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`,
+                  color: isDark ? '#f1f5f9' : '#1e293b'
+                }}
                 rows={2} placeholder="Opsiyonel..."
                 value={form.billing_address} onChange={e => setForm(f => ({ ...f, billing_address: e.target.value }))} />
             </div>
             <div className="sm:col-span-2">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Sipariş Notu</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider mb-1"
+                style={{ color: isDark ? '#64748b' : '#94a3b8' }}>Sipariş Notu</p>
               <textarea className="w-full px-3 py-2 rounded-xl text-sm outline-none resize-none"
-                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)', color: '#f1f5f9' }}
+                style={{
+                  background: isDark ? 'rgba(255,255,255,0.05)' : '#f8fafc',
+                  border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`,
+                  color: isDark ? '#f1f5f9' : '#1e293b'
+                }}
                 rows={2} placeholder="Ek bilgi, özel talepler..."
                 value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
             </div>
@@ -869,44 +888,60 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
         </SectionCard>
 
         {/* Özet */}
-        <SectionCard title="Sipariş Özeti" icon={TrendingUp}>
-          <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid rgba(148,163,184,0.1)' }}>
+        <SectionCard title="Sipariş Özeti" icon={TrendingUp} isDark={isDark}>
+          <div className="rounded-2xl overflow-hidden"
+            style={{ border: `1px solid ${isDark ? 'rgba(148,163,184,0.1)' : '#e2e8f0'}` }}>
             {Object.entries(vatBreak).map(([pct, amt]) => (
               <React.Fragment key={pct}>
-                <SumRow label={`Matrah (%${pct} KDV için)`} value={fmt(lines.filter(l=>(l.tax_rate||0)==pct).reduce((s,l)=>s+(l.quantity||0)*(l.unit_price||0),0), form.currency)} />
-                <SumRow label={`KDV %${pct}`} value={fmt(amt, form.currency)} color="#60a5fa" />
+                <SumRow isDark={isDark} label={`Matrah (%${pct} KDV için)`} value={fmt(lines.filter(l=>(l.tax_rate||0)==pct).reduce((s,l)=>s+(l.quantity||0)*(l.unit_price||0),0), form.currency)} />
+                <SumRow isDark={isDark} label={`KDV %${pct}`} value={fmt(amt, form.currency)} color="#60a5fa" />
               </React.Fragment>
             ))}
-            <SumRow label="Ara Toplam (KDV hariç)" value={fmt(subtotal, form.currency)} />
-            <SumRow label="Toplam KDV" value={fmt(taxTotal, form.currency)} color="#60a5fa" />
-            
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-800/30 p-4 border-y border-slate-700/50">
+            <SumRow isDark={isDark} label="Ara Toplam (KDV hariç)" value={fmt(subtotal, form.currency)} />
+            <SumRow isDark={isDark} label="Toplam KDV" value={fmt(taxTotal, form.currency)} color="#60a5fa" />
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4"
+              style={{
+                background: isDark ? 'rgba(15,23,42,0.4)' : 'rgba(241,245,249,0.8)',
+                borderTop: `1px solid ${isDark ? 'rgba(71,85,105,0.5)' : '#e2e8f0'}`,
+                borderBottom: `1px solid ${isDark ? 'rgba(71,85,105,0.5)' : '#e2e8f0'}`,
+              }}>
               <div className="space-y-1">
-                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Kur Kaynağı & Durum</p>
-                 <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
-                    <TrendingUp size={12} className="text-violet-400" />
-                    {exchangeRate ? (
-                      <span>1 {form.currency} = {exchangeRate.rate?.toFixed(4)} ₺ ({exchangeRate.source === 'tcmb' ? 'TCMB' : 'Manuel'})</span>
-                    ) : (
-                      <span className="text-red-400 italic">Kur bulunamadı!</span>
-                    )}
-                 </div>
+                <p className="text-[10px] font-bold uppercase tracking-wider"
+                  style={{ color: isDark ? '#64748b' : '#94a3b8' }}>Kur Kaynağı & Durum</p>
+                <div className="flex items-center gap-2 text-xs font-semibold"
+                  style={{ color: isDark ? '#cbd5e1' : '#334155' }}>
+                  <TrendingUp size={12} className="text-violet-400" />
+                  {exchangeRate ? (
+                    <span>1 {form.currency} = {exchangeRate.rate?.toFixed(4)} ₺ ({exchangeRate.source === 'tcmb' ? 'TCMB' : 'Manuel'})</span>
+                  ) : (
+                    <span className="text-red-400 italic">Kur bulunamadı!</span>
+                  )}
+                </div>
               </div>
               {form.currency !== 'TRY' && (
-                <Field label="Kur (Manuel Düzenle)"
-                  type="number"
+                <Field label="Kur (Manuel Düzenle)" type="number"
                   value={manualRate ?? exchangeRate?.rate ?? ''}
                   onChange={v => setManualRate(v ? Number(v) : null)}
                   placeholder="Örn: 32.45" />
               )}
             </div>
 
-            <div style={{ borderTop: '2px solid rgba(148,163,184,0.15)', background: 'rgba(255,255,255,0.03)' }}>
-              <SumRow label="GENEL TOPLAM" value={fmt(grandTotal, form.currency)} bold accent />
+            <div style={{
+              borderTop: `2px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`,
+              background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(248,250,252,0.9)'
+            }}>
+              <SumRow isDark={isDark} label="GENEL TOPLAM" value={fmt(grandTotal, form.currency)} bold accent />
               {form.currency !== 'TRY' && (
-                <div className="px-4 py-2 border-t border-white/5 flex justify-between items-center text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                <div className="px-4 py-2 flex justify-between items-center text-[10px] font-bold uppercase tracking-wider"
+                  style={{
+                    borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9'}`,
+                    color: isDark ? '#64748b' : '#94a3b8'
+                  }}>
                   <span>Genel Toplam (TL)</span>
-                  <span>{fmt(grandTotal * (exchangeRate?.rate || 1), 'TRY')}</span>
+                  <span style={{ color: isDark ? '#94a3b8' : '#475569' }}>
+                    {fmt(grandTotal * (exchangeRate?.rate || 1), 'TRY')}
+                  </span>
                 </div>
               )}
             </div>
@@ -914,11 +949,11 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
         </SectionCard>
 
         {/* Fatura Toggle */}
-        <SectionCard title="Resmi Fatura" icon={Receipt}>
+        <SectionCard title="Resmi Fatura" icon={Receipt} isDark={isDark}>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-semibold text-slate-200">Resmi Fatura Kesilecek</p>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-sm font-semibold" style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}>Resmi Fatura Kesilecek</p>
+              <p className="text-xs mt-0.5" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>
                 Kapalıysa sadece iç sipariş kaydı. Açıksa Uyumsoft'a taslak gönderilebilir.
               </p>
             </div>
@@ -936,7 +971,7 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
               <motion.div initial={{ opacity:0, height:0 }} animate={{ opacity:1, height:'auto' }} exit={{ opacity:0, height:0 }}
                 className="overflow-hidden">
                 <div className="pt-4 flex flex-col gap-3">
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs" style={{ color: isDark ? '#94a3b8' : '#475569' }}>
                     Siparişi kaydettiğinizde Uyumsoft'ta Giden Taslak Fatura olarak da gönderilecektir. Uyumsoft portalı üzerinden daha sonra resmileştirebilmeniz için lütfen zorunlu alanları eksiksiz girin:
                   </p>
                   
@@ -981,10 +1016,15 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
                       </div>
                       <Field label="Vergi Dairesi *" value={form.customer_tax_office} onChange={v => setForm(f => ({ ...f, customer_tax_office: v }))} placeholder="Ornegin: BORNOVA" />
                       <div>
-                        <label className="text-xs font-semibold block mb-1" style={{ color: 'rgba(148,163,184,0.7)' }}>Ulke</label>
+                        <label className="text-xs font-semibold block mb-1"
+                          style={{ color: isDark ? 'rgba(148,163,184,0.7)' : '#475569' }}>Ülke</label>
                         <input value={form.customer_country} onChange={e => setForm(f => ({ ...f, customer_country: e.target.value }))}
                           className="w-full px-3 py-2 text-sm rounded-xl outline-none border font-mono uppercase"
-                          style={{ background: 'rgba(255,255,255,0.03)', borderColor: 'rgba(148,163,184,0.12)', color: '#e2e8f0' }} />
+                          style={{
+                            background: isDark ? 'rgba(255,255,255,0.03)' : '#f1f5f9',
+                            borderColor: isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0',
+                            color: isDark ? '#e2e8f0' : '#1e293b'
+                          }} />
                       </div>
                       <Field label="Sehir *" value={form.customer_city} onChange={v => setForm(f => ({ ...f, customer_city: v }))} placeholder="Ornegin: IZMIR" />
                       <Field label="Mahalle / Ilce *" value={form.customer_district} onChange={v => setForm(f => ({ ...f, customer_district: v }))} placeholder="Ornegin: KONAK" />
@@ -1007,7 +1047,11 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
         <div className="flex gap-3 pb-8">
           <button onClick={handleCancel}
             className="flex-1 py-3 rounded-2xl text-sm font-semibold"
-            style={{ background: 'rgba(255,255,255,0.05)', color: '#64748b', border: '1px solid rgba(148,163,184,0.15)' }}>
+            style={{
+              background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9',
+              color: isDark ? '#64748b' : '#475569',
+              border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`
+            }}>
             İptal
           </button>
           <button onClick={handleSave} disabled={saving || !form.customer_name || !form.order_number}
@@ -1032,26 +1076,30 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
 }
 
 
-function SectionCard({ title, icon: Icon, children }) {
+function SectionCard({ title, icon: Icon, isDark = false, children }) {
   return (
     <div className="rounded-2xl p-5 space-y-4"
-      style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(148,163,184,0.08)' }}>
+      style={{
+        background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(248,250,252,0.8)',
+        border: `1px solid ${isDark ? 'rgba(148,163,184,0.08)' : '#e8ecf0'}`
+      }}>
       <div className="flex items-center gap-2">
-        <Icon size={14} className="text-slate-500" />
-        <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">{title}</h3>
+        <Icon size={14} style={{ color: isDark ? '#64748b' : '#94a3b8' }} />
+        <h3 className="text-xs font-bold uppercase tracking-widest"
+          style={{ color: isDark ? '#64748b' : '#94a3b8' }}>{title}</h3>
       </div>
       {children}
     </div>
   );
 }
 
-function SumRow({ label, value, bold, accent, color }) {
+function SumRow({ label, value, bold, accent, color, isDark = false }) {
   return (
     <div className="flex justify-between items-center px-4 py-2.5"
-      style={{ borderBottom: '1px solid rgba(148,163,184,0.07)' }}>
-      <span className={`text-xs ${bold ? 'font-bold text-slate-200' : 'text-slate-400'}`}>{label}</span>
-      <span className={`text-sm font-bold tabular-nums`}
-        style={{ color: accent ? '#34d399' : (color || (bold ? '#f1f5f9' : '#94a3b8')) }}>
+      style={{ borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.07)' : '#f1f5f9'}` }}>
+      <span className="text-xs" style={{ fontWeight: bold ? 700 : 500, color: bold ? (isDark ? '#e2e8f0' : '#1e293b') : (isDark ? '#94a3b8' : '#64748b') }}>{label}</span>
+      <span className="text-sm font-bold tabular-nums"
+        style={{ color: accent ? '#34d399' : (color || (bold ? (isDark ? '#f1f5f9' : '#0f172a') : (isDark ? '#94a3b8' : '#475569'))) }}>
         {value}
       </span>
     </div>
