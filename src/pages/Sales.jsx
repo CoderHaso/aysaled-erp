@@ -604,6 +604,42 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
         if (itemsErr) console.warn('[order_items insert]', itemsErr.message);
       }
 
+      // ── Müşteri Bilgisi Güncelleme ───────────────────────────────────
+      // Formda girilen bilgileri customers tablosuna daima kaydet
+      if (form.customer_id) {
+        const custUpdate = {};
+        if (form.customer_vkntckn)   custUpdate.vkntckn    = form.customer_vkntckn.trim();
+        if (form.customer_city)      custUpdate.city        = form.customer_city.trim();
+        if (form.customer_district)  custUpdate.district    = form.customer_district.trim();
+        if (form.customer_address)   custUpdate.address     = form.customer_address.trim();
+        if (form.customer_tax_office) custUpdate.tax_office = form.customer_tax_office.trim();
+        if (form.customer_phone)     custUpdate.phone       = form.customer_phone.trim();
+        if (form.customer_email)     custUpdate.email       = form.customer_email.trim();
+        if (form.customer_postal_code) custUpdate.postal_code = form.customer_postal_code.trim();
+        if (form.customer_building_name) custUpdate.building_name = form.customer_building_name.trim();
+        if (form.customer_building_no)   custUpdate.building_no   = form.customer_building_no.trim();
+        if (Object.keys(custUpdate).length > 0) {
+          await supabase.from('customers').update(custUpdate).eq('id', form.customer_id);
+        }
+      } else if (form.customer_name && form.customer_vkntckn) {
+        // Kayıtlı müşteri değilse VKN ile upsert dene
+        const custUpsert = {
+          name:        form.customer_name.trim(),
+          vkntckn:     form.customer_vkntckn.trim(),
+          city:        form.customer_city?.trim()        || null,
+          district:    form.customer_district?.trim()    || null,
+          address:     form.customer_address?.trim()     || null,
+          tax_office:  form.customer_tax_office?.trim()  || null,
+          phone:       form.customer_phone?.trim()       || null,
+          email:       form.customer_email?.trim()       || null,
+          postal_code: form.customer_postal_code?.trim() || null,
+          source:      'order_form',
+          updated_at:  new Date().toISOString(),
+        };
+        await supabase.from('customers').upsert(custUpsert, { onConflict: 'vkntckn', ignoreDuplicates: false });
+      }
+      // ───────────────────────────────────────────────
+
       // ── Teklif varsa accepted olarak işaretle ──
       if (quoteId && !isEdit) {
         try {

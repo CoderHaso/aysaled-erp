@@ -1131,19 +1131,19 @@ export default function Invoices({ type = 'inbox' }) {
     if (!createForm.lines.some(l => l.name)) return alert('En az 1 kalem giriniz');
     if (createForm.currency !== 'TRY' && !createForm.exchange_rate) return alert('Döviz kuru gerekli');
 
-    // Eksik Müşteri Bilgisi Güncelleme Teklifi
+    // Müşteri Bilgisi Güncelleme — her zaman girilen tüm alanları kaydet
     if (createType === 'outbox' && createForm.customer_id) {
-      const orig = entities.find(e => e.id === createForm.customer_id);
-      if (orig && (!orig.city || !orig.address || !orig.tax_office)) {
-        if (confirm("Girdiğiniz adres ve vergi dairesi bilgileri bu müşterinin veritabanı kaydında eksik.\nSonraki faturalarda otomatik gelmesi için müşteri kaydını bu bilgilerle güncelleyelim mi?")) {
-          // 'district' sütunu bulunmama ihtimaline karşı address alanına katıyoruz
-          const fullAddress = createForm.district ? `(${createForm.district}) ${createForm.address}` : createForm.address;
-          await supabase.from('customers').update({ 
-            city: createForm.city, 
-            address: fullAddress, 
-            tax_office: createForm.tax_office 
-          }).eq('id', createForm.customer_id);
-        }
+      const custUpdate = {};
+      if (createForm.vkntckn)   custUpdate.vkntckn    = createForm.vkntckn.trim();
+      if (createForm.city)      custUpdate.city        = createForm.city.trim();
+      if (createForm.district)  custUpdate.district    = createForm.district.trim();
+      if (createForm.address)   custUpdate.address     = createForm.address.trim();
+      if (createForm.tax_office) custUpdate.tax_office = createForm.tax_office.trim();
+      if (Object.keys(custUpdate).length > 0) {
+        const { error: custErr } = await supabase.from('customers')
+          .update(custUpdate)
+          .eq('id', createForm.customer_id);
+        if (custErr) console.warn('[invoice create] customer update failed:', custErr.message);
       }
     }
 
