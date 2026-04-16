@@ -1132,15 +1132,36 @@ export default function Invoices({ type = 'inbox' }) {
         exchange_rate: createForm.currency !== 'TRY' ? Number(createForm.exchange_rate) : undefined,
         lines: createForm.lines.filter(l => l.name).map(l => ({ ...l, quantity: Number(l.quantity), unitPrice: Number(l.unitPrice), taxRate: Number(l.taxRate) }))
       };
+      // 1. Supabase'e Draft olarak kaydet
       const r = await fetch('/api/invoices-api?action=create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const data = await r.json();
       if (!data.success) throw new Error(data.error);
-      closeCreate();
+      const newInvoiceId = data.invoice_id;
 
-      // ── Otomatik Senkronizasyon ────────────────────────────────────────────
-      // Fatura Uyumsoft'ta oluşturulunca gerçek fatura numarası (sayfa no) atanır.
-      // Hemen sync ile bu numarayı DB'ye çekiyoruz; sayfa numarası kaymalarını önler.
-      showToast(`Fatura oluşturuldu! Senkronize ediliyor... (${data.invoice_id || ''})`);
+      closeCreate();
+      showToast(`Taslak oluşturuldu (${newInvoiceId}), Uyumsoft'a gönderiliyor...`);
+
+      // 2. UBL XML ile Uyumsoft'a formalize (açıklama/notes dahil)
+      try {
+        const fR = await fetch('/api/invoices-api?action=formalize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ invoiceId: newInvoiceId }),
+        });
+        const fData = await fR.json();
+        if (!fData.success) {
+          // Uyumsoft'a gidemedi ama Draft kaydı yapıldı
+          console.warn('[formalize] Uyumsoft hatası:', fData.error);
+          showToast(`Taslak kaydedildi ama Uyumsoft'a gönderilemedi: ${fData.error}`, 'error');
+        } else {
+          showToast(`Fatura Uyumsoft'a gönderildi ✓ (${newInvoiceId})`, 'success');
+        }
+      } catch (fErr) {
+        console.warn('[formalize] Bağlantı hatası:', fErr.message);
+        showToast('Taslak kaydedildi, Uyumsoft bağlantısı kurulamadı.', 'error');
+      }
+
+      // 3. Sync ile güncel durumu çek
       invoiceCache.delete(createType);
       pageCache.invalidate(`invoices_${createType}`);
       try {
@@ -1149,11 +1170,9 @@ export default function Invoices({ type = 'inbox' }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ type: createType, detailLimit: 5 }),
         });
-      } catch (_syncErr) { /* sync opsiyonel; asıl işlem tamamlandı */ }
-      // ──────────────────────────────────────────────────────────────────────
+      } catch (_syncErr) { /* sync opsiyonel */ }
 
       await fetchInvoices(true);
-      showToast('Fatura oluşturuldu ve senkronize edildi ✓', 'success');
     } catch (err) { alert('Hata: ' + err.message); }
     finally { setCreating(false); }
   };
