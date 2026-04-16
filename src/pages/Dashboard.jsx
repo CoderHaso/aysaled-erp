@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
+import { useNavigate } from 'react-router-dom';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmtD = (d) => d ? new Date(d).toLocaleDateString('tr-TR') : '-';
@@ -37,10 +38,10 @@ const TYPE_ICON = {
 
 // ─── Hızlı Aksiyonlar ─────────────────────────────────────────────────────────
 const QUICK_ACTIONS = [
-  { n: 'Satış Yap',     icon: ShoppingCart, color: '#3b82f6', href: '/sales' },
-  { n: 'Stok Ekle',     icon: Plus,         color: '#f59e0b', href: '/stock' },
-  { n: 'Cari Ara',      icon: Search,       color: '#10b981', href: '/customers' },
-  { n: 'Faturalar',     icon: FileText,     color: '#8b5cf6', href: '/outgoing-invoices' },
+  { n: 'Satış Yap',  icon: ShoppingCart, color: '#3b82f6', to: '/sales',               state: { openNew: true } },
+  { n: 'Stok Ekle',  icon: Plus,         color: '#f59e0b', to: '/stock',               state: { openQuickAdd: true } },
+  { n: 'Cari Ara',   icon: Search,       color: '#10b981', to: '/customers',           state: {} },
+  { n: 'Fatura Kes', icon: FileText,     color: '#8b5cf6', to: '/outgoing-invoices',   state: { openCreate: true } },
 ];
 
 // ─── Bildirim Satırı ──────────────────────────────────────────────────────────
@@ -102,6 +103,7 @@ function NotifRow({ notif, onRead, color }) {
 export default function Dashboard() {
   const { effectiveMode, currentColor } = useTheme();
   const isDark = effectiveMode === 'dark';
+  const navigate = useNavigate();
 
   const [notifs, setNotifs]         = useState([]);
   const [loadingN, setLoadingN]     = useState(true);
@@ -304,8 +306,9 @@ export default function Dashboard() {
               </h3>
               <div className="grid grid-cols-2 gap-2.5">
                 {QUICK_ACTIONS.map((act, i) => (
-                  <a key={i} href={act.href}
-                    className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border transition-all text-center no-underline"
+                  <button key={i}
+                    onClick={() => navigate(act.to, { state: act.state })}
+                    className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border transition-all text-center"
                     style={{ background: c.actionBg, borderColor: c.border }}
                     onMouseEnter={e => e.currentTarget.style.background = c.actionHover}
                     onMouseLeave={e => e.currentTarget.style.background = c.actionBg}
@@ -314,7 +317,7 @@ export default function Dashboard() {
                       <act.icon size={18} style={{ color: act.color }} />
                     </div>
                     <span className="text-xs font-bold" style={{ color: c.textBase }}>{act.n}</span>
-                  </a>
+                  </button>
                 ))}
               </div>
             </div>

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as XLSX from 'xlsx';
 import {
@@ -28,6 +28,7 @@ function stockColor(c, l) {
 
 export default function Stock() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const { effectiveMode, currentColor } = useTheme();
   const isDark = effectiveMode === 'dark';
@@ -56,6 +57,15 @@ export default function Stock() {
   // (Eski ID açılış kodları silindi. Barkodlar bağımsız QRDetail sayfasına gider)
 
   const [quickAdd,      setQuickAdd]      = useState(false);
+
+  // Dashboard "Stok Ekle" hızlı aksiyonu → QuickAdd modalını otomatik aç
+  useEffect(() => {
+    if (location.state?.openQuickAdd) {
+      setQuickAdd(true);
+      window.history.replaceState({}, '');
+    }
+  }, [location.state]);
+
   const [showIOPanel,   setShowIOPanel]   = useState(false);
   const [toast,         setToast]         = useState(null);
   const [search,        setSearch]        = useState('');

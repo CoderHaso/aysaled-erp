@@ -1582,6 +1582,15 @@ export default function Sales() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
+  // Dashboard "Satış Yap" hızlı aksiyonu → yeni sipariş formunu aç
+  useEffect(() => {
+    if (location.state?.openNew) {
+      setEditOrder(null);
+      setShowForm(true);
+      window.history.replaceState({}, '');
+    }
+  }, [location.state]);
+
   useEffect(() => {
     const initFromQuote = async () => {
       const state = location.state;
