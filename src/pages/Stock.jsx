@@ -594,7 +594,8 @@ export default function Stock() {
                   {!loading && filtered.map((item, idx) => {
                     const clr = stockColor(item.stock_count, item.critical_limit);
                     const pct = item.critical_limit > 0 ? Math.min(100, (item.stock_count / (item.critical_limit * 3)) * 100) : 80;
-                    const sym = CURRENCY_SYM[item.base_currency] || '';
+                    const sym = CURRENCY_SYM[item.base_currency] || '₺';
+                    const saleSym = CURRENCY_SYM[item.sale_currency] || '₺';
                     const ed = quickEdits[item.id] || {};
                     const UNITS = ['Adet','Metre','cm','mm','Kg','g','Litre','ml','m²','Rulo','Paket','Kutu','Set','Takım'];
                     return (
@@ -735,7 +736,8 @@ export default function Stock() {
               {!loading && filtered.map((item, idx) => {
                 const clr = stockColor(item.stock_count, item.critical_limit);
                 const pct = item.critical_limit > 0 ? Math.min(100, (item.stock_count / (item.critical_limit * 3)) * 100) : 80;
-                const sym = CURRENCY_SYM[item.base_currency] || '';
+                const sym = CURRENCY_SYM[item.base_currency] || '₺';
+                const saleSym = CURRENCY_SYM[item.sale_currency] || '₺';
                 return (
                   <motion.div key={item.id}
                     initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.02 }}
