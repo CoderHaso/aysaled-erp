@@ -749,7 +749,7 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
       <div className="p-6 space-y-6">
 
         {/* Müşteri + Sipariş No */}
-        <SectionCard title="Sipariş Bilgileri" icon={FileText}>
+        <SectionCard title="Sipariş Bilgileri" icon={FileText} isDark={isDark}>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Müşteri seçici */}
             <div className="relative">
@@ -860,7 +860,7 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
         </SectionCard>
 
         {/* Ürün Kalemleri */}
-        <SectionCard title="Ürün / Hammadde Kalemleri" icon={Package}>
+        <SectionCard title="Ürün / Hammadde Kalemleri" icon={Package} isDark={isDark}>
           <div className="space-y-2">
             {lines.map((line, idx) => (
               <LineRow key={line._key} line={line} idx={idx} allItems={allItems}

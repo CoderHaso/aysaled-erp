@@ -12,7 +12,8 @@
  *  onDone      — (invoiceId) => void  (işlem tamamlandı)
  *  currentColor
  */
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Search, Check, Package, AlertCircle, Loader2,
@@ -44,6 +45,8 @@ export default function InvoiceStockModal({
   // Item search state per satır
   const [searches, setSearches] = useState(() => lines.map(() => ''));
   const [openRow,  setOpenRow]  = useState(null); // hangi satırın dropdown'u açık
+  const [dropPos,  setDropPos]  = useState({ top: 0, left: 0, width: 0 });
+  const btnRefs                 = useRef({});
   const [saving,   setSaving]   = useState(false);
   const [err,      setErr]      = useState('');
   const [done,     setDone]     = useState(false);
@@ -221,7 +224,16 @@ export default function InvoiceStockModal({
 
                   {/* Stok eşleştirme */}
                   <div className="relative">
-                    <button onClick={() => setOpenRow(openRow === idx ? null : idx)}
+                    <button ref={el => { btnRefs.current[idx] = el; }}
+                      onClick={(e) => {
+                        if (openRow === idx) {
+                          setOpenRow(null);
+                        } else {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          setDropPos({ top: rect.bottom + 4, left: rect.left, width: Math.max(rect.width, 288) });
+                          setOpenRow(idx);
+                        }
+                      }}
                       className="w-full flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-left text-xs transition-all"
                       style={{
                         background: selItem ? `${currentColor}15` : 'rgba(255,255,255,0.04)',
@@ -234,53 +246,59 @@ export default function InvoiceStockModal({
                       </span>
                     </button>
 
-                    {/* Dropdown */}
-                    <AnimatePresence>
-                      {openRow === idx && (
-                        <motion.div
-                          initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
-                          className="absolute left-0 top-9 z-50 w-72 rounded-xl overflow-hidden shadow-2xl"
-                          style={{ background: isDark ? '#0f1e36' : '#ffffff', border: `1px solid ${currentColor}40` }}>
-                          <div className="flex items-center gap-2 px-3 py-2"
-                            style={{ borderBottom: '1px solid rgba(148,163,184,0.1)' }}>
-                            <Search size={11} className="text-slate-500"/>
-                            <input autoFocus value={searches[idx]}
-                              onChange={e => setSearches(prev => prev.map((s, i) => i === idx ? e.target.value : s))}
-                              placeholder="Stokta ara..."
-                              className="flex-1 bg-transparent outline-none text-xs"
-                              style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}/>
-                          </div>
-                          {/* Eşleştirme yok seçeneği */}
-                          <button onClick={() => {
-                            updateMapping(idx, 'stockItemId', null);
-                            setOpenRow(null);
-                          }} className="w-full text-left px-3 py-2 text-xs text-slate-500 hover:bg-white/5 transition-colors">
-                            — Bu kalemi işleme alma —
-                          </button>
-                          <div className="max-h-48 overflow-y-auto">
-                            {results.map(item => (
-                              <button key={item.id}
-                                onClick={() => {
-                                  updateMapping(idx, 'stockItemId', item.id);
-                                  updateMapping(idx, 'priceVal', String(isInbox ? (item.purchase_price || '') : (item.sale_price || '')));
-                                  setOpenRow(null);
-                                }}
-                                className="w-full text-left px-3 py-2 flex items-center justify-between gap-2 transition-colors hover:bg-white/5">
-                                <div className="min-w-0">
-                                  <p className="text-xs font-semibold truncate" style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}>{item.name}</p>
-                                  <p className="text-[10px] text-slate-600">
-                                    {item.unit} · Stok: {item.stock_count ?? '—'}
-                                  </p>
-                                </div>
-                                <span className="text-[10px] text-emerald-500 flex-shrink-0">
-                                  {isInbox ? (item.purchase_price ? `₺${fmt(item.purchase_price)}` : '') : (item.sale_price ? `₺${fmt(item.sale_price)}` : '')}
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                    {/* Dropdown via Portal */}
+                    {openRow === idx && typeof document !== 'undefined' && createPortal(
+                      <div
+                        className="rounded-xl overflow-hidden shadow-2xl"
+                        style={{
+                          position: 'fixed',
+                          top: dropPos.top,
+                          left: dropPos.left,
+                          width: dropPos.width,
+                          zIndex: 99999,
+                          background: isDark ? '#0f1e36' : '#ffffff',
+                          border: `1px solid ${currentColor}40`,
+                        }}>
+                        <div className="flex items-center gap-2 px-3 py-2"
+                          style={{ borderBottom: '1px solid rgba(148,163,184,0.1)' }}>
+                          <Search size={11} className="text-slate-500"/>
+                          <input autoFocus value={searches[idx] || ''}
+                            onChange={e => setSearches(prev => prev.map((s, i) => i === idx ? e.target.value : s))}
+                            placeholder="Stokta ara..."
+                            className="flex-1 bg-transparent outline-none text-xs"
+                            style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}/>
+                        </div>
+                        {/* Eşleştirme yok seçeneği */}
+                        <button onClick={() => {
+                          updateMapping(idx, 'stockItemId', null);
+                          setOpenRow(null);
+                        }} className="w-full text-left px-3 py-2 text-xs text-slate-500 hover:bg-white/5 transition-colors">
+                          — Bu kalemi işleme alma —
+                        </button>
+                        <div className="max-h-48 overflow-y-auto">
+                          {results.map(item => (
+                            <button key={item.id}
+                              onClick={() => {
+                                updateMapping(idx, 'stockItemId', item.id);
+                                updateMapping(idx, 'priceVal', String(isInbox ? (item.purchase_price || '') : (item.sale_price || '')));
+                                setOpenRow(null);
+                              }}
+                              className="w-full text-left px-3 py-2 flex items-center justify-between gap-2 transition-colors hover:bg-white/5">
+                              <div className="min-w-0">
+                                <p className="text-xs font-semibold truncate" style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}>{item.name}</p>
+                                <p className="text-[10px] text-slate-600">
+                                  {item.unit} · Stok: {item.stock_count ?? '—'}
+                                </p>
+                              </div>
+                              <span className="text-[10px] text-emerald-500 flex-shrink-0">
+                                {isInbox ? (item.purchase_price ? `₺${fmt(item.purchase_price)}` : '') : (item.sale_price ? `₺${fmt(item.sale_price)}` : '')}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>,
+                      document.body
+                    )}
                   </div>
 
                   {/* Miktar */}

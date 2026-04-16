@@ -825,11 +825,13 @@ export default function Invoices({ type = 'inbox' }) {
   }, [type]);
 
   // İşle butonuna tıklandığında — kalemler yüklenmemişse önce API'den çek
+  const [fetchingDetailsId, setFetchingDetailsId] = useState(null);
   const handleIsle = useCallback(async (inv) => {
     if (inv.line_items?.length > 0) {
       setIsleModal(inv);
       return;
     }
+    setFetchingDetailsId(inv.invoice_id);
     try {
       const r = await fetch('/api/invoices-api?action=detail', {
         method:  'POST',
@@ -846,6 +848,8 @@ export default function Invoices({ type = 'inbox' }) {
       }
     } catch {
       setIsleModal(inv);
+    } finally {
+      setFetchingDetailsId(null);
     }
   }, [handleLineItemsLoaded]);
 
@@ -1445,13 +1449,20 @@ export default function Invoices({ type = 'inbox' }) {
                               <CheckCircle2 size={10}/> İşlendi
                             </span>
                           ) : inv.is_islendi === false && !(inv.type === 'outbox' && ['Draft','Queued'].includes(inv.status)) ? (
-                            <button
-                              onClick={e => { e.stopPropagation(); handleIsle(inv); }}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap animate-pulse"
-                              style={{ background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }}
-                              title="Bu faturası işle (stok, cari hesap vb.)">
-                              <CheckCheck size={11}/> İşle
-                            </button>
+                            fetchingDetailsId === inv.invoice_id ? (
+                              <button disabled className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap opacity-70"
+                                style={{ background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }}>
+                                <Loader2 size={11} className="animate-spin" /> Yükleniyor...
+                              </button>
+                            ) : (
+                              <button
+                                onClick={e => { e.stopPropagation(); handleIsle(inv); }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap animate-pulse"
+                                style={{ background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }}
+                                title="Bu faturası işle (stok, cari hesap vb.)">
+                                <CheckCheck size={11}/> İşle
+                              </button>
+                            )
                           ) : null}
                         </div>
                       </td>
