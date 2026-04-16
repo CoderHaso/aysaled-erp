@@ -434,18 +434,28 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
                         <button
                           onClick={e => {
                             e.stopPropagation();
-                            setPaymentPrefill({
-                              direction: 'receivable',
-                              amount: inv.amount,
-                              currency: inv.currency || 'TRY',
-                              description: `Fatura: ${inv.invoice_id}`,
+                            onClose();
+                            navigate('/hesap-defteri', {
+                              state: {
+                                openHareket: {
+                                  contactId:   customer.id,
+                                  contactType: 'customer',
+                                  tabId:       customer.is_faturasiz ? 'faturasiz_cari' : 'faturali_cari',
+                                  prefill: {
+                                    direction:   'receivable',
+                                    amount:      inv.amount,
+                                    currency:    inv.currency || 'TRY',
+                                    baslik:      inv.invoice_id ? `Fatura: ${inv.invoice_id}` : 'Fatura Tahsilatı',
+                                    aciklama:    inv.invoice_id || '',
+                                  },
+                                },
+                              },
                             });
-                            setTab('payments');
                           }}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all"
                           style={{ background: 'rgba(59,130,246,0.1)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.2)' }}
                         >
-                          <CreditCard size={11} />Ödemeye Geçir
+                          <CreditCard size={11} />Ödemeye Geçir → Hesap Defteri
                         </button>
                       </div>
                     </motion.div>
@@ -485,18 +495,27 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
                       <div className="flex justify-end mt-2 pt-2" style={{ borderTop: '1px solid rgba(148,163,184,0.06)' }}>
                         <button
                           onClick={() => {
-                            setPaymentPrefill({
-                              direction: 'receivable',
-                              amount: ord.grand_total,
-                              currency: 'TRY',
-                              description: `Siparis: ${ord.order_number || ord.id.slice(0,8)}`,
+                            onClose();
+                            navigate('/hesap-defteri', {
+                              state: {
+                                openHareket: {
+                                  contactId:   customer.id,
+                                  contactType: 'customer',
+                                  tabId:       'faturasiz_cari',
+                                  prefill: {
+                                    direction:   'receivable',
+                                    amount:      ord.grand_total,
+                                    currency:    'TRY',
+                                    baslik:      `Sipariş: ${ord.order_number || ord.id.slice(0,8)}`,
+                                  },
+                                },
+                              },
                             });
-                            setTab('payments');
                           }}
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all"
                           style={{ background: 'rgba(59,130,246,0.1)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.2)' }}
                         >
-                          <CreditCard size={11} />Ödemeye Geçir
+                          <CreditCard size={11} />Ödemeye Geçir → Hesap Defteri
                         </button>
                       </div>
                     </div>

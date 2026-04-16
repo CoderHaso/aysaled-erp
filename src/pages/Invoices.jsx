@@ -688,6 +688,7 @@ export default function Invoices({ type = 'inbox' }) {
   const [createModal, setCreateModal] = useState(false);
   const [createForm, setCreateForm]   = useState({ customer_id: null, cari_name: '', vkntckn: '', city: '', district: '', address: '', tax_office: '', issue_date: new Date().toISOString().slice(0,10), currency: 'TRY', notes: '', exchange_rate: '', lines: [EMPTY_LINE()] });
   const [exchangeRate, setExchangeRate] = useState(null);  // { rate, buyRate, source, date }
+  const [fxRates, setFxRates]           = useState({});    // { USD: 38.5, EUR: 42.1 } — TL cinsinden
   const [fetchingRate, setFetchingRate] = useState(false);
   const [creating, setCreating]       = useState(false);
   const [createType, setCreateType]   = useState('outbox'); // Hangi sekme açtı
@@ -877,12 +878,14 @@ export default function Invoices({ type = 'inbox' }) {
     const [custRes, suppRes, itemRes] = await Promise.all([
       supabase.from('customers').select('id, name, vkntckn, phone, email, city, address, tax_office, district'),
       supabase.from('suppliers').select('id, name, vkntckn, phone, email, city, address, tax_office, district'),
-      supabase.from('items').select('id, name, sku, unit, item_type, purchase_price, sale_price')
+      supabase.from('items').select('id, name, sku, unit, item_type, purchase_price, sale_price, base_currency')
     ]);
     const raw = t === 'inbox' ? (suppRes.data || []) : (custRes.data || []);
     const unique = Array.from(new Map(raw.map(e => [e.id, e])).values());
     setEntities(unique);
     setDbItems(itemRes.data || []);
+    // Tüm döviz kurlarını arka planda çek
+    fetchAllFxRates(new Date().toISOString().slice(0, 10));
   };
   const closeCreate = () => {
     setCreateModal(false);
@@ -989,10 +992,20 @@ export default function Invoices({ type = 'inbox' }) {
   };
 
   const selectItem = (lineId, item) => {
-    const isOutbox = type === 'outbox';
+    const isOutbox  = type === 'outbox';
     const basePrice = (isOutbox ? item.sale_price : item.purchase_price) || item.purchase_price || 0;
-    const rate = parseFloat(createForm.exchange_rate) || exchangeRate?.rate || 1;
-    const finalPrice = (createForm.currency !== 'TRY' && rate > 0) ? (basePrice / rate) : basePrice;
+    const itemCur   = (item.base_currency  || 'TRY').toUpperCase();
+    const fatCur    = (createForm.currency || 'TRY').toUpperCase();
+
+    let finalPrice = basePrice;
+    if (itemCur !== fatCur) {
+      // Her iki birimi TL üzerinden bağla
+      const itemRateTRY   = itemCur === 'TRY' ? 1 : (fxRates[itemCur]   || exchangeRate?.rate || 1);
+      const targetRateTRY = fatCur  === 'TRY' ? 1 : (fxRates[fatCur]    || exchangeRate?.rate || 1);
+      // basePrice → TRY → fatCur
+      const priceTRY = basePrice * itemRateTRY;
+      finalPrice     = fatCur === 'TRY' ? priceTRY : priceTRY / targetRateTRY;
+    }
 
     setCreateForm(p => ({ ...p, lines: p.lines.map(line => line.id === lineId
       ? { ...line, name: item.name, unit: item.unit || 'Adet', unitPrice: finalPrice.toFixed(4), item_code: item.sku || item.item_code }
@@ -1030,6 +1043,21 @@ export default function Invoices({ type = 'inbox' }) {
       }
     } catch { setExchangeRate(null); }
     finally { setFetchingRate(false); }
+  };
+
+  // Tüm döviz kurlarını çek (stok fiyatı dönüştürme için)
+  const fetchAllFxRates = async (date) => {
+    const currencies = ['USD', 'EUR', 'GBP'];
+    const map = {};
+    await Promise.all(currencies.map(async (cur) => {
+      try {
+        const url = `/api/exchange-rate?currency=${cur}${date ? `&date=${date}` : ''}`;
+        const r   = await fetch(url);
+        const d   = await r.json();
+        if (d?.rate) map[cur] = Number(d.rate);
+      } catch {}
+    }));
+    setFxRates(map);
   };
 
   const queryCustomerInfo = async () => {

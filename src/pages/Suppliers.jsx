@@ -398,18 +398,28 @@ function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
                       <button
                         onClick={e => {
                           e.stopPropagation();
-                          setPaymentPrefill({
-                            direction: 'payable',
-                            amount: inv.amount,
-                            currency: inv.currency || 'TRY',
-                            description: `Fatura: ${inv.invoice_id}`,
+                          onClose();
+                          navigate('/hesap-defteri', {
+                            state: {
+                              openHareket: {
+                                contactId:   supplier.id,
+                                contactType: 'supplier',
+                                tabId:       supplier.is_faturasiz ? 'faturasiz_tedarikci' : 'faturali_tedarikci',
+                                prefill: {
+                                  direction:   'payable',
+                                  amount:      inv.amount,
+                                  currency:    inv.currency || 'TRY',
+                                  baslik:      inv.invoice_id ? `Fatura: ${inv.invoice_id}` : 'Fatura Ödemesi',
+                                  aciklama:    inv.invoice_id || '',
+                                },
+                              },
+                            },
                           });
-                          setTab('payments');
                         }}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all"
                         style={{ background: 'rgba(249,115,22,0.1)', color: '#fb923c', border: '1px solid rgba(249,115,22,0.2)' }}
                       >
-                        <CreditCard size={11} />Ödemeye Geçir
+                        <CreditCard size={11} />Ödemeye Geçir → Hesap Defteri
                       </button>
                     </div>
                   </motion.div>

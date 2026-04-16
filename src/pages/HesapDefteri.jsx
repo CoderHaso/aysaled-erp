@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../contexts/ThemeContext';
+import { useLocation } from 'react-router-dom';
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -43,7 +44,7 @@ const SORT_OPTIONS = [
 ];
 
 // ── Hareket formu modal ────────────────────────────────────────────────────────
-function HareketModal({ contact, contactType, onClose, onSaved }) {
+function HareketModal({ contact, contactType, onClose, onSaved, prefill }) {
   const { currentColor } = useTheme();
   const [form, setForm] = useState({
     tarih: today(), baslik: '', aciklama: '',
@@ -51,6 +52,20 @@ function HareketModal({ contact, contactType, onClose, onSaved }) {
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr]       = useState('');
+
+  // Prefill: dışardan gelen ön-doldurma (Ödemeye Geçir butonundan)
+  useEffect(() => {
+    if (!prefill) return;
+    setForm(f => ({
+      ...f,
+      baslik:   prefill.baslik   || prefill.description || '',
+      borc:     prefill.borc     || (prefill.direction === 'receivable' || prefill.direction === 'alacak' ? (prefill.amount || '') : ''),
+      alacak:   prefill.alacak   || (prefill.direction === 'verecek' || prefill.direction === 'payable'  ? (prefill.amount || '') : ''),
+      currency: prefill.currency || 'TRY',
+      aciklama: prefill.aciklama || '',
+      tarih:    prefill.tarih    || today(),
+    }));
+  }, [prefill]);
 
   const handleSave = async () => {
     if (!form.baslik.trim())        return setErr('Başlık zorunlu');
@@ -181,13 +196,14 @@ function BalanceChip({ value, compact = false }) {
 }
 
 // ── Tekil kişi satırı (accordion) ─────────────────────────────────────────────
-function ContactRow({ contact, contactType, color, preloadedBalance }) {
+function ContactRow({ contact, contactType, color, preloadedBalance, externalOpen, externalPrefill, externalAutoModal, onExternalHandled }) {
   const { effectiveMode } = useTheme();
   const isDark = effectiveMode === 'dark';
   const [open, setOpen]       = useState(false);
   const [hareketler, setHar]  = useState([]);
   const [loading, setLoading] = useState(false);
   const [showModal, setModal] = useState(false);
+  const [prefill, setPrefill] = useState(null);
   const [deleting, setDel]    = useState(null);
   const loaded = useRef(false);
 
@@ -202,6 +218,22 @@ function ContactRow({ contact, contactType, color, preloadedBalance }) {
       setHar(data || []);
     } finally { setLoading(false); }
   }, [contact.id, contactType]);
+
+  // Dışarından (location.state) otomatik aç
+  useEffect(() => {
+    if (!externalOpen) return;
+    setOpen(true);
+    const doOpen = async () => {
+      if (!loaded.current) { loaded.current = true; await loadHareketler(); }
+      if (externalAutoModal) {
+        setPrefill(externalPrefill || null);
+        setModal(true);
+        onExternalHandled?.();
+      }
+    };
+    doOpen();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalOpen, externalAutoModal]);
 
   const handleOpen = async () => {
     const next = !open;
@@ -383,9 +415,11 @@ function ContactRow({ contact, contactType, color, preloadedBalance }) {
 
       {showModal && (
         <HareketModal contact={contact} contactType={contactType}
-          onClose={() => setModal(false)}
+          prefill={prefill}
+          onClose={() => { setModal(false); setPrefill(null); }}
           onSaved={async () => {
             setModal(false);
+            setPrefill(null);
             loaded.current = false;
             await loadHareketler();
             loaded.current = true;
@@ -454,6 +488,37 @@ export default function HesapDefteri() {
   }, [activeTab]);
 
   useEffect(() => { loadContacts(); }, [loadContacts]);
+
+  // location.state ile Customers/Suppliers'dan gelince otomatik HareketModal aç
+  const location = useLocation();
+  const [pendingHareket, setPendingHareket] = useState(null); // { contact, contactType, prefill }
+  useEffect(() => {
+    const state = location.state;
+    if (!state?.openHareket) return;
+    const { contactId, contactType: cType, prefill: pf, tabId } = state.openHareket;
+    // Sekmeyi seç
+    if (tabId) setActiveTab(tabId);
+    // Contacts yüklenince bul ve modal aç
+    setPendingHareket({ contactId, contactType: cType, prefill: pf });
+    window.history.replaceState({}, '');
+  }, [location.state]);
+
+  // contacts yüklendiğinde pending hareket varsa işle
+  useEffect(() => {
+    if (!pendingHareket || contacts.length === 0) return;
+    const found = contacts.find(c => c.id === pendingHareket.contactId);
+    if (found) {
+      setSelectedContact({
+        contact: found,
+        contactType: pendingHareket.contactType,
+        prefill: pendingHareket.prefill,
+        autoOpenModal: true,
+      });
+      setPendingHareket(null);
+    }
+  }, [contacts, pendingHareket]);
+
+  const [selectedContact, setSelectedContact] = useState(null); // { contact, contactType, prefill, autoOpenModal }
 
   // Filtre + sıralama
   const filtered = contacts
@@ -622,14 +687,25 @@ export default function HesapDefteri() {
         )}
 
         <AnimatePresence initial={false}>
-          {!loading && filtered.map((contact, i) => (
-            <motion.div key={contact.id}
-              initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.018 }}>
-              <ContactRow contact={contact} contactType={tab?.type} color={tabColor}
-                preloadedBalance={balances[contact.id] ?? 0}/>
-            </motion.div>
-          ))}
+          {!loading && filtered.map((contact, i) => {
+            const isSel = selectedContact?.contact?.id === contact.id;
+            return (
+              <motion.div key={contact.id}
+                initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.018 }}>
+                <ContactRow
+                  contact={contact}
+                  contactType={tab?.type}
+                  color={tabColor}
+                  preloadedBalance={balances[contact.id] ?? 0}
+                  externalOpen={isSel}
+                  externalPrefill={isSel ? selectedContact?.prefill : null}
+                  externalAutoModal={isSel && !!selectedContact?.autoOpenModal}
+                  onExternalHandled={() => setSelectedContact(null)}
+                />
+              </motion.div>
+            );
+          })}
         </AnimatePresence>
       </div>
 

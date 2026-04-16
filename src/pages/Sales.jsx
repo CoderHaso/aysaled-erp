@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+﻿import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 import {
@@ -97,7 +97,7 @@ function StatusBadge({ status, urgent }) {
 }
 
 // ─── Ürün Satırı ──────────────────────────────────────────────────────────────
-function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove, c, exchangeRate, invoiceToggle }) {
+function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove, c, exchangeRate, fxRates, invoiceToggle }) {
   const { effectiveMode } = useTheme();
   const isDark = effectiveMode === 'dark';
   const [open, setOpen]             = useState(false);
@@ -111,15 +111,43 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
   // product_recipes: bu ürüne ait reçete var mı?
   const hasRecipe = line.item_id && (allRecipes || []).some(r => r.product_id === line.item_id);
 
-  // Fiyat dönüştürme: stok'taki item.base_currency → satış currency
+  // Evrensel fiyat dönüştürme: stok'taki item.base_currency → sipariş currency
+  // fxRates = { USD: 38.5, EUR: 42.1, GBP: 49.0 } — 1 birim yabancı = X TL
   const convertPrice = (item) => {
     const basePrice    = item.sale_price || item.purchase_price || 0;
-    const itemCurrency = item.base_currency || 'TRY';
-    if (itemCurrency === currency) return basePrice; // aynı birim, dönüş gerekmez
-    const rate = exchangeRate?.rate || 1;
-    if (itemCurrency === 'TRY' && currency !== 'TRY') return basePrice / rate; // TRY→yabancı
-    if (itemCurrency !== 'TRY' && currency === 'TRY')  return basePrice * rate; // yabancı→TRY
-    return basePrice; // farklı yabancı para birimleri aralarında yaklaşık
+    const itemCur      = (item.base_currency || 'TRY').toUpperCase();
+    const targetCur    = (currency || 'TRY').toUpperCase();
+    if (itemCur === targetCur) return basePrice; // aynı birim
+
+    // Her birini TL'ye çevir, sonra hedef birimi uygula
+    const toTRY = (amount, cur) => {
+      if (cur === 'TRY') return amount;
+      const rate = fxRates?.[cur] || exchangeRate?.rate || 1;
+      return amount * rate;
+    };
+    const fromTRY = (amountTRY, cur) => {
+      if (cur === 'TRY') return amountTRY;
+      const rate = fxRates?.[cur] || exchangeRate?.rate || 1;
+      return amountTRY / rate;
+    };
+
+    const priceTRY = toTRY(basePrice, itemCur);
+    return fromTRY(priceTRY, targetCur);
+  };
+
+  // Stok yeterlilik gösterge formatlayıcı: fiyat + orijinal birim göster
+  const fmtItemPrice = (item) => {
+    const p   = item.sale_price || item.purchase_price || 0;
+    const cur = item.base_currency || 'TRY';
+    const sym = { TRY: '₺', USD: '$', EUR: '€', GBP: '£' }[cur] || cur;
+    return `${sym}${p.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  const fmtConverted = (item) => {
+    const p   = convertPrice(item);
+    const cur = currency || 'TRY';
+    const sym = { TRY: '₺', USD: '$', EUR: '€', GBP: '£' }[cur] || cur;
+    return `${sym}${p.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   const total    = (line.quantity || 0) * (line.unit_price || 0);
@@ -156,11 +184,11 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
           {open && (
             <motion.div initial={{ opacity:0, y:-4 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0, y:-4 }}
               className="absolute z-40 w-full mt-1 rounded-xl overflow-hidden"
-              style={{ background: '#0c1a2e', border: '1px solid rgba(148,163,184,0.15)', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}>
+              style={{ background: isDark ? '#0c1a2e' : '#ffffff', border: '1px solid rgba(148,163,184,0.15)', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}>
               <div className="p-2">
                 <input autoFocus value={q} onChange={e => setQ(e.target.value)}
                   placeholder="Ara..." className="w-full px-3 py-1.5 rounded-lg text-sm outline-none"
-                  style={{ background: 'rgba(255,255,255,0.07)', color: '#f1f5f9' }} />
+                  style={{ background: isDark ? 'rgba(255,255,255,0.07)' : '#f1f5f9', color: isDark ? '#f1f5f9' : '#1e293b' }} />
               </div>
               <div className="max-h-48 overflow-y-auto">
                 {matches.length === 0 && q && <p className="px-4 py-3 text-xs text-slate-500">Sonuç yok</p>}
@@ -188,7 +216,7 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
                       style={{ borderBottom: '1px solid rgba(148,163,184,0.06)' }}
                       onMouseEnter={e => e.currentTarget.style.background = 'rgba(16,185,129,0.08)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                      <span className="text-sm text-emerald-400">➕ Stok’a Yeni Ürün / Hammadde Ekle</span>
+                      <span className="text-sm text-emerald-400">➕ Stok'a Yeni Ürün / Hammadde Ekle</span>
                     </div>
                   </>
                 )}
@@ -217,11 +245,11 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
                     </div>
                     <div className="text-right">
                       <p className="text-xs font-bold" style={{ color: isDark ? '#cbd5e1' : '#334155' }}>
-                        {fmt(item.sale_price || item.purchase_price, item.base_currency || 'TRY')}
+                        {fmtItemPrice(item)}
                       </p>
-                      {item.base_currency && item.base_currency !== currency && (
-                        <p className="text-[10px] text-amber-400">
-                          ≈ {fmt(convertPrice(item), currency)}
+                      {(item.base_currency || 'TRY') !== (currency || 'TRY') && (
+                        <p className="text-[10px] text-amber-400 font-semibold">
+                          ≈ {fmtConverted(item)} ({currency})
                         </p>
                       )}
                       <p className="text-[10px]" style={{ color: item.stock_count > 0 ? '#10b981' : '#ef4444' }}>
@@ -423,8 +451,33 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
   const [draftLoading,  setDraftLoading]  = useState(false);
   const [draftPreviewUrl, setDraftPreviewUrl] = useState(null);  // string URL veya null
 
-  const [exchangeRate, setExchangeRate] = useState(null);
-  
+  // Döviz kurları: { USD: 38.5, EUR: 42.1, GBP: 49.0 } — daima TL cinsinden
+  const [exchangeRate, setExchangeRate] = useState(null); // sipariş para birimi için (geriye dön.)
+  const [fxRates, setFxRates]           = useState({});   // { USD: rate, EUR: rate, GBP: rate }
+
+  const fetchFxRates = async (date) => {
+    const currencies = ['USD', 'EUR', 'GBP'];
+    const map = {};
+    await Promise.all(currencies.map(async (curr) => {
+      try {
+        const qs = new URLSearchParams({ currency: curr });
+        if (date) qs.append('date', date);
+        const res = await fetch(`/api/exchange-rate?${qs.toString()}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.rate) map[curr] = data.rate;
+        }
+      } catch {}
+    }));
+    setFxRates(map);
+    // Geriye dönük uyumluluk: sipariş para birimi için exchangeRate
+    if (form.currency !== 'TRY' && map[form.currency]) {
+      setExchangeRate({ rate: map[form.currency], source: 'tcmb' });
+    } else if (form.currency === 'TRY') {
+      setExchangeRate(null);
+    }
+  };
+
   const fetchExchangeRate = async (curr, date) => {
     if (curr === 'TRY') { setExchangeRate(null); return; }
     try {
@@ -435,13 +488,14 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
         const data = await res.json();
         setExchangeRate(data);
               } else { setExchangeRate(null); }
-            } catch { 
+            } catch {
               setExchangeRate(null);
             }
           };
 
   useEffect(() => {
     fetchExchangeRate(form.currency, form.due_date);
+    fetchFxRates(form.due_date);  // Her zaman tüm kurları çek
   }, [form.currency, form.due_date]);
 
   // Müşteri seçince: sipariş no üret + adres/iletişim auto-fill
@@ -795,7 +849,7 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
           <div className="space-y-2">
             {lines.map((line, idx) => (
               <LineRow key={line._key} line={line} idx={idx} allItems={allItems}
-                currency={form.currency} exchangeRate={exchangeRate}
+                currency={form.currency} exchangeRate={exchangeRate} fxRates={fxRates}
                 allRecipes={allRecipes} invoiceToggle={invoiceToggle}
                 onChange={patch => updateLine(idx, patch)}
                 onRemove={() => removeLine(idx)}
