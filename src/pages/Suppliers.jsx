@@ -399,7 +399,7 @@ function SupplierDrawer({ supplier, onClose, onSaved, setDialog }) {
                         onClick={e => {
                           e.stopPropagation();
                           onClose();
-                          navigate('/hesap-defteri', {
+                          navigate('/ledger', {
                             state: {
                               openHareket: {
                                 contactId:   supplier.id,

@@ -435,7 +435,7 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
                           onClick={e => {
                             e.stopPropagation();
                             onClose();
-                            navigate('/hesap-defteri', {
+                            navigate('/ledger', {
                               state: {
                                 openHareket: {
                                   contactId:   customer.id,
@@ -496,7 +496,7 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
                         <button
                           onClick={() => {
                             onClose();
-                            navigate('/hesap-defteri', {
+                            navigate('/ledger', {
                               state: {
                                 openHareket: {
                                   contactId:   customer.id,
