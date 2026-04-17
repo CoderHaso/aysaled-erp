@@ -5,6 +5,7 @@ import {
   AlertCircle, Plus, Trash2, Edit2, X, ChevronDown, ChevronRight, Tag
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
+import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabaseClient';
 
 const FIELD_TYPES = [
@@ -15,9 +16,10 @@ const FIELD_TYPES = [
 
 export default function Settings() {
   const { effectiveMode, currentColor } = useTheme();
+  const { profile, ROLES } = useAuth();
   const isDark = effectiveMode === 'dark';
 
-  const [activeTab, setActiveTab] = useState('uyumsoft');
+  const [activeTab, setActiveTab] = useState(profile?.role === ROLES.ADMIN ? 'users' : 'uyumsoft');
   const [form, setForm] = useState({ username: '', password: '', isProduction: false });
   const [saving, setSaving]     = useState(false);
   const [testing, setTesting]   = useState(false);
@@ -65,9 +67,10 @@ export default function Settings() {
   };
 
   const TABS = [
-    { id: 'uyumsoft',    label: '🔌 Uyumsoft' },
+    ...(profile?.role !== ROLES.ADMIN ? [{ id: 'uyumsoft',    label: '🔌 Uyumsoft' }] : []),
     { id: 'cat_raw',     label: '🔩 Ham. Kategoriler' },
     { id: 'cat_product', label: '⚡ Ürün Kategoriler' },
+    ...((profile?.role === ROLES.DEV || profile?.role === ROLES.ADMIN) ? [{ id: 'users', label: '👥 Kullanıcılar' }] : [])
   ];
 
   return (
@@ -153,7 +156,115 @@ export default function Settings() {
           c={c} currentColor={currentColor} isDark={isDark}
         />
       )}
+
+      {/* KULLANICI YÖNETİMİ */}
+      {activeTab === 'users' && (
+        <UsersManager c={c} currentColor={currentColor} isDark={isDark} profile={profile} ROLES={ROLES} />
+      )}
     </motion.div>
+  );
+}
+
+// ═══════════════ KULLANICI YÖNETİCİSİ ═══════════════
+function UsersManager({ c, currentColor, isDark, profile, ROLES }) {
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const ALL_TABS = [
+    { id: '/', label: 'Dashboard' },
+    { id: '/stock', label: 'Stok Merkezi' },
+    { id: '/suppliers', label: 'Tedarikçiler' },
+    { id: '/contacts', label: 'Cari Takip' },
+    { id: '/ledger', label: 'Hesap Defteri' },
+    { id: '/is-emri', label: 'İş Emirleri' },
+    { id: '/kasa', label: 'Kasa' },
+    { id: '/incoming-invoices', label: 'Giden Fat.' },
+    { id: '/outgoing-invoices', label: 'Gelen Fat.' },
+    { id: '/sales', label: 'Satış' },
+    { id: '/quotes', label: 'Teklifler' },
+    { id: '/katalog', label: 'Katalog Merkezi' },
+    { id: '/media', label: 'Medya' },
+    { id: '/reports', label: 'Raporlar' },
+    { id: '/settings', label: 'Ayarlar' }
+  ];
+
+  const loadUsers = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase.from('profiles').select('*').order('email');
+    setUsers(data || []);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadUsers(); }, [loadUsers]);
+
+  const updateUser = async (userId, patch) => {
+    await supabase.from('profiles').update(patch).eq('id', userId);
+    loadUsers();
+  };
+
+  const toggleTab = (userId, currentTabs, tabId) => {
+    let newTabs = currentTabs || [];
+    if (newTabs.includes(tabId)) {
+       newTabs = newTabs.filter(t => t !== tabId);
+    } else {
+       newTabs = [...newTabs, tabId];
+    }
+    updateUser(userId, { allowed_tabs: newTabs });
+  };
+
+  return (
+    <div className="rounded-3xl p-6 sm:p-8 space-y-5" style={{ background: c.card, border: `1px solid ${c.border}` }}>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold" style={{ color: c.text }}>Sistem Kullanıcıları</h2>
+          <p className="text-sm mt-0.5" style={{ color: c.muted }}>Tüm kullanıcıların rollerini ve erişim izinlerini ayarlayın.</p>
+        </div>
+      </div>
+      
+      {loading ? (
+        <div className="text-center py-8"><Loader2 size={20} className="animate-spin mx-auto" style={{ color: currentColor }} /></div>
+      ) : (
+        <div className="space-y-3">
+          {users.map(u => (
+            <div key={u.id} className="rounded-xl overflow-hidden p-4 space-y-4" style={{ border: `1px solid ${c.border}` }}>
+              <div className="flex flex-wrap gap-4 items-center justify-between">
+                <div>
+                   <p className="font-semibold text-sm" style={{ color: c.text }}>{u.email}</p>
+                   {u.id === profile.id && <p className="text-[10px] font-bold text-emerald-500">Bu Sensin</p>}
+                </div>
+                {profile.role === ROLES.DEV || (profile.role === ROLES.ADMIN && u.role !== ROLES.DEV) ? (
+                  <select value={u.role || ROLES.ATOLYE} onChange={e => updateUser(u.id, { role: e.target.value })}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg outline-none" style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
+                    <option value={ROLES.DEV} disabled={profile.role !== ROLES.DEV}>Geliştirici (Dev)</option>
+                    <option value={ROLES.ADMIN}>Yönetici (Admin)</option>
+                    <option value={ROLES.ATOLYE}>Atölye (Sadece İş Emri)</option>
+                    <option value={ROLES.OZEL}>Özel Rol (Seçili Sekmeler)</option>
+                  </select>
+                ) : (
+                  <span className="px-3 py-1.5 text-xs font-bold rounded-lg" style={{ background: c.inputBg, color: c.muted }}>{u.role}</span>
+                )}
+              </div>
+              
+              {u.role === ROLES.OZEL && (profile.role === ROLES.DEV || profile.role === ROLES.ADMIN) && (
+                <div className="pt-3 border-t grid grid-cols-2 sm:grid-cols-3 gap-2" style={{ borderColor: c.border }}>
+                   {ALL_TABS.map(tab => {
+                     const isChecked = (u.allowed_tabs || []).includes(tab.id) || (u.allowed_tabs || []).includes('*');
+                     return (
+                       <label key={tab.id} className="flex items-center gap-2 cursor-pointer p-1.5 rounded-lg transition-colors"
+                         style={{ background: isChecked ? `${currentColor}15` : 'transparent' }}>
+                         <input type="checkbox" checked={isChecked} onChange={() => toggleTab(u.id, u.allowed_tabs, tab.id)}
+                           className="rounded" style={{ accentColor: currentColor }} />
+                         <span className="text-[10px] font-semibold" style={{ color: isChecked ? c.text : c.muted }}>{tab.label}</span>
+                       </label>
+                     );
+                   })}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -362,12 +362,18 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
             </button>
             {recipeOpen && (
               <div className="px-3 py-2 space-y-1" style={{ background: isDark?'rgba(139,92,246,0.03)':'rgba(139,92,246,0.02)' }}>
-                {displayRecipeItems.map((ri,i) => (
-                  <div key={i} className="flex items-center justify-between text-[10px]" style={{ color:'#94a3b8' }}>
-                    <span>• {ri.item_name}</span>
-                    <span className="font-bold">{ri.quantity} {ri.unit}</span>
-                  </div>
-                ))}
+                {displayRecipeItems.map((ri,i) => {
+                  const stockItem = items?.find(it => it.id === ri.item_id);
+                  const stockDisplay = stockItem ? `(Stok: ${stockItem.stock_count} ${stockItem.unit})` : '';
+                  return (
+                    <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between text-[10px] gap-1" style={{ color:'#94a3b8' }}>
+                      <span className="flex-1 min-w-0 font-medium">
+                        {ri.item_name} <span className="opacity-70 text-[9px] ml-1">{stockDisplay}</span>
+                      </span>
+                      <span className="font-bold whitespace-nowrap">{ri.quantity} {ri.unit}</span>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

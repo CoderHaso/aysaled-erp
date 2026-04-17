@@ -7,6 +7,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { AnimatePresence } from 'framer-motion';
 import ThemeSettings from './ThemeSettings';
+import { useAuth } from '../contexts/AuthContext';
 
 const MENU = [
   { name: 'Dashboard',    icon: LayoutDashboard, id: 'dashboard' },
@@ -27,8 +28,25 @@ const MENU = [
 
 export default function Sidebar({ isOpen, toggle, activeId = 'dashboard', onNavigate }) {
   const { effectiveMode, currentColor, theme } = useTheme();
+  const { profile, ROLES, logout } = useAuth();
   const isDark = effectiveMode === 'dark';
   const [themeOpen, setThemeOpen] = useState(false);
+
+  // RBAC filtreleme
+  const isAllowed = (id) => {
+    if (!profile) return false;
+    const r = profile.role || ROLES.ATOLYE;
+    const mappedPath = id === 'dashboard' ? '/' : `/${id}`;
+    if (r === ROLES.DEV || r === ROLES.ADMIN) return true;
+    if (r === ROLES.ATOLYE) return id === 'is-emri';
+    if (r === ROLES.OZEL) {
+      const allowed = profile.allowed_tabs || [];
+      return allowed.includes('*') || allowed.includes(mappedPath);
+    }
+    return false;
+  };
+  
+  const allowedMenu = MENU.filter(m => isAllowed(m.id));
 
   // CSS değişkenlerini sidebar genişliğine göre set et
   const sidebarWidth     = isOpen ? 260 : 72;
@@ -63,7 +81,7 @@ export default function Sidebar({ isOpen, toggle, activeId = 'dashboard', onNavi
 
         {/* Nav (scroll varsa içeride) */}
         <nav className="flex-1 px-2 space-y-0.5 mt-1 overflow-y-auto custom-scrollbar">
-          {MENU.map(({ name, icon: Icon, id }) => {
+          {allowedMenu.map(({ name, icon: Icon, id }) => {
             const active = activeId === id;
             return (
               <button
@@ -110,26 +128,37 @@ export default function Sidebar({ isOpen, toggle, activeId = 'dashboard', onNavi
           </div>
 
           {/* Settings */}
-          <button onClick={() => onNavigate?.('settings')}
-            className="nav-link w-full"
-            style={activeId === 'settings' ? { background: `color-mix(in srgb, ${currentColor} 18%, transparent)`, color: 'var(--color-primary-light)' } : {}}>
-            <Settings size={19} className="shrink-0" />
-            {isOpen && <span>Ayarlar</span>}
-          </button>
+          {isAllowed('settings') && (
+            <button onClick={() => onNavigate?.('settings')}
+              className="nav-link w-full"
+              style={activeId === 'settings' ? { background: `color-mix(in srgb, ${currentColor} 18%, transparent)`, color: 'var(--color-primary-light)' } : {}}>
+              <Settings size={19} className="shrink-0" />
+              {isOpen && <span>Ayarlar</span>}
+            </button>
+          )}
 
           {/* User */}
-          <div className="flex items-center gap-3 px-3 py-2 rounded-xl">
-            <div className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-white font-bold text-sm"
-              style={{ background: currentColor }}>
-              E
-            </div>
-            {isOpen && (
-              <div className="overflow-hidden">
-                <p className="text-white text-sm font-semibold leading-none truncate">Efe Han</p>
-                <p className="text-slate-400 text-[10px] mt-0.5">Admin</p>
+          {profile && (
+            <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl mt-1" style={{ border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}` }}>
+              <div className="flex items-center gap-3 overflow-hidden">
+                <div className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-white font-bold text-sm"
+                  style={{ background: currentColor }}>
+                  {profile.email?.substring(0, 2).toUpperCase()}
+                </div>
+                {isOpen && (
+                  <div className="overflow-hidden">
+                    <p className="text-white text-xs font-semibold leading-none truncate">{profile.email.split('@')[0]}</p>
+                    <p className="text-slate-400 text-[10px] mt-0.5">{profile.role}</p>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+              {isOpen && (
+                <button onClick={logout} className="text-xs transition-colors hover:text-red-400" style={{ color: c?.muted || '#64748b' }}>
+                   Çıkış
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </aside>
 

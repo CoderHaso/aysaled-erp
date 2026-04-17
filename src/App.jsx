@@ -19,7 +19,9 @@ import Reports        from './pages/Reports';
 import HesapDefteri  from './pages/HesapDefteri';
 import IsEmri        from './pages/IsEmri';
 import Katalog        from './pages/Katalog';
+import Login          from './pages/Login';
 import { supabase }   from './lib/supabaseClient';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 const PAGES = {
   '/':           { title: 'Dashboard',      sub: 'Genel Bakış' },
@@ -98,12 +100,38 @@ function BellButton({ navigate }) {
 
 function AppShell() {
   const { effectiveMode, currentColor } = useTheme();
+  const { session, profile, logout, ROLES } = useAuth();
   const isDark = effectiveMode === 'dark';
 
   // Desktop: sidebar açık/kapalı; Mobile: varsayılan kapalı (ekran genişliğine göre)
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1024);
   const location  = useLocation();
   const navigate  = useNavigate();
+
+  // Route security
+  if (!session) {
+    return <Login />;
+  }
+
+  // RBAC checks
+  const isRouteAllowed = () => {
+    if (!profile) return true; // hala yükleniyor olabilir
+    const r = profile.role || ROLES.ATOLYE;
+    const p = location.pathname;
+
+    if (r === ROLES.DEV || r === ROLES.ADMIN) return true;
+    if (r === ROLES.ATOLYE) {
+       if (p === '/is-emri') return true;
+       return false;
+    }
+    if (r === ROLES.OZEL) {
+       const allowed = profile.allowed_tabs || [];
+       if (allowed.includes('*')) return true;
+       if (allowed.includes(p)) return true;
+       return false;
+    }
+    return false;
+  };
 
   const page     = PAGES[location.pathname] || { title: 'A-ERP', sub: '' };
   const activeId = ROUTE_TO_ID[location.pathname] || 'dashboard';
@@ -199,6 +227,13 @@ function AppShell() {
 
         {/* ── Sayfa içeriği (tek scroll burası) ───────────────────────── */}
         <main className="flex-1 overflow-y-auto" style={{ background: c.bg, color: c.text }}>
+          {!isRouteAllowed() ? (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 px-4 text-center">
+               <h2 className="text-2xl font-bold text-red-500">Yetkisiz Erişim</h2>
+               <p style={{ color: c.muted }}>Bu sayfayı görüntüleme yetkiniz yok.</p>
+               <button onClick={logout} className="mt-4 px-6 py-2 rounded-xl text-sm font-bold bg-slate-200 dark:bg-slate-800">Çıkış Yap</button>
+            </div>
+          ) : (
           <Routes>
             <Route path="/"           element={<Dashboard />} />
             <Route path="/stock"      element={<Stock />} />
@@ -221,6 +256,7 @@ function AppShell() {
             <Route path="/is-emri"    element={<IsEmri />} />
             <Route path="/katalog"    element={<Katalog />} />
           </Routes>
+          )}
         </main>
       </div>
     </div>
@@ -243,8 +279,10 @@ function ComingSoon({ title, icon = '🚧' }) {
 
 export default function App() {
   return (
-    <HashRouter>
-      <AppShell />
-    </HashRouter>
+    <AuthProvider>
+      <HashRouter>
+        <AppShell />
+      </HashRouter>
+    </AuthProvider>
   );
 }
