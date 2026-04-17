@@ -17,36 +17,32 @@ export function AuthProvider({ children }) {
   };
 
   useEffect(() => {
-    let subscriptionData;
-
-    const initAuth = async () => {
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
-        setSession(currentSession);
-        if (currentSession?.user) {
-            await loadProfile(currentSession.user.id);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
+        setSession(newSession);
+        if (newSession?.user) {
+            loadProfile(newSession.user.id);
         } else {
+            setProfile(null);
             setLoading(false);
         }
+    });
 
-        // Oturum değişikliklerini dinle
-        const { data } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-            setSession(newSession);
-            if (newSession?.user) {
-                await loadProfile(newSession.user.id);
-            } else {
-                setProfile(null);
-                setLoading(false);
-            }
-        });
-        subscriptionData = data.subscription;
-    };
-
-    initAuth();
+    // İlk yüklemede mevcut oturumu manuel alıp profil sürecini başlatma
+    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+      if (currentSession?.user) {
+          // session update onAuthStateChange tarafından yapılmış olabilir ancak güvenceye alıyoruz
+          setSession(currentSession);
+          loadProfile(currentSession.user.id);
+      } else {
+          setLoading(false);
+      }
+    }).catch(err => {
+      console.error("Auth Session Error:", err);
+      setLoading(false);
+    });
 
     return () => {
-        if (subscriptionData) {
-            subscriptionData.unsubscribe();
-        }
+      subscription.unsubscribe();
     };
   }, []);
 
