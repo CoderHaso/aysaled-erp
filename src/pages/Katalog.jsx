@@ -152,6 +152,28 @@ export default function App() {
     // YENİ EK: Kategori içi state'ler
     const [newCatName, setNewCatName] = useState('');
     const [newCatSubtitle, setNewCatSubtitle] = useState('Yapılarınıza\nIşıltılı\nGözlerle\nBakın');
+    
+    // YENİ EK: Kategori Düzenleme
+    const [editingCategoryId, setEditingCategoryId] = useState(null);
+    const [editCatName, setEditCatName] = useState('');
+    const [editCatSubtitle, setEditCatSubtitle] = useState('');
+
+    const startEditCategory = (cat) => {
+        setEditingCategoryId(cat.id);
+        setEditCatName(cat.name);
+        setEditCatSubtitle(cat.subtitle || '');
+    };
+
+    const saveEditCategory = () => {
+        if (editCatName.trim() !== '') {
+            setCategories(prev => prev.map(c => 
+                c.id === editingCategoryId 
+                    ? { ...c, name: editCatName.trim(), subtitle: editCatSubtitle.trim() } 
+                    : c
+            ));
+            setEditingCategoryId(null);
+        }
+    };
 
     useEffect(() => {
         loadCatalogs();
@@ -608,10 +630,27 @@ export default function App() {
             <div className="space-y-2 mt-4">
                 {categories.map(cat => (
                     <div key={cat.id} className={`flex justify-between items-center p-3 border rounded-md shadow-sm group ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-                        <div className="flex flex-col">
-                            <span className={`font-medium ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>{cat.name}</span>
-                            {cat.subtitle && <span className={`text-[10px] whitespace-pre-line ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{cat.subtitle}</span>}
-                        </div>
+                        {editingCategoryId === cat.id ? (
+                            <div className="flex-1 flex flex-col space-y-2 pr-2">
+                                <input 
+                                    type="text" value={editCatName} onChange={e => setEditCatName(e.target.value)}
+                                    className={`w-full p-1 border rounded text-xs outline-none ${isDark ? 'bg-gray-900 border-gray-600 text-white' : 'bg-gray-50 border-gray-300'}`}
+                                />
+                                <textarea
+                                    value={editCatSubtitle} onChange={e => setEditCatSubtitle(e.target.value)} rows={2}
+                                    className={`w-full p-1 border rounded text-xs outline-none ${isDark ? 'bg-gray-900 border-gray-600 text-white' : 'bg-gray-50 border-gray-300'}`}
+                                />
+                                <div className="flex gap-2">
+                                    <button onClick={saveEditCategory} className="px-2 py-1 bg-green-500 text-white rounded text-xs">Kaydet</button>
+                                    <button onClick={() => setEditingCategoryId(null)} className="px-2 py-1 bg-gray-400 text-white rounded text-xs">İptal</button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col flex-1 cursor-pointer" onClick={() => startEditCategory(cat)}>
+                                <span className={`font-medium ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>{cat.name}</span>
+                                {cat.subtitle && <span className={`text-[10px] whitespace-pre-line ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{cat.subtitle}</span>}
+                            </div>
+                        )}
                         <button onClick={() => deleteCategory(cat.id)} className="text-gray-400 hover:text-red-500 transition p-1 cursor-pointer z-10 flex-shrink-0 ml-2">
                             <Trash2 size={16} />
                         </button>
@@ -1060,16 +1099,16 @@ export default function App() {
                                         {/* KATEGORİ KAPAK SAYFASI */}
                                         <div className="pdf-page screen-divider flex flex-col justify-center items-center relative overflow-hidden" style={{ minHeight: '296mm' }}>
                                             {/* Arkaplan Dalgası */}
-                                            <div className="absolute inset-0 z-0 bg-cover bg-center" style={{ backgroundImage: 'url(/wave_bg.png)', filter: 'brightness(0.95) contrast(1.1)' }}></div>
+                                            <div style={{ position: 'absolute', inset: 0, zIndex: 0, backgroundImage: 'url(/wave_bg.png)', backgroundSize: 'cover', backgroundPosition: 'center', filter: 'brightness(0.95) contrast(1.1)' }}></div>
                                             
                                             {/* Gradien Overlay */}
-                                            <div className="absolute inset-0 z-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent"></div>
+                                            <div style={{ position: 'absolute', inset: 0, zIndex: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.8), rgba(0,0,0,0.2), transparent)' }}></div>
 
-                                            <div className="relative z-10 w-full px-[64px]">
+                                            <div style={{ position: 'relative', zIndex: 10, width: '100%', paddingLeft: '64px', paddingRight: '64px' }}>
                                                 {/* Kategori Başlığı Renk Geçişli */}
-                                                <h1 className="text-[4rem] font-black uppercase text-white drop-shadow-2xl leading-tight mb-[32px] text-left w-4/5 font-sans">
+                                                <h1 style={{ fontSize: '4rem', fontWeight: 900, textTransform: 'uppercase', color: '#ffffff', filter: 'drop-shadow(0 25px 25px rgba(0,0,0,0.15))', lineHeight: 1.1, marginBottom: '32px', textAlign: 'left', width: '80%', fontFamily: 'sans-serif' }}>
                                                     {category.name.split(' ').map((word, i) => (
-                                                        <span key={i} className={i % 2 === 0 ? "text-white block" : "text-gray-300 block font-bold"}>
+                                                        <span key={i} style={{ display: 'block', color: i % 2 === 0 ? '#ffffff' : '#d1d5db', fontWeight: i % 2 === 0 ? 900 : 700 }}>
                                                             {word}
                                                         </span>
                                                     ))}
@@ -1077,8 +1116,8 @@ export default function App() {
                                                 
                                                 {/* Slogan veya Açıklama (Dekoratif Kare İçinde) */}
                                                 {category.subtitle && (
-                                                    <div className="mt-[32px] p-[32px] border-l-[3px] border-b-[3px] border-white inline-block">
-                                                        <h2 className="text-[2.5rem] font-light text-white leading-tight font-sans tracking-wide drop-shadow-lg whitespace-pre-line">
+                                                    <div style={{ marginTop: '32px', padding: '32px', borderLeft: '3px solid #ffffff', borderBottom: '3px solid #ffffff', display: 'inline-block' }}>
+                                                        <h2 style={{ fontSize: '2.5rem', fontWeight: 300, color: '#ffffff', lineHeight: 1.2, fontFamily: 'sans-serif', letterSpacing: '0.025em', filter: 'drop-shadow(0 10px 8px rgba(0,0,0,0.04))', whiteSpace: 'pre-line' }}>
                                                             {category.subtitle}
                                                         </h2>
                                                     </div>
@@ -1094,83 +1133,86 @@ export default function App() {
                                                     {group.map((product, pIdx) => (
                                                         <div key={product.id} className="flex-1 flex flex-col w-full relative mb-[16mm] last:mb-0" style={{ maxHeight: '82mm' }}>
                                                             {/* Üstteki Ürün İsmi ve Kod */}
-                                                            <div className="w-full flex justify-between items-start mb-[16px] pb-2" style={{ borderBottom: '2px solid #f1f5f9' }}>
-                                                                <h3 className="text-xl font-black uppercase tracking-wide" style={{ color: '#1e293b' }}>
-                                                                    {product.name} <span className="font-semibold ml-2 capitalize text-sm" style={{ color: '#94a3b8' }}>/ {category.name}</span>
+                                                            <div className="w-full flex justify-between items-start mb-[16px] pb-2" style={{ borderBottom: '2px solid #e2e8f0' }}>
+                                                                <h3 className="text-[1.3rem] font-black uppercase tracking-wide m-0" style={{ color: '#1e293b' }}>
+                                                                    {product.name} <span className="font-semibold ml-2 capitalize" style={{ color: '#94a3b8', fontSize: '1rem' }}>/ {category.name}</span>
                                                                 </h3>
                                                                 <div className="flex items-center gap-[12px]">
                                                                     <div className="text-[9px] font-bold flex flex-col items-end leading-[1.2]" style={{ color: '#1e293b' }}>
                                                                         <span>ÜRÜN KODU</span>
                                                                         <span className="font-normal" style={{ color: '#94a3b8' }}>CODE</span>
                                                                     </div>
-                                                                    <div className="text-3xl font-black tracking-tighter leading-none" style={{ color: '#e11d48', textShadow: '1px 1px 2px rgba(225,29,72,0.1)' }}>
+                                                                    <div className="text-[2.2rem] font-black tracking-tighter leading-none m-0" style={{ color: '#e11d48' }}>
                                                                         {product.code || '-'}
                                                                     </div>
                                                                 </div>
                                                             </div>
 
-                                                            {/* Orta Layout (Sol Resim, Orta Özellikler, Sağ Teknik Çizim) */}
-                                                            <div className="flex gap-[32px] flex-1 min-h-[0px]">
-                                                                {/* Sol: Tamamı Resim (Arkaplanda yuvarlak YOK) */}
-                                                                <div className="w-1/3 flex flex-col justify-center items-center relative h-full">
-                                                                    {product.image ? (
-                                                                        <img src={product.image} className="max-w-[120%] max-h-[100%] object-contain z-10 relative" alt={product.name} style={{ filter: 'drop-shadow(0 10px 20px rgba(0,0,0,0.1))' }} />
-                                                                    ) : (
-                                                                        <div className="z-10 relative" style={{ color: '#cbd5e1' }}><FileImage size={48}/></div>
+                                                            {/* Alt İçerik Alanı */}
+                                                            <div className="flex gap-[24px] flex-1 min-h-[0px]">
+                                                                {/* Sol Taraf: Görsel ve Fiyat */}
+                                                                <div className="w-1/3 flex flex-col items-center justify-start pr-[24px]" style={{ borderRight: '1px solid #e2e8f0' }}>
+                                                                    <div className="flex-1 w-full flex items-center justify-center min-h-[0px]">
+                                                                        {product.image ? (
+                                                                            <img src={product.image} className="max-w-full max-h-[140px] border-none object-contain" alt={product.name} style={{ filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.1))' }} />
+                                                                        ) : (
+                                                                            <FileImage size={40} style={{ color: '#cbd5e1' }} />
+                                                                        )}
+                                                                    </div>
+                                                                    {product.showPrice && product.price && (
+                                                                        <div className="mt-2 text-center w-full pb-2">
+                                                                            <span className="block text-[9px] font-bold tracking-widest" style={{ color: '#2563eb' }}>FİYAT</span>
+                                                                            <span className="block text-[18px] font-black" style={{ color: '#2563eb' }}>
+                                                                                {getCurrencySymbol(product.currency)}{product.price}
+                                                                            </span>
+                                                                        </div>
                                                                     )}
                                                                 </div>
 
-                                                                {/* Orta: Özellikler (Grid) */}
-                                                                <div className="w-1/3 flex flex-col justify-center h-full">
-                                                                    <div className="grid grid-cols-1 gap-y-[12px]">
-                                                                        {product.features?.filter(f => f.key || f.value).slice(0,4).map((feat, i) => {
-                                                                            const isLength = feat.key.toLowerCase().includes('uzun') || feat.key.toLowerCase().includes('boy');
-                                                                            const isPack = feat.key.toLowerCase().includes('koli') || feat.key.toLowerCase().includes('adet');
-                                                                            const isVolt = feat.key.toLowerCase().includes('volt') || feat.key.toLowerCase().includes('güç');
+                                                                {/* Sağ Taraf: Özellikler(Grid) ve Altında Çizim */}
+                                                                <div className="w-2/3 flex flex-col justify-between" style={{ color: '#1e293b' }}>
+                                                                    {/* Özellikler Grid (Sınırsız sayıda yan yana akar) */}
+                                                                    <div className="flex flex-wrap gap-x-[16px] gap-y-[12px] content-start">
+                                                                        {product.features?.filter(f => f.key || f.value).map((feat, i) => {
+                                                                            const keyLower = feat.key.toLowerCase();
+                                                                            const isLength = keyLower.includes('uzun') || keyLower.includes('boy') || keyLower.includes('çap');
+                                                                            const isPack = keyLower.includes('koli') || keyLower.includes('adet');
+                                                                            const isVolt = keyLower.includes('volt') || keyLower.includes('güç') || keyLower.includes('watt');
+                                                                            const isKelvin = keyLower.includes('ışık') || keyLower.includes('renk') || keyLower.includes('kelvin') || keyLower.includes('ra');
 
                                                                             const iconContent = isLength ? (
-                                                                                <svg style={{ width: '20px', height: '20px', margin: '0 auto' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M8 6l4-4 4 4M8 18l4 4 4-4"/></svg>
+                                                                                <svg style={{ width: '14px', height: '14px', margin: '0 auto' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M8 6l4-4 4 4M8 18l4 4 4-4"/></svg>
                                                                             ) : isPack ? (
-                                                                                <Package size={20} style={{ margin: '0 auto' }} />
+                                                                                <Package size={14} style={{ margin: '0 auto' }} />
                                                                             ) : isVolt ? (
-                                                                                <Zap size={20} style={{ margin: '0 auto' }} />
+                                                                                <Zap size={14} style={{ margin: '0 auto' }} />
+                                                                            ) : isKelvin ? (
+                                                                                <svg style={{ width: '14px', height: '14px', margin: '0 auto' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
                                                                             ) : (
-                                                                                <Settings size={20} style={{ margin: '0 auto' }} />
+                                                                                <Settings size={14} style={{ margin: '0 auto' }} />
                                                                             );
 
                                                                             return (
-                                                                                <div key={i} className="flex gap-[12px] items-center">
-                                                                                    <div className="w-[36px] h-[36px] rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#000000', color: '#ffffff' }}>
+                                                                                <div key={i} className="flex gap-[8px] items-center" style={{ width: '47%' }}>
+                                                                                    <div className="w-[24px] h-[24px] rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#0f172a', color: '#ffffff' }}>
                                                                                         {iconContent}
                                                                                     </div>
-                                                                                    <div className="text-[11px] leading-tight flex-1">
-                                                                                        <div className="font-semibold" style={{ color: '#1e293b' }}>{feat.key}</div>
-                                                                                        <div className="font-light whitespace-normal" style={{ color: '#64748b' }}>{feat.value}</div>
+                                                                                    <div className="text-[10px] leading-tight flex-1">
+                                                                                        <div className="font-bold" style={{ color: '#0f172a' }}>{feat.key}</div>
+                                                                                        <div className="font-medium whitespace-normal" style={{ color: '#64748b' }}>{feat.value}</div>
                                                                                     </div>
                                                                                 </div>
                                                                             );
                                                                         })}
-                                                                        {/* Fiyat bilgisi varsa */}
-                                                                        {product.showPrice && product.price && (
-                                                                            <div className="flex gap-[12px] items-center">
-                                                                                <div className="w-[36px] h-[36px] rounded-full flex items-center justify-center font-bold text-[14px] flex-shrink-0" style={{ backgroundColor: '#2563eb', color: '#ffffff' }}>
-                                                                                    {getCurrencySymbol(product.currency)}
-                                                                                </div>
-                                                                                <div className="text-[11px] leading-tight flex-1">
-                                                                                    <div className="font-bold tracking-widest" style={{ color: '#2563eb' }}>FİYAT</div>
-                                                                                    <div className="font-black text-sm" style={{ color: '#1e293b' }}>{product.price}</div>
-                                                                                </div>
-                                                                            </div>
-                                                                        )}
                                                                     </div>
-                                                                </div>
 
-                                                                {/* Sağ: Teknik Çizim */}
-                                                                <div className="w-1/3 flex pl-[16px] items-center justify-center h-full relative" style={{ borderLeft: '1px solid #f1f5f9' }}>
+                                                                    {/* Teknik Çizim (Özelliklerin Altında Sağa Dayalı) */}
                                                                     {product.techImage ? (
-                                                                        <img src={product.techImage} className="w-[95%] max-h-full object-contain mix-blend-multiply opacity-95" alt={`${product.name} Teknik`} />
+                                                                        <div className="mt-auto pt-[8px] flex justify-end items-end h-[80px] w-full" style={{ borderTop: '1px solid #e2e8f0' }}>
+                                                                            <img src={product.techImage} className="max-h-[100%] max-w-[80%] border-none object-contain opacity-90 mix-blend-multiply" alt={`${product.name} Teknik`} />
+                                                                        </div>
                                                                     ) : (
-                                                                        <div className="text-[10px] transform -rotate-90 opacity-50 tracking-widest uppercase" style={{ color: '#cbd5e1' }}>Teknik Çizim Yok</div>
+                                                                        <div className="mt-auto pt-[8px] flex justify-end items-end h-[80px] w-full" style={{ borderTop: '1px solid #e2e8f0' }}></div>
                                                                     )}
                                                                 </div>
                                                             </div>
