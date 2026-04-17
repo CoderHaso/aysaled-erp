@@ -153,7 +153,7 @@ export default function Sidebar({ isOpen, toggle, activeId = 'dashboard', onNavi
                 )}
               </div>
               {isOpen && (
-                <button onClick={logout} className="text-xs transition-colors hover:text-red-400" style={{ color: c?.muted || '#64748b' }}>
+                <button onClick={logout} className="text-xs transition-colors hover:text-red-400" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
                    Çıkış
                 </button>
               )}
