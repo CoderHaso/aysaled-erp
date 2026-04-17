@@ -17,33 +17,37 @@ export function AuthProvider({ children }) {
   };
 
   useEffect(() => {
-    // Mevcut oturumu al
-    const fetchSession = async () => {
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
-      setSession(currentSession);
-      if (currentSession?.user) {
-        await loadProfile(currentSession.user.id);
-      } else {
-        setLoading(false);
-      }
+    let subscriptionData;
 
-      // Oturum değişikliklerini dinle
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-        setSession(newSession);
-        if (newSession?.user) {
-          await loadProfile(newSession.user.id);
+    const initAuth = async () => {
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        setSession(currentSession);
+        if (currentSession?.user) {
+            await loadProfile(currentSession.user.id);
         } else {
-          setProfile(null);
-          setLoading(false);
+            setLoading(false);
         }
-      });
 
-      return () => {
-        subscription?.unsubscribe();
-      };
+        // Oturum değişikliklerini dinle
+        const { data } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+            setSession(newSession);
+            if (newSession?.user) {
+                await loadProfile(newSession.user.id);
+            } else {
+                setProfile(null);
+                setLoading(false);
+            }
+        });
+        subscriptionData = data.subscription;
     };
 
-    fetchSession();
+    initAuth();
+
+    return () => {
+        if (subscriptionData) {
+            subscriptionData.unsubscribe();
+        }
+    };
   }, []);
 
   const loadProfile = async (userId) => {
