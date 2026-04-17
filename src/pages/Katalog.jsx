@@ -690,7 +690,7 @@ export default function App() {
                 </button>
             </div>
 
-            <div className="space-y-6 flex flex-col items-stretch w-full overflow-hidden">
+            <div className="space-y-6 flex flex-col items-stretch w-full">
                 {products.map((product) => (
                     <div key={product.id} className={`border rounded-xl p-4 shadow-sm relative group transition hover:border-blue-500/50 ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
                         <div className="absolute -top-3 -right-3 flex gap-2 z-10 opacity-0 group-hover:opacity-100 transition">
@@ -1013,7 +1013,7 @@ export default function App() {
                     <div id="pdf-preview-container" className="flex flex-col relative" style={{ backgroundColor: '#ffffff' }}>
 
                         {/* ================= 1. KAPAK SAYFASI (Front Cover) ================= */}
-                        <div className="pdf-page flex flex-col relative" style={{ backgroundColor: c.bgPrimary, marginBottom: '10px' }}>
+                        <div className="pdf-page flex flex-col relative" id="pdf-start" style={{ backgroundColor: c.bgPrimary }}>
                             
                             {/* Üst Dekoratif Alan */}
                             {settings.template !== 'classic' && (
@@ -1060,7 +1060,7 @@ export default function App() {
                         </div>
 
                         {/* ================= 2. İÇİNDEKİLER VE HAKKIMIZDA (Index Page) ================= */}
-                        <div className="pdf-page flex flex-col" style={{ backgroundColor: '#ffffff', padding: '15mm', marginBottom: '10px' }}>
+                        <div className="pdf-page flex flex-col" style={{ backgroundColor: '#ffffff', padding: '15mm' }}>
                             <div className="flex justify-between items-end border-b-[2px] pb-[16px] mb-[40px]" style={{ borderColor: c.textMain }}>
                                 <h2 className="text-4xl font-black tracking-tight m-0" style={{ color: c.textMain }}>HAKKIMIZDA <span style={{ color: c.accent }}>&</span> İÇİNDEKİLER</h2>
                                 {settings.logo && <img src={settings.logo} className="h-[40px] object-contain" alt="Logo mini" />}
@@ -1108,6 +1108,37 @@ export default function App() {
                             <div className="text-center text-[10px] uppercase tracking-widest mt-[32px] border-t pt-[16px] m-0" style={{ color: '#94a3b8', borderColor: '#f1f5f9' }}>Sayfa 02</div>
                         </div>
 
+                        {/* ================= 2.5 GÖRSEL İNDEKS (ALBÜM) SAYFALARI ================= */}
+                        {Array.from({ length: Math.ceil(products.length / 16) }).map((_, pageIdx) => {
+                            const group = products.slice(pageIdx * 16, pageIdx * 16 + 16);
+                            if (group.length === 0) return null;
+                            return (
+                                <div key={`album-${pageIdx}`} className="pdf-page flex flex-col relative" style={{ backgroundColor: '#ffffff', padding: '15mm' }}>
+                                    <div className="flex justify-between items-end border-b-[2px] pb-[16px] mb-[24px]" style={{ borderColor: c.textMain }}>
+                                        <h2 className="text-4xl font-black tracking-tight m-0" style={{ color: c.textMain }}>ÜRÜN İNDEKSİ</h2>
+                                        {settings.logo && <img src={settings.logo} className="h-[40px] object-contain" alt="Logo mini" />}
+                                    </div>
+                                    <div className="grid grid-cols-4 gap-4 flex-1 content-start">
+                                    {group.map((product) => (
+                                        <a href={`#prod-${product.id}`} key={product.id} className="flex flex-col items-center justify-start p-2 border rounded-lg no-underline cursor-pointer" style={{ borderColor: '#f1f5f9' }}>
+                                            <div className="h-[80px] w-full flex justify-center items-center mb-2">
+                                                {product.image ? (
+                                                    <img src={product.image} className="max-h-full max-w-full object-contain mix-blend-multiply" />
+                                                ) : <FileImage size={24} style={{ color: '#cbd5e1' }} />}
+                                            </div>
+                                            <div className="text-[10px] font-black text-center" style={{ color: c.textMain }}>{product.name}</div>
+                                            <div className="text-[9px] text-center" style={{ color: '#64748b' }}>{product.code}</div>
+                                            {product.showPrice && product.price && (
+                                                <div className="text-[10px] font-bold mt-1 text-center" style={{ color: '#2563eb' }}>{getCurrencySymbol(product.currency)}{product.price}</div>
+                                            )}
+                                        </a>
+                                    ))}
+                                    </div>
+                                    <div className="text-center text-[10px] uppercase tracking-widest mt-[32px] border-t pt-[16px] m-0" style={{ color: '#94a3b8', borderColor: '#f1f5f9' }}>Sayfa 0{3 + pageIdx}</div>
+                                </div>
+                            )
+                        })}
+
                         {/* ================= 3. İÇERİK SAYFALARI ================= */}
                         <div className="pdf-content-wrapper flex flex-col">
                             {categories.map((category, catIndex) => {
@@ -1117,7 +1148,7 @@ export default function App() {
                                 return (
                                     <React.Fragment key={category.id}>
                                         {/* KATEGORİ KAPAK SAYFASI */}
-                                        <div className="pdf-page flex flex-col justify-center items-center relative overflow-hidden" style={{ minHeight: '296mm', marginBottom: '10px' }}>
+                                        <div className="pdf-page flex flex-col justify-center items-center relative overflow-hidden" id={`category-page-${category.id}`} style={{ minHeight: '296mm' }}>
                                             {/* Arkaplan Dalgası */}
                                             <div style={{ position: 'absolute', inset: 0, zIndex: 0, backgroundImage: 'url(/wave_bg.png)', backgroundSize: 'cover', backgroundPosition: 'center', filter: 'brightness(0.95) contrast(1.1)' }}></div>
                                             
@@ -1149,9 +1180,9 @@ export default function App() {
                                         {Array.from({ length: Math.ceil(categoryProducts.length / 3) }).map((_, pageIdx) => {
                                             const group = categoryProducts.slice(pageIdx * 3, pageIdx * 3 + 3);
                                             return (
-                                                <div key={`page-${pageIdx}`} className="pdf-page flex flex-col relative" style={{ backgroundColor: '#ffffff', minHeight: '296mm', padding: '15mm', marginBottom: '10px' }}>
+                                                <div key={`page-${pageIdx}`} className="pdf-page flex flex-col relative" style={{ backgroundColor: '#ffffff', minHeight: '296mm', padding: '15mm' }}>
                                                     {group.map((product, pIdx) => (
-                                                        <div key={product.id} className="flex-1 flex flex-col w-full relative mb-[16mm] last:mb-0" style={{ maxHeight: '82mm' }}>
+                                                        <div key={product.id} id={`prod-${product.id}`} className="flex-1 flex flex-col w-full relative mb-[16mm] last:mb-0" style={{ maxHeight: '82mm' }}>
                                                             {/* Üstteki Ürün İsmi ve Kod */}
                                                             <div className="w-full flex justify-between items-start mb-[16px] pb-2" style={{ borderBottom: '2px solid #e2e8f0' }}>
                                                                 <h3 className="text-[1.3rem] font-black uppercase tracking-wide m-0" style={{ color: '#1e293b' }}>
@@ -1246,7 +1277,7 @@ export default function App() {
                             })}
 
                             {products.length === 0 && (
-                                <div className="pdf-page-content" style={{ backgroundColor: '#ffffff', padding: '15mm', marginBottom: '10px' }}>
+                                <div className="pdf-page-content" style={{ backgroundColor: '#ffffff', padding: '15mm' }}>
                                     <div className="text-center py-[128px] border-[2px] border-dashed rounded-[12px] mx-[40px] border-gray-300">
                                         <p className="text-2xl font-bold mb-[8px] text-gray-500">Katalog İçeriği Boş</p>
                                         <p className="text-sm text-gray-400">Yönetim panelinden kategoriler ve ürünler eklediğinizde burada listelenecektir.</p>
@@ -1296,7 +1327,7 @@ export default function App() {
                                             </div>
                                             <div>
                                                 <p className="text-xs uppercase tracking-wider font-bold mb-[2px] m-0" style={{ color: c.textLight }}>Merkez Ofis & Fabrika</p>
-                                                <p className="font-semibold text-sm leading-snug m-0" style={{ color: c.textMain }}>{companyInfo.address}</p>
+                                                <p className="font-semibold text-sm leading-normal whitespace-pre-line m-0" style={{ color: c.textMain }}>{companyInfo.address}</p>
                                             </div>
                                         </div>
                                     </div>
