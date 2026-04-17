@@ -3,7 +3,7 @@ import {
     Plus, Trash2, Download, Settings,
     List, Package, FileImage, Building2,
     Phone, Mail, Globe, MapPin, AlignLeft,
-    Save, Loader2, Zap
+    Save, Loader2, Zap, Copy
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
@@ -373,6 +373,17 @@ export default function App() {
         }
     };
 
+    const duplicateProduct = (product) => {
+        const timestamp = Date.now().toString().slice(-4);
+        const newProduct = { 
+            ...product, 
+            id: Date.now(), 
+            name: `${product.name} (Kopya)`,
+            code: product.code ? `${product.code}-${timestamp}` : ''
+        };
+        setProducts(prev => [newProduct, ...prev]);
+    };
+
     const exportPDF = async () => {
         if (!pdfReady || !window.html2pdf) {
             alert('PDF oluşturucu henüz yüklenmedi, lütfen birkaç saniye bekleyip tekrar deneyin.');
@@ -682,13 +693,22 @@ export default function App() {
             <div className="space-y-6 flex flex-col items-stretch w-full overflow-hidden">
                 {products.map((product) => (
                     <div key={product.id} className={`border rounded-xl p-4 shadow-sm relative group transition hover:border-blue-500/50 ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-                        <button
-                            onClick={() => deleteProduct(product.id)}
-                            className={`absolute -top-3 -right-3 border text-gray-400 hover:text-red-500 hover:border-red-200 rounded-full p-1.5 shadow-sm transition z-10 opacity-0 group-hover:opacity-100 cursor-pointer ${isDark ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'}`}
-                            title="Ürünü Sil"
-                        >
-                            <Trash2 size={16} />
-                        </button>
+                        <div className="absolute -top-3 -right-3 flex gap-2 z-10 opacity-0 group-hover:opacity-100 transition">
+                            <button
+                                onClick={() => duplicateProduct(product)}
+                                className={`border text-gray-400 hover:text-blue-500 hover:border-blue-200 rounded-full p-1.5 shadow-sm cursor-pointer ${isDark ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'}`}
+                                title="Ürünü Kopyala"
+                            >
+                                <Copy size={16} />
+                            </button>
+                            <button
+                                onClick={() => deleteProduct(product.id)}
+                                className={`border text-gray-400 hover:text-red-500 hover:border-red-200 rounded-full p-1.5 shadow-sm cursor-pointer ${isDark ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200'}`}
+                                title="Ürünü Sil"
+                            >
+                                <Trash2 size={16} />
+                            </button>
+                        </div>
 
                         <div className="grid grid-cols-1 gap-5">
                             <div className="space-y-4 max-w-full">
@@ -891,14 +911,14 @@ export default function App() {
         }
 
         @media screen {
-          .screen-divider { border-bottom: 2px dashed #cbd5e1; }
+          /* Divider kaldırıldı */
         }
 
         @media print {
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .no-print { display: none; }
           .page-break-avoid { page-break-inside: avoid; break-inside: avoid; }
-          .screen-divider { border-bottom: none; }
+          /* Divider kaldırıldı */
         }
         
         /* Custom Scrollbar */
@@ -993,7 +1013,7 @@ export default function App() {
                     <div id="pdf-preview-container" className="flex flex-col relative" style={{ backgroundColor: '#ffffff' }}>
 
                         {/* ================= 1. KAPAK SAYFASI (Front Cover) ================= */}
-                        <div className="pdf-page flex flex-col relative screen-divider" style={{ backgroundColor: c.bgPrimary }}>
+                        <div className="pdf-page flex flex-col relative" style={{ backgroundColor: c.bgPrimary, marginBottom: '10px' }}>
                             
                             {/* Üst Dekoratif Alan */}
                             {settings.template !== 'classic' && (
@@ -1040,7 +1060,7 @@ export default function App() {
                         </div>
 
                         {/* ================= 2. İÇİNDEKİLER VE HAKKIMIZDA (Index Page) ================= */}
-                        <div className="pdf-page flex flex-col screen-divider" style={{ backgroundColor: '#ffffff', padding: '15mm' }}>
+                        <div className="pdf-page flex flex-col" style={{ backgroundColor: '#ffffff', padding: '15mm', marginBottom: '10px' }}>
                             <div className="flex justify-between items-end border-b-[2px] pb-[16px] mb-[40px]" style={{ borderColor: c.textMain }}>
                                 <h2 className="text-4xl font-black tracking-tight m-0" style={{ color: c.textMain }}>HAKKIMIZDA <span style={{ color: c.accent }}>&</span> İÇİNDEKİLER</h2>
                                 {settings.logo && <img src={settings.logo} className="h-[40px] object-contain" alt="Logo mini" />}
@@ -1097,7 +1117,7 @@ export default function App() {
                                 return (
                                     <React.Fragment key={category.id}>
                                         {/* KATEGORİ KAPAK SAYFASI */}
-                                        <div className="pdf-page screen-divider flex flex-col justify-center items-center relative overflow-hidden" style={{ minHeight: '296mm' }}>
+                                        <div className="pdf-page flex flex-col justify-center items-center relative overflow-hidden" style={{ minHeight: '296mm', marginBottom: '10px' }}>
                                             {/* Arkaplan Dalgası */}
                                             <div style={{ position: 'absolute', inset: 0, zIndex: 0, backgroundImage: 'url(/wave_bg.png)', backgroundSize: 'cover', backgroundPosition: 'center', filter: 'brightness(0.95) contrast(1.1)' }}></div>
                                             
@@ -1129,7 +1149,7 @@ export default function App() {
                                         {Array.from({ length: Math.ceil(categoryProducts.length / 3) }).map((_, pageIdx) => {
                                             const group = categoryProducts.slice(pageIdx * 3, pageIdx * 3 + 3);
                                             return (
-                                                <div key={`page-${pageIdx}`} className="pdf-page flex flex-col screen-divider relative" style={{ backgroundColor: '#ffffff', minHeight: '296mm', padding: '15mm' }}>
+                                                <div key={`page-${pageIdx}`} className="pdf-page flex flex-col relative" style={{ backgroundColor: '#ffffff', minHeight: '296mm', padding: '15mm', marginBottom: '10px' }}>
                                                     {group.map((product, pIdx) => (
                                                         <div key={product.id} className="flex-1 flex flex-col w-full relative mb-[16mm] last:mb-0" style={{ maxHeight: '82mm' }}>
                                                             {/* Üstteki Ürün İsmi ve Kod */}
@@ -1181,15 +1201,15 @@ export default function App() {
                                                                             const isKelvin = keyLower.includes('ışık') || keyLower.includes('renk') || keyLower.includes('kelvin') || keyLower.includes('ra');
 
                                                                             const iconContent = isLength ? (
-                                                                                <svg style={{ width: '14px', height: '14px', margin: '0 auto' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M8 6l4-4 4 4M8 18l4 4 4-4"/></svg>
+                                                                                <svg style={{ width: '14px', height: '14px' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M8 6l4-4 4 4M8 18l4 4 4-4"/></svg>
                                                                             ) : isPack ? (
-                                                                                <Package size={14} style={{ margin: '0 auto' }} />
+                                                                                <Package size={14} />
                                                                             ) : isVolt ? (
-                                                                                <Zap size={14} style={{ margin: '0 auto' }} />
+                                                                                <Zap size={14} />
                                                                             ) : isKelvin ? (
-                                                                                <svg style={{ width: '14px', height: '14px', margin: '0 auto' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+                                                                                <svg style={{ width: '14px', height: '14px' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
                                                                             ) : (
-                                                                                <Settings size={14} style={{ margin: '0 auto' }} />
+                                                                                <Settings size={14} />
                                                                             );
 
                                                                             return (
@@ -1226,7 +1246,7 @@ export default function App() {
                             })}
 
                             {products.length === 0 && (
-                                <div className="pdf-page-content screen-divider" style={{ backgroundColor: '#ffffff', padding: '15mm' }}>
+                                <div className="pdf-page-content" style={{ backgroundColor: '#ffffff', padding: '15mm', marginBottom: '10px' }}>
                                     <div className="text-center py-[128px] border-[2px] border-dashed rounded-[12px] mx-[40px] border-gray-300">
                                         <p className="text-2xl font-bold mb-[8px] text-gray-500">Katalog İçeriği Boş</p>
                                         <p className="text-sm text-gray-400">Yönetim panelinden kategoriler ve ürünler eklediğinizde burada listelenecektir.</p>
@@ -1284,7 +1304,6 @@ export default function App() {
                             </div>
 
                             <div className="h-[160px] flex flex-col items-center justify-center relative overflow-hidden border-t" style={{ backgroundColor: c.bgDark, borderColor: c.border }}>
-                                {settings.template !== 'classic' && settings.template !== 'minimal' && <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]" style={{ display: 'block' }}></div>}
                                 {settings.logo ? (
                                     <img src={settings.logo} className="h-[48px] object-contain mb-[12px] z-10" style={settings.template!=='classic' && settings.template!=='minimal' ? { filter: 'brightness(0) invert(1)', opacity: 0.7 } : {}} alt="Logo" />
                                 ) : (
