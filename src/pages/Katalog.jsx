@@ -148,6 +148,10 @@ export default function App() {
     const [savedCatalogs, setSavedCatalogs] = useState([]);
     const [selectedCatalogId, setSelectedCatalogId] = useState(null);
     const [saving, setSaving] = useState(false);
+    
+    // YENİ EK: Kategori içi state'ler
+    const [newCatName, setNewCatName] = useState('');
+    const [newCatSubtitle, setNewCatSubtitle] = useState('Yapılarınıza\nIşıltılı\nGözlerle\nBakın');
 
     useEffect(() => {
         loadCatalogs();
@@ -271,9 +275,9 @@ export default function App() {
     };
 
     const addCategory = () => {
-        const name = prompt('Yeni Kategori Adı:');
-        if (name && name.trim() !== '') {
-            setCategories(prev => [...prev, { id: Date.now(), name }]);
+        if (newCatName && newCatName.trim() !== '') {
+            setCategories(prev => [...prev, { id: Date.now(), name: newCatName.trim(), subtitle: newCatSubtitle.trim() }]);
+            setNewCatName('');
         }
     };
 
@@ -576,20 +580,39 @@ export default function App() {
                 <h3 className={`text-lg font-semibold flex items-center ${isDark ? 'text-gray-100' : 'text-gray-800'}`}>
                     <List size={18} className="mr-2 text-blue-500" /> Kategoriler
                 </h3>
-                <button
-                    onClick={addCategory}
-                    className="flex items-center px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition shadow-sm"
-                >
-                    <Plus size={16} className="mr-1" /> Ekle
-                </button>
             </div>
             <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Bu kategoriler "İçindekiler" bölümünde otomatik listelenecektir.</p>
+
+            {/* Kategori Ekleme Formu */}
+            <div className={`p-3 border rounded-md shadow-sm ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+                <div className="space-y-2 mb-3">
+                    <input 
+                        type="text" placeholder="Kategori Adı (Örn: Trimless LED)" 
+                        value={newCatName} onChange={e => setNewCatName(e.target.value)}
+                        className={`w-full p-2 border rounded text-sm outline-none focus:border-blue-500 ${isDark ? 'bg-gray-900 border-gray-600 text-white' : 'bg-gray-50 border-gray-300'}`}
+                    />
+                    <textarea 
+                        placeholder="Kapak Sloganı (Opsiyonel. Satır atlayabilirsiniz.)" 
+                        value={newCatSubtitle} onChange={e => setNewCatSubtitle(e.target.value)} rows={3}
+                        className={`w-full p-2 border rounded text-sm outline-none focus:border-blue-500 ${isDark ? 'bg-gray-900 border-gray-600 text-white' : 'bg-gray-50 border-gray-300'}`}
+                    />
+                </div>
+                <button
+                    onClick={addCategory} disabled={!newCatName.trim()}
+                    className="w-full flex justify-center items-center px-3 py-2 bg-blue-600 text-white text-sm font-semibold rounded hover:bg-blue-700 disabled:opacity-50 transition shadow-sm"
+                >
+                    <Plus size={16} className="mr-1" /> Kategori Ekle
+                </button>
+            </div>
 
             <div className="space-y-2 mt-4">
                 {categories.map(cat => (
                     <div key={cat.id} className={`flex justify-between items-center p-3 border rounded-md shadow-sm group ${isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-                        <span className={`font-medium ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>{cat.name}</span>
-                        <button onClick={() => deleteCategory(cat.id)} className="text-gray-400 hover:text-red-500 transition p-1 cursor-pointer z-10">
+                        <div className="flex flex-col">
+                            <span className={`font-medium ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>{cat.name}</span>
+                            {cat.subtitle && <span className={`text-[10px] whitespace-pre-line ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{cat.subtitle}</span>}
+                        </div>
+                        <button onClick={() => deleteCategory(cat.id)} className="text-gray-400 hover:text-red-500 transition p-1 cursor-pointer z-10 flex-shrink-0 ml-2">
                             <Trash2 size={16} />
                         </button>
                     </div>
@@ -851,6 +874,11 @@ export default function App() {
             display: flex; flex-direction: column; align-items: center; justify-content: center;
             color: white; backdrop-filter: blur(4px);
         }
+
+        /* Fix for html2canvas oklab parsing bug */
+        #pdf-preview-container * {
+            border-color: #e2e8f0;
+        }
       `}} />
 
             {/* --- SOL PANEL (KONTROLLER) --- */}
@@ -1048,109 +1076,109 @@ export default function App() {
                                                 </h1>
                                                 
                                                 {/* Slogan veya Açıklama (Dekoratif Kare İçinde) */}
-                                                <div className="mt-[32px] p-[32px] border-l-[3px] border-b-[3px] border-white inline-block">
-                                                    <h2 className="text-[2.5rem] font-light text-white leading-tight font-sans tracking-wide drop-shadow-lg">
-                                                        Yapılarınıza<br />
-                                                        <span className="font-semibold text-white drop-shadow-md">Işıltılı</span><br />
-                                                        Gözlerle<br />
-                                                        Bakın
-                                                    </h2>
-                                                </div>
+                                                {category.subtitle && (
+                                                    <div className="mt-[32px] p-[32px] border-l-[3px] border-b-[3px] border-white inline-block">
+                                                        <h2 className="text-[2.5rem] font-light text-white leading-tight font-sans tracking-wide drop-shadow-lg whitespace-pre-line">
+                                                            {category.subtitle}
+                                                        </h2>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
 
                                         {/* ÜRÜN SAYFALARI (KATEGORİNİN ÜRÜNLERİ) */}
-                                        {categoryProducts.map((product) => (
-                                            <div key={product.id} className="pdf-page flex flex-col screen-divider relative" style={{ backgroundColor: '#ffffff', minHeight: '296mm', padding: '15mm' }}>
-                                                {/* Üstteki Ürün İsmi */}
-                                                <div className="w-full flex items-start mb-[64px]">
-                                                    <h3 className="text-xl font-black uppercase tracking-wide text-[#1e293b]">
-                                                        {product.name} <span className="text-gray-400 font-semibold ml-2 capitalize">/ {category.name}</span>
-                                                    </h3>
-                                                </div>
-
-                                                {/* Orta Layout (Sol Resim, Sağ Detay) */}
-                                                <div className="flex gap-[48px] flex-1 mt-[24px]">
-                                                    {/* Sol: Yuvarlak Arkalıklı Resim */}
-                                                    <div className="w-5/12 flex flex-col justify-center relative items-center" style={{ minHeight: '500px' }}>
-                                                        <div className="absolute right-[-10%] top-1/2 -translate-y-1/2 w-[120%] aspect-square rounded-full bg-[#f1f5f9] z-0"></div>
-                                                        {product.image ? (
-                                                            <img src={product.image} className="max-w-[140%] max-h-full object-contain z-10 relative drop-shadow-[0_20px_30px_rgba(0,0,0,0.15)] transform translate-x-[-10%]" alt={product.name} />
-                                                        ) : (
-                                                            <div className="z-10 text-gray-400 relative"><FileImage size={80}/></div>
-                                                        )}
-                                                    </div>
-
-                                                    {/* Sağ: Ürün Kodu, İkonlar, Çizim */}
-                                                    <div className="w-7/12 flex flex-col pl-[24px] z-10 pt-[32px]">
-                                                        {/* Ürün Kodu */}
-                                                        <div className="flex flex-col items-center justify-center self-start gap-1 mb-[96px] ml-auto mr-[48px]">
-                                                            <div className="flex items-center gap-[16px]">
-                                                                <div className="text-[11px] font-bold flex flex-col items-end leading-[1.2] text-[#1e293b]">
-                                                                    <span>ÜRÜN KODU :</span>
-                                                                    <span className="font-normal text-gray-500">CODE</span>
+                                        {Array.from({ length: Math.ceil(categoryProducts.length / 3) }).map((_, pageIdx) => {
+                                            const group = categoryProducts.slice(pageIdx * 3, pageIdx * 3 + 3);
+                                            return (
+                                                <div key={`page-${pageIdx}`} className="pdf-page flex flex-col screen-divider relative" style={{ backgroundColor: '#ffffff', minHeight: '296mm', padding: '15mm' }}>
+                                                    {group.map((product, pIdx) => (
+                                                        <div key={product.id} className="flex-1 flex flex-col w-full relative mb-[16mm] last:mb-0" style={{ maxHeight: '82mm' }}>
+                                                            {/* Üstteki Ürün İsmi ve Kod */}
+                                                            <div className="w-full flex justify-between items-start mb-[16px] pb-2" style={{ borderBottom: '2px solid #f1f5f9' }}>
+                                                                <h3 className="text-xl font-black uppercase tracking-wide" style={{ color: '#1e293b' }}>
+                                                                    {product.name} <span className="font-semibold ml-2 capitalize text-sm" style={{ color: '#94a3b8' }}>/ {category.name}</span>
+                                                                </h3>
+                                                                <div className="flex items-center gap-[12px]">
+                                                                    <div className="text-[9px] font-bold flex flex-col items-end leading-[1.2]" style={{ color: '#1e293b' }}>
+                                                                        <span>ÜRÜN KODU</span>
+                                                                        <span className="font-normal" style={{ color: '#94a3b8' }}>CODE</span>
+                                                                    </div>
+                                                                    <div className="text-3xl font-black tracking-tighter leading-none" style={{ color: '#e11d48', textShadow: '1px 1px 2px rgba(225,29,72,0.1)' }}>
+                                                                        {product.code || '-'}
+                                                                    </div>
                                                                 </div>
-                                                                <div className="text-[3.5rem] font-black text-[#e11d48] tracking-tighter leading-none" style={{ textShadow: '2px 2px 4px rgba(225,29,72,0.1)' }}>
-                                                                    {product.code || '-'}
+                                                            </div>
+
+                                                            {/* Orta Layout (Sol Resim, Orta Özellikler, Sağ Teknik Çizim) */}
+                                                            <div className="flex gap-[32px] flex-1 min-h-[0px]">
+                                                                {/* Sol: Tamamı Resim (Arkaplanda yuvarlak YOK) */}
+                                                                <div className="w-1/3 flex flex-col justify-center items-center relative h-full">
+                                                                    {product.image ? (
+                                                                        <img src={product.image} className="max-w-[120%] max-h-[100%] object-contain z-10 relative" alt={product.name} style={{ filter: 'drop-shadow(0 10px 20px rgba(0,0,0,0.1))' }} />
+                                                                    ) : (
+                                                                        <div className="z-10 relative" style={{ color: '#cbd5e1' }}><FileImage size={48}/></div>
+                                                                    )}
+                                                                </div>
+
+                                                                {/* Orta: Özellikler (Grid) */}
+                                                                <div className="w-1/3 flex flex-col justify-center h-full">
+                                                                    <div className="grid grid-cols-1 gap-y-[12px]">
+                                                                        {product.features?.filter(f => f.key || f.value).slice(0,4).map((feat, i) => {
+                                                                            const isLength = feat.key.toLowerCase().includes('uzun') || feat.key.toLowerCase().includes('boy');
+                                                                            const isPack = feat.key.toLowerCase().includes('koli') || feat.key.toLowerCase().includes('adet');
+                                                                            const isVolt = feat.key.toLowerCase().includes('volt') || feat.key.toLowerCase().includes('güç');
+
+                                                                            const iconContent = isLength ? (
+                                                                                <svg style={{ width: '20px', height: '20px', margin: '0 auto' }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M8 6l4-4 4 4M8 18l4 4 4-4"/></svg>
+                                                                            ) : isPack ? (
+                                                                                <Package size={20} style={{ margin: '0 auto' }} />
+                                                                            ) : isVolt ? (
+                                                                                <Zap size={20} style={{ margin: '0 auto' }} />
+                                                                            ) : (
+                                                                                <Settings size={20} style={{ margin: '0 auto' }} />
+                                                                            );
+
+                                                                            return (
+                                                                                <div key={i} className="flex gap-[12px] items-center">
+                                                                                    <div className="w-[36px] h-[36px] rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#000000', color: '#ffffff' }}>
+                                                                                        {iconContent}
+                                                                                    </div>
+                                                                                    <div className="text-[11px] leading-tight flex-1">
+                                                                                        <div className="font-semibold" style={{ color: '#1e293b' }}>{feat.key}</div>
+                                                                                        <div className="font-light whitespace-normal" style={{ color: '#64748b' }}>{feat.value}</div>
+                                                                                    </div>
+                                                                                </div>
+                                                                            );
+                                                                        })}
+                                                                        {/* Fiyat bilgisi varsa */}
+                                                                        {product.showPrice && product.price && (
+                                                                            <div className="flex gap-[12px] items-center">
+                                                                                <div className="w-[36px] h-[36px] rounded-full flex items-center justify-center font-bold text-[14px] flex-shrink-0" style={{ backgroundColor: '#2563eb', color: '#ffffff' }}>
+                                                                                    {getCurrencySymbol(product.currency)}
+                                                                                </div>
+                                                                                <div className="text-[11px] leading-tight flex-1">
+                                                                                    <div className="font-bold tracking-widest" style={{ color: '#2563eb' }}>FİYAT</div>
+                                                                                    <div className="font-black text-sm" style={{ color: '#1e293b' }}>{product.price}</div>
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Sağ: Teknik Çizim */}
+                                                                <div className="w-1/3 flex pl-[16px] items-center justify-center h-full relative" style={{ borderLeft: '1px solid #f1f5f9' }}>
+                                                                    {product.techImage ? (
+                                                                        <img src={product.techImage} className="w-[95%] max-h-full object-contain mix-blend-multiply opacity-95" alt={`${product.name} Teknik`} />
+                                                                    ) : (
+                                                                        <div className="text-[10px] transform -rotate-90 opacity-50 tracking-widest uppercase" style={{ color: '#cbd5e1' }}>Teknik Çizim Yok</div>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                         </div>
-
-                                                        {/* İkonlar (Features'tan al) */}
-                                                        <div className="flex flex-wrap gap-x-[48px] gap-y-[32px] mb-[80px]">
-                                                            {product.features?.map((feat, i) => {
-                                                                if (!feat.key && !feat.value) return null;
-                                                                // Kategori ikonları
-                                                                const isLength = feat.key.toLowerCase().includes('uzun') || feat.key.toLowerCase().includes('boy');
-                                                                const isPack = feat.key.toLowerCase().includes('koli') || feat.key.toLowerCase().includes('adet');
-                                                                const isVolt = feat.key.toLowerCase().includes('volt') || feat.key.toLowerCase().includes('güç');
-
-                                                                const iconContent = isLength ? (
-                                                                    <svg className="w-8 h-8 mx-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M8 6l4-4 4 4M8 18l4 4 4-4"/></svg>
-                                                                ) : isPack ? (
-                                                                    <Package size={30} className="mx-auto" />
-                                                                ) : isVolt ? (
-                                                                    <Zap size={30} className="mx-auto" />
-                                                                ) : (
-                                                                    <Settings size={30} className="mx-auto" />
-                                                                );
-
-                                                                return (
-                                                                    <div key={i} className="flex gap-[16px] items-center">
-                                                                        <div className="w-[64px] h-[64px] rounded-full bg-black text-white flex items-center justify-center overflow-hidden flex-shrink-0">
-                                                                            {iconContent}
-                                                                        </div>
-                                                                        <div className="text-sm">
-                                                                            <div className="font-medium text-[#1e293b]">{feat.key}</div>
-                                                                            <div className="text-gray-500 font-light mt-0.5">{feat.value}</div>
-                                                                        </div>
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                            {/* Fiyat bilgisi varsa */}
-                                                            {product.showPrice && product.price && (
-                                                                <div className="flex gap-[16px] items-center">
-                                                                    <div className="w-[64px] h-[64px] rounded-full bg-[#2563eb] text-white flex items-center justify-center font-bold text-2xl flex-shrink-0">
-                                                                        {getCurrencySymbol(product.currency)}
-                                                                    </div>
-                                                                    <div className="text-sm">
-                                                                        <div className="font-bold text-[#2563eb] tracking-widest">FİYAT</div>
-                                                                        <div className="font-black text-2xl text-[#1e293b]">{product.price}</div>
-                                                                    </div>
-                                                                </div>
-                                                            )}
-                                                        </div>
-
-                                                        {/* Teknik Çizim */}
-                                                        {product.techImage && (
-                                                            <div className="w-full flex-1 flex flex-col items-center justify-center relative">
-                                                                <img src={product.techImage} className="w-[90%] max-h-[300px] object-contain mix-blend-multiply opacity-90" alt={`${product.name} Teknik`} />
-                                                            </div>
-                                                        )}
-                                                    </div>
+                                                    ))}
                                                 </div>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </React.Fragment>
                                 );
                             })}
