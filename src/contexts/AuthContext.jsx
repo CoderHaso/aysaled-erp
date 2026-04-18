@@ -27,19 +27,7 @@ export function AuthProvider({ children }) {
         }
     });
 
-    // İlk yüklemede mevcut oturumu manuel alıp profil sürecini başlatma
-    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
-      if (currentSession?.user) {
-          // session update onAuthStateChange tarafından yapılmış olabilir ancak güvenceye alıyoruz
-          setSession(currentSession);
-          loadProfile(currentSession.user.id);
-      } else {
-          setLoading(false);
-      }
-    }).catch(err => {
-      console.error("Auth Session Error:", err);
-      setLoading(false);
-    });
+
 
     return () => {
       subscription.unsubscribe();
