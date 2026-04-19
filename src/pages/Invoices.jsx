@@ -303,39 +303,50 @@ function IsleWizard({ inv, allItems, supabase, onClose, onDone }) {
                           ...(isOutbox ? { company_name: inv.cari_name || 'İsimsiz' } : {}),
                           vkntckn: inv.vkntckn,
                         };
-                        const party = inv.raw_detail?.AccountingCustomerParty?.Party || 
-                                      inv.raw_detail?.['cac:AccountingCustomerParty']?.['cac:Party'] ||
-                                      inv.raw_detail?.AccountingSupplierParty?.Party || 
-                                      inv.raw_detail?.['cac:AccountingSupplierParty']?.['cac:Party'];
+                        const val = (obj) => obj?.['#text'] ?? obj;
+                        const pNode = isOutbox 
+                          ? (inv.raw_detail?.AccountingCustomerParty || inv.raw_detail?.['cac:AccountingCustomerParty'])
+                          : (inv.raw_detail?.AccountingSupplierParty || inv.raw_detail?.['cac:AccountingSupplierParty']);
+                        
+                        const party = pNode?.Party || pNode?.['cac:Party'] || pNode;
+                        
                         if (party) {
                           const taxNode = party.PartyTaxScheme || party['cac:PartyTaxScheme'];
                           if (taxNode) {
                             const taxScheme = taxNode.TaxScheme || taxNode['cac:TaxScheme'];
-                            if (taxScheme?.Name) payload.tax_office = taxScheme.Name['#text'] || taxScheme.Name;
+                            if (taxScheme) payload.tax_office = val(taxScheme.RegistrationName ?? taxScheme['cbc:RegistrationName'] ?? taxScheme.Name ?? taxScheme['cbc:Name']);
                           }
-                          const addr = party.PostalAddress || party['cac:PostalAddress'];
+                          const addr = party.PostalAddress || party['cac:PostalAddress'] || party.Address || party['cac:Address'];
                           if (addr) {
-                            const cityName = addr.CityName || addr['cbc:CityName'];
-                            if (cityName) payload.city = cityName['#text'] || cityName;
-                            const subCity = addr.CitySubdivisionName || addr['cbc:CitySubdivisionName'];
-                            if (subCity) payload.district = subCity['#text'] || subCity;
-                            const postalZone = addr.PostalZone || addr['cbc:PostalZone'];
-                            if (postalZone) payload.postal_code = postalZone['#text'] || postalZone;
+                            const cityName = val(addr.CityName ?? addr['cbc:CityName']);
+                            if (cityName) payload.city = cityName;
+                            const subCity = val(addr.CitySubdivisionName ?? addr['cbc:CitySubdivisionName']);
+                            if (subCity) payload.district = subCity;
+                            const postalZone = val(addr.PostalZone ?? addr['cbc:PostalZone'] ?? addr.PostalCode);
+                            if (postalZone) payload.postal_code = postalZone;
                             const country = addr.Country || addr['cac:Country'];
-                            if (country?.Name) payload.country = country.Name['#text'] || country.Name;
-                            const street = addr.StreetName || addr['cbc:StreetName'];
-                            const bldg = addr.BuildingName || addr['cbc:BuildingName'];
-                            const bldgNo = addr.BuildingNumber || addr['cbc:BuildingNumber'];
-                            const room = addr.Room || addr['cbc:Room'];
+                            if (country) payload.country = val(country.Name ?? country['cbc:Name']);
+                            
+                            const street = val(addr.StreetName ?? addr['cbc:StreetName']);
+                            const bldg = val(addr.BuildingName ?? addr['cbc:BuildingName']);
+                            const bldgNo = val(addr.BuildingNumber ?? addr['cbc:BuildingNumber']);
+                            const room = val(addr.Room ?? addr['cbc:Room']);
                             let fullAdres = [];
-                            if (street) fullAdres.push(street['#text'] || street);
-                            if (bldg) fullAdres.push(bldg['#text'] || bldg);
-                            if (bldgNo) fullAdres.push('No:' + (bldgNo['#text'] || bldgNo));
-                            if (room) fullAdres.push('İç Kapı:' + (room['#text'] || room));
+                            if (street) fullAdres.push(street);
+                            if (bldg) fullAdres.push(bldg);
+                            if (bldgNo) fullAdres.push('No:' + bldgNo);
+                            if (room) fullAdres.push('İç Kapı:' + room);
                             if (fullAdres.length > 0) payload.address = fullAdres.join(' ');
                           }
+                          const contactNode = party.Contact || party['cac:Contact'];
+                          if (contactNode) {
+                             const phone = val(contactNode.Telephone ?? contactNode['cbc:Telephone'] ?? contactNode.Telefax ?? contactNode['cbc:Telefax']);
+                             if (phone) payload.phone = phone;
+                             const email = val(contactNode.ElectronicMail ?? contactNode['cbc:ElectronicMail']);
+                             if (email) payload.email = email;
+                          }
                         }
-                        payload.source = 'Fatura'; // Supabase requires source instead of kaynak
+                        payload.source = 'Fatura'; // Manuel yerine fatura logu
                         const { data, error } = await supabase.from(tbl).insert(payload).select('id').single();
                         if (error) throw error;
                         setContactId(data.id);
