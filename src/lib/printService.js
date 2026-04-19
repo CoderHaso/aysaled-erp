@@ -1,0 +1,542 @@
+/**
+ * Print Service — A-ERP Yazdırma Motoru
+ * 
+ * Şablon tabanlı yazdırma sistemi.
+ * Şablonlar app_settings tablosunda saklanır.
+ * {{değişken}} söz dizimi ile veri binding yapılır.
+ * {{#each items}} ... {{/each}} ile liste döngüsü.
+ * {{#if var}} ... {{/if}} ile koşullu gösterim.
+ */
+
+import { supabase } from './supabaseClient';
+
+// ─── Şablon Türleri ─────────────────────────────────────────────────────────
+export const TEMPLATE_TYPES = [
+  { id: 'order',        label: 'Sipariş Fişi',        icon: '🛒', desc: 'Satış sipariş yazdırma şablonu' },
+  { id: 'quote',        label: 'Teklif',              icon: '📋', desc: 'Müşteri teklif formu şablonu' },
+  { id: 'recipe',       label: 'Reçete',              icon: '📦', desc: 'Ürün reçete kartı şablonu' },
+  { id: 'cheque',       label: 'Çek',                 icon: '🏦', desc: 'Çek yazdırma şablonu' },
+  { id: 'work_order',   label: 'İş Emri',             icon: '🔨', desc: 'Atölye iş emri şablonu' },
+  { id: 'ledger',       label: 'Hesap Ekstresi',      icon: '📒', desc: 'Cari hesap ekstresi şablonu' },
+  { id: 'cash_receipt', label: 'Kasa Makbuzu',        icon: '💵', desc: 'Kasa tahsilat/ödeme makbuzu' },
+  { id: 'report',       label: 'Aylık Rapor',         icon: '📊', desc: 'Dashboard aylık rapor çıktısı' },
+];
+
+// ─── Yardımcı Fonksiyonlar ──────────────────────────────────────────────────
+const fmtMoney = (n, cur = '₺') =>
+  `${cur}${Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const fmtDate = (d) => d ? new Date(d).toLocaleDateString('tr-TR') : '-';
+const fmtDateTime = (d) => d ? new Date(d).toLocaleString('tr-TR') : '-';
+const fmtNum = (n) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// ─── Şablon Motoru ──────────────────────────────────────────────────────────
+function resolveValue(obj, path) {
+  return path.split('.').reduce((acc, key) => acc?.[key], obj);
+}
+
+function renderTemplate(template, data) {
+  if (!template) return '';
+  let html = template;
+
+  // {{#each items}} ... {{/each}}
+  html = html.replace(/\{\{#each\s+(\w+)\}\}([\s\S]*?)\{\{\/each\}\}/g, (_, key, inner) => {
+    const arr = data[key];
+    if (!Array.isArray(arr)) return '';
+    return arr.map((item, index) => {
+      let row = inner;
+      // Replace {{this.xxx}} and {{xxx}} within each block
+      row = row.replace(/\{\{(?:this\.)?(\w[\w.]*)\}\}/g, (__, prop) => {
+        if (prop === '@index') return index + 1;
+        const val = resolveValue(item, prop);
+        return val !== undefined && val !== null ? val : '';
+      });
+      return row;
+    }).join('');
+  });
+
+  // {{#if var}} ... {{/if}}
+  html = html.replace(/\{\{#if\s+(\w[\w.]*)\}\}([\s\S]*?)\{\{\/if\}\}/g, (_, key, inner) => {
+    const val = resolveValue(data, key);
+    return val ? inner : '';
+  });
+
+  // {{variable}} — simple replacement
+  html = html.replace(/\{\{(\w[\w.]*)\}\}/g, (_, key) => {
+    const val = resolveValue(data, key);
+    return val !== undefined && val !== null ? val : '';
+  });
+
+  // Helper fonksiyonları: {{fmt:variable}}, {{date:variable}}, {{money:variable}}
+  html = html.replace(/\{\{fmt:(\w[\w.]*)\}\}/g, (_, key) => fmtNum(resolveValue(data, key)));
+  html = html.replace(/\{\{date:(\w[\w.]*)\}\}/g, (_, key) => fmtDate(resolveValue(data, key)));
+  html = html.replace(/\{\{datetime:(\w[\w.]*)\}\}/g, (_, key) => fmtDateTime(resolveValue(data, key)));
+  html = html.replace(/\{\{money:(\w[\w.]*)\}\}/g, (_, key) => fmtMoney(resolveValue(data, key)));
+
+  return html;
+}
+
+// ─── Yazdırma Penceresi ─────────────────────────────────────────────────────
+export function printHTML(html, title = 'Yazdır') {
+  const printWindow = window.open('', '_blank', 'width=800,height=600');
+  if (!printWindow) { alert('Popup engelleyici yazdırma penceresini engelledi!'); return; }
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html lang="tr">
+    <head>
+      <meta charset="UTF-8">
+      <title>${title}</title>
+      <style>
+        @page { margin: 12mm; }
+        @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; font-size: 12px; color: #1e293b; line-height: 1.5; }
+        .print-container { max-width: 210mm; margin: 0 auto; padding: 8mm; }
+        table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+        th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #e2e8f0; font-size: 11px; }
+        th { background: #f8fafc; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; }
+        .text-right { text-align: right; }
+        .text-center { text-align: center; }
+        .font-bold { font-weight: 700; }
+        .text-sm { font-size: 11px; }
+        .text-xs { font-size: 10px; }
+        .text-lg { font-size: 16px; }
+        .text-xl { font-size: 20px; }
+        .text-muted { color: #64748b; }
+        .mt-2 { margin-top: 8px; }
+        .mt-4 { margin-top: 16px; }
+        .mb-2 { margin-bottom: 8px; }
+        .mb-4 { margin-bottom: 16px; }
+        .py-1 { padding-top: 4px; padding-bottom: 4px; }
+        .border-t { border-top: 1px solid #e2e8f0; }
+        .border-b { border-bottom: 1px solid #e2e8f0; }
+        .border-2 { border-top: 2px solid #1e293b; }
+        .flex { display: flex; }
+        .justify-between { justify-content: space-between; }
+        .items-center { align-items: center; }
+        .gap-2 { gap: 8px; }
+        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #1e293b; }
+        .header h1 { font-size: 20px; font-weight: 800; }
+        .header .company { font-size: 10px; color: #64748b; }
+        .footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #e2e8f0; font-size: 10px; color: #94a3b8; text-align: center; }
+        .total-row td { font-weight: 700; border-top: 2px solid #1e293b; font-size: 12px; }
+        .stamp-area { display: flex; justify-content: space-between; margin-top: 40px; }
+        .stamp-box { width: 45%; text-align: center; }
+        .stamp-box .line { border-top: 1px solid #94a3b8; margin-top: 50px; padding-top: 4px; font-size: 10px; color: #64748b; }
+        .no-print { display: none; }
+        @media screen { 
+          body { background: #f1f5f9; padding: 20px; }
+          .print-container { background: white; padding: 32px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+          .no-print { display: block; position: fixed; top: 16px; right: 16px; z-index: 999; }
+          .no-print button { padding: 10px 24px; background: #3b82f6; color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 14px; }
+          .no-print button:hover { background: #2563eb; }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="no-print"><button onclick="window.print()">🖨️ Yazdır</button></div>
+      <div class="print-container">
+        ${html}
+      </div>
+    </body>
+    </html>
+  `);
+  printWindow.document.close();
+}
+
+// ─── Şablonları Yönet ───────────────────────────────────────────────────────
+const SETTINGS_KEY = 'print_templates';
+
+export async function loadTemplates() {
+  const { data } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('id', SETTINGS_KEY)
+    .maybeSingle();
+  return data?.value || {};
+}
+
+export async function saveTemplates(templates) {
+  await supabase.from('app_settings').upsert({
+    id: SETTINGS_KEY,
+    value: templates,
+    updated_at: new Date().toISOString(),
+  });
+}
+
+export async function getTemplate(type) {
+  const all = await loadTemplates();
+  return all[type] || DEFAULT_TEMPLATES[type] || '';
+}
+
+// ─── Yazdır (Ana Fonksiyon) ─────────────────────────────────────────────────
+export async function printDocument(type, data, title) {
+  const template = await getTemplate(type);
+  const html = renderTemplate(template, {
+    ...data,
+    _today: fmtDate(new Date()),
+    _now: fmtDateTime(new Date()),
+    _company: 'AYSALED',
+  });
+  printHTML(html, title || TEMPLATE_TYPES.find(t => t.id === type)?.label || 'Yazdır');
+}
+
+// ─── Varsayılan Şablonlar ───────────────────────────────────────────────────
+export const DEFAULT_TEMPLATES = {
+  // ── SİPARİŞ FİŞİ ──
+  order: `<div class="header">
+  <div>
+    <h1>SİPARİŞ FİŞİ</h1>
+    <p class="company">{{_company}}</p>
+  </div>
+  <div style="text-align:right">
+    <p class="font-bold">{{order_number}}</p>
+    <p class="text-muted text-xs">{{date:created_at}}</p>
+  </div>
+</div>
+
+<div class="flex justify-between mb-4">
+  <div>
+    <p class="text-xs text-muted">MÜŞTERİ</p>
+    <p class="font-bold">{{customer_name}}</p>
+    {{#if customer_vkntckn}}<p class="text-xs">VKN: {{customer_vkntckn}}</p>{{/if}}
+  </div>
+  <div style="text-align:right">
+    <p class="text-xs text-muted">DURUM</p>
+    <p class="font-bold">{{status}}</p>
+    <p class="text-xs">Para Birimi: {{currency}}</p>
+  </div>
+</div>
+
+<table>
+  <thead>
+    <tr><th>#</th><th>Ürün</th><th>Miktar</th><th>Birim</th><th class="text-right">Birim Fiyat</th><th class="text-right">KDV %</th><th class="text-right">Toplam</th></tr>
+  </thead>
+  <tbody>
+    {{#each items}}
+    <tr>
+      <td>{{@index}}</td>
+      <td class="font-bold">{{item_name}}</td>
+      <td>{{quantity}}</td>
+      <td>{{unit}}</td>
+      <td class="text-right">{{fmt:unit_price}}</td>
+      <td class="text-right">%{{tax_rate}}</td>
+      <td class="text-right font-bold">{{fmt:line_total}}</td>
+    </tr>
+    {{/each}}
+  </tbody>
+</table>
+
+<div style="width:50%; margin-left:auto" class="mt-4">
+  <div class="flex justify-between py-1 text-sm"><span>Ara Toplam:</span><span>{{fmt:subtotal}}</span></div>
+  <div class="flex justify-between py-1 text-sm"><span>KDV:</span><span>{{fmt:tax_total}}</span></div>
+  <div class="flex justify-between py-1 font-bold border-2" style="font-size:14px"><span>GENEL TOPLAM:</span><span>{{fmt:grand_total}}</span></div>
+</div>
+
+{{#if notes}}<div class="mt-4 text-xs text-muted"><strong>Not:</strong> {{notes}}</div>{{/if}}
+
+<div class="stamp-area">
+  <div class="stamp-box"><div class="line">Düzenleyen</div></div>
+  <div class="stamp-box"><div class="line">Teslim Alan</div></div>
+</div>
+
+<div class="footer">Bu belge {{_company}} A-ERP sistemi tarafından oluşturulmuştur. · {{_now}}</div>`,
+
+  // ── TEKLİF ──
+  quote: `<div class="header">
+  <div>
+    <h1>TEKLİF FORMU</h1>
+    <p class="company">{{_company}}</p>
+  </div>
+  <div style="text-align:right">
+    <p class="font-bold">{{quote_number}}</p>
+    <p class="text-muted text-xs">{{date:created_at}}</p>
+    {{#if valid_until}}<p class="text-xs">Geçerlilik: {{date:valid_until}}</p>{{/if}}
+  </div>
+</div>
+
+<div class="flex justify-between mb-4">
+  <div>
+    <p class="text-xs text-muted">MÜŞTERİ</p>
+    <p class="font-bold">{{customer_name}}</p>
+    {{#if project_name}}<p class="text-xs">Proje: {{project_name}}</p>{{/if}}
+  </div>
+</div>
+
+<table>
+  <thead>
+    <tr><th>#</th><th>Ürün / Hizmet</th><th>Miktar</th><th>Birim</th><th class="text-right">Birim Fiyat</th><th class="text-right">Toplam</th></tr>
+  </thead>
+  <tbody>
+    {{#each items}}
+    <tr>
+      <td>{{@index}}</td>
+      <td class="font-bold">{{name}}</td>
+      <td>{{quantity}}</td>
+      <td>{{unit}}</td>
+      <td class="text-right">{{fmt:unit_price}}</td>
+      <td class="text-right font-bold">{{fmt:total}}</td>
+    </tr>
+    {{/each}}
+  </tbody>
+</table>
+
+<div style="width:50%; margin-left:auto" class="mt-4">
+  <div class="flex justify-between py-1 font-bold border-2" style="font-size:14px"><span>TOPLAM:</span><span>{{fmt:grand_total}} {{currency}}</span></div>
+</div>
+
+{{#if notes}}<div class="mt-4 text-xs text-muted"><strong>Not:</strong> {{notes}}</div>{{/if}}
+
+<div class="stamp-area">
+  <div class="stamp-box"><div class="line">Teklif Veren</div></div>
+  <div class="stamp-box"><div class="line">Müşteri Onayı</div></div>
+</div>
+
+<div class="footer">Bu teklif {{_company}} tarafından hazırlanmıştır. · {{_now}}</div>`,
+
+  // ── REÇETE ──
+  recipe: `<div class="header">
+  <div>
+    <h1>REÇETE KARTI</h1>
+    <p class="company">{{_company}}</p>
+  </div>
+  <div style="text-align:right">
+    <p class="font-bold text-lg">{{product_name}}</p>
+    <p class="text-xs text-muted">{{recipe_name}}</p>
+  </div>
+</div>
+
+{{#if description}}<p class="mb-4 text-sm">{{description}}</p>{{/if}}
+
+<table>
+  <thead>
+    <tr><th>#</th><th>Hammadde</th><th class="text-right">Miktar</th><th>Birim</th><th class="text-right">Birim Maliyet</th><th class="text-right">Toplam Maliyet</th></tr>
+  </thead>
+  <tbody>
+    {{#each ingredients}}
+    <tr>
+      <td>{{@index}}</td>
+      <td class="font-bold">{{item_name}}</td>
+      <td class="text-right">{{fmt:quantity}}</td>
+      <td>{{unit}}</td>
+      <td class="text-right">{{fmt:unit_cost}}</td>
+      <td class="text-right font-bold">{{fmt:total_cost}}</td>
+    </tr>
+    {{/each}}
+  </tbody>
+  <tfoot>
+    <tr class="total-row">
+      <td colspan="5">TOPLAM MALİYET</td>
+      <td class="text-right">{{fmt:total_cost}}</td>
+    </tr>
+  </tfoot>
+</table>
+
+{{#if tags}}<div class="mt-4 text-xs"><strong>Etiketler:</strong> {{tags}}</div>{{/if}}
+
+<div class="footer">{{_company}} Reçete Yönetim Sistemi · {{_now}}</div>`,
+
+  // ── ÇEK ──
+  cheque: `<div class="header">
+  <div>
+    <h1>ÇEK BİLGİSİ</h1>
+    <p class="company">{{_company}}</p>
+  </div>
+  <div style="text-align:right">
+    <p class="font-bold">Çek No: {{cheque_no}}</p>
+    <p class="text-xs text-muted">Yön: {{direction_label}}</p>
+  </div>
+</div>
+
+<div style="background:#f8fafc; padding:16px; border-radius:8px; margin-bottom:16px">
+  <div class="flex justify-between mb-2">
+    <div><p class="text-xs text-muted">TUTAR</p><p class="text-xl font-bold">{{fmt:amount}} {{currency}}</p></div>
+    <div style="text-align:right"><p class="text-xs text-muted">BANKA</p><p class="font-bold">{{bank_name}}</p></div>
+  </div>
+  <div class="flex justify-between">
+    <div><p class="text-xs text-muted">DÜZENLEME TARİHİ</p><p>{{date:issue_date}}</p></div>
+    <div style="text-align:right"><p class="text-xs text-muted">VADE TARİHİ</p><p class="font-bold">{{date:due_date}}</p></div>
+  </div>
+</div>
+
+<div class="flex justify-between mb-4">
+  <div><p class="text-xs text-muted">ÇEKİ VEREN</p><p class="font-bold">{{from_name}}</p></div>
+  <div style="text-align:right"><p class="text-xs text-muted">ÇEKİ ALAN</p><p class="font-bold">{{to_name}}</p></div>
+</div>
+
+<div><p class="text-xs text-muted">DURUM</p><p class="font-bold">{{status_label}}</p></div>
+
+{{#if note}}<div class="mt-4 text-xs text-muted"><strong>Not:</strong> {{note}}</div>{{/if}}
+
+<div class="footer">{{_company}} Çek Yönetim Sistemi · {{_now}}</div>`,
+
+  // ── İŞ EMRİ ──
+  work_order: `<div class="header">
+  <div>
+    <h1>İŞ EMRİ</h1>
+    <p class="company">{{_company}}</p>
+  </div>
+  <div style="text-align:right">
+    <p class="font-bold">{{wo_number}}</p>
+    <p class="text-xs text-muted">{{date:created_at}}</p>
+  </div>
+</div>
+
+<div class="flex justify-between mb-4">
+  <div>
+    <p class="text-xs text-muted">ÜRÜN</p>
+    <p class="font-bold text-lg">{{product_name}}</p>
+    {{#if recipe_name}}<p class="text-xs">Reçete: {{recipe_name}}</p>{{/if}}
+  </div>
+  <div style="text-align:right">
+    <p class="text-xs text-muted">MİKTAR</p>
+    <p class="font-bold text-lg">{{quantity}} {{unit}}</p>
+    <p class="text-xs">Durum: {{status}}</p>
+  </div>
+</div>
+
+{{#if customer_name}}<div class="mb-4"><p class="text-xs text-muted">MÜŞTERİ</p><p class="font-bold">{{customer_name}}</p></div>{{/if}}
+
+<table>
+  <thead>
+    <tr><th>#</th><th>Hammadde</th><th class="text-right">Birim Miktar</th><th class="text-right">Toplam Miktar</th><th>Birim</th></tr>
+  </thead>
+  <tbody>
+    {{#each ingredients}}
+    <tr>
+      <td>{{@index}}</td>
+      <td class="font-bold">{{item_name}}</td>
+      <td class="text-right">{{fmt:per_unit}}</td>
+      <td class="text-right font-bold">{{fmt:total_qty}}</td>
+      <td>{{unit}}</td>
+    </tr>
+    {{/each}}
+  </tbody>
+</table>
+
+{{#if production_note}}<div class="mt-4 text-xs"><strong>Üretim Notu:</strong> {{production_note}}</div>{{/if}}
+
+<div class="stamp-area">
+  <div class="stamp-box"><div class="line">Üretime Veren</div></div>
+  <div class="stamp-box"><div class="line">Üreten</div></div>
+</div>
+
+<div class="footer">{{_company}} · {{_now}}</div>`,
+
+  // ── HESAP EKSTRESİ ──
+  ledger: `<div class="header">
+  <div>
+    <h1>HESAP EKSTRESİ</h1>
+    <p class="company">{{_company}}</p>
+  </div>
+  <div style="text-align:right">
+    <p class="font-bold">{{entity_name}}</p>
+    {{#if vkntckn}}<p class="text-xs">VKN: {{vkntckn}}</p>{{/if}}
+    <p class="text-xs text-muted">{{_today}}</p>
+  </div>
+</div>
+
+<table>
+  <thead>
+    <tr><th>Tarih</th><th>Açıklama</th><th class="text-right">Borç</th><th class="text-right">Alacak</th><th class="text-right">Bakiye</th></tr>
+  </thead>
+  <tbody>
+    {{#each movements}}
+    <tr>
+      <td>{{date:date}}</td>
+      <td>{{description}}</td>
+      <td class="text-right">{{fmt:debit}}</td>
+      <td class="text-right">{{fmt:credit}}</td>
+      <td class="text-right font-bold">{{fmt:balance}}</td>
+    </tr>
+    {{/each}}
+  </tbody>
+  <tfoot>
+    <tr class="total-row">
+      <td colspan="2">NET BAKİYE</td>
+      <td class="text-right">{{fmt:total_debit}}</td>
+      <td class="text-right">{{fmt:total_credit}}</td>
+      <td class="text-right">{{fmt:net_balance}}</td>
+    </tr>
+  </tfoot>
+</table>
+
+<div class="footer">{{_company}} Hesap Defteri · {{_now}}</div>`,
+
+  // ── KASA MAKBUZU ──
+  cash_receipt: `<div class="header">
+  <div>
+    <h1>{{receipt_type}}</h1>
+    <p class="company">{{_company}}</p>
+  </div>
+  <div style="text-align:right">
+    <p class="text-xs text-muted">{{date:date}}</p>
+  </div>
+</div>
+
+<div style="background:#f8fafc; padding:16px; border-radius:8px; margin-bottom:16px; text-align:center">
+  <p class="text-xs text-muted">TUTAR</p>
+  <p class="text-xl font-bold">{{fmt:amount}} {{currency}}</p>
+</div>
+
+<div class="flex justify-between mb-4">
+  <div><p class="text-xs text-muted">KATEGORİ</p><p class="font-bold">{{category}}</p></div>
+  <div style="text-align:right"><p class="text-xs text-muted">KİŞİ</p><p class="font-bold">{{entity_name}}</p></div>
+</div>
+
+{{#if description}}<div class="mb-4"><p class="text-xs text-muted">AÇIKLAMA</p><p class="text-sm">{{description}}</p></div>{{/if}}
+
+<div class="stamp-area">
+  <div class="stamp-box"><div class="line">Düzenleyen</div></div>
+  <div class="stamp-box"><div class="line">Teslim Alan/Eden</div></div>
+</div>
+
+<div class="footer">{{_company}} Kasa Sistemi · {{_now}}</div>`,
+
+  // ── AYLIK RAPOR ──
+  report: `<div class="header">
+  <div>
+    <h1>AYLIK RAPOR</h1>
+    <p class="company">{{_company}}</p>
+  </div>
+  <div style="text-align:right">
+    <p class="font-bold text-lg">{{month_name}} {{year}}</p>
+    <p class="text-xs text-muted">{{_now}}</p>
+  </div>
+</div>
+
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px">
+  <div style="background:#f8fafc; padding:12px; border-radius:8px">
+    <p class="text-xs text-muted">TOPLAM SATIŞ</p>
+    <p class="text-lg font-bold">{{fmt:total_sales}}</p>
+    <p class="text-xs">{{order_count}} sipariş</p>
+  </div>
+  <div style="background:#f8fafc; padding:12px; border-radius:8px">
+    <p class="text-xs text-muted">NET KÂR</p>
+    <p class="text-lg font-bold">{{fmt:net_profit}}</p>
+    <p class="text-xs">Marj: %{{fmt:margin}}</p>
+  </div>
+  <div style="background:#f8fafc; padding:12px; border-radius:8px">
+    <p class="text-xs text-muted">FATURALI</p>
+    <p class="font-bold">{{invoiced_count}} sipariş · {{fmt:invoiced_total}}</p>
+  </div>
+  <div style="background:#f8fafc; padding:12px; border-radius:8px">
+    <p class="text-xs text-muted">FATURASIZ</p>
+    <p class="font-bold">{{non_invoiced_count}} sipariş · {{fmt:non_invoiced_total}}</p>
+  </div>
+</div>
+
+{{#if items}}
+<h3 class="font-bold mt-4 mb-2">En Çok Satılanlar</h3>
+<table>
+  <thead><tr><th>#</th><th>Ürün</th><th class="text-right">Adet</th><th class="text-right">Ciro</th></tr></thead>
+  <tbody>
+    {{#each items}}
+    <tr><td>{{@index}}</td><td class="font-bold">{{name}}</td><td class="text-right">{{qty}}</td><td class="text-right">{{fmt:revenue}}</td></tr>
+    {{/each}}
+  </tbody>
+</table>
+{{/if}}
+
+<div class="footer">{{_company}} Aylık Rapor · {{_now}}</div>`,
+};

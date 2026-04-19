@@ -6,11 +6,12 @@ import {
   Bell, BellRing, AlertTriangle, CheckCircle2, Clock, ChevronRight, ChevronDown,
   Loader2, RefreshCw, CalendarClock, TrendingUp, BarChart3, Filter, X,
   Receipt, Wallet, DollarSign, Percent, PieChart, ListFilter, User,
-  Calculator, Tag, ArrowDown, ArrowUp, Minus, Eye,
+  Calculator, Tag, ArrowDown, ArrowUp, Minus, Eye, Printer,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import { useNavigate } from 'react-router-dom';
+import { printDocument } from '../lib/printService';
 
 /* ─── Helpers ─────────────────────────────────────────────────────────────── */
 const fmt = (n) => n != null ? Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0,00';
@@ -625,6 +626,36 @@ export default function Dashboard() {
               <act.icon size={14} /> {act.n}
             </button>
           ))}
+          <button onClick={() => {
+            const grouped = {};
+            filteredOrderItems.forEach(oi => {
+              const key = oi.item_id || oi.item_name;
+              if (!grouped[key]) grouped[key] = { name: oi.item_name, qty: 0, revenue: 0 };
+              grouped[key].qty += Number(oi.quantity || 0);
+              grouped[key].revenue += Number(oi.quantity || 0) * Number(oi.unit_price || 0);
+            });
+            const topItems = Object.values(grouped).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+            const totalSales = filteredOrders.reduce((s, o) => s + Number(o.grand_total || 0), 0);
+            const invoicedOrders = filteredOrders.filter(o => o.is_invoiced);
+            const noInvOrders = filteredOrders.filter(o => !o.is_invoiced);
+            printDocument('report', {
+              month_name: MONTHS[month], year,
+              total_sales: totalSales,
+              order_count: filteredOrders.length,
+              invoiced_count: invoicedOrders.length,
+              invoiced_total: invoicedOrders.reduce((s, o) => s + Number(o.grand_total || 0), 0),
+              non_invoiced_count: noInvOrders.length,
+              non_invoiced_total: noInvOrders.reduce((s, o) => s + Number(o.grand_total || 0), 0),
+              net_profit: 0, margin: 0,
+              items: topItems,
+            }, `Rapor - ${MONTHS[month]} ${year}`);
+          }}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all border"
+            style={{ borderColor: c.border, color: '#3b82f6', background: '#3b82f610' }}
+            onMouseEnter={e => e.currentTarget.style.background = '#3b82f620'}
+            onMouseLeave={e => e.currentTarget.style.background = '#3b82f610'}>
+            <Printer size={14} /> Rapor Yazdır
+          </button>
         </div>
       </div>
 

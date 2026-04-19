@@ -7,7 +7,7 @@ import {
   FileText, User, Calendar, CreditCard, MapPin, StickyNote,
   ChevronRight, CheckCircle2, XCircle, RefreshCw, TrendingUp,
   Receipt, ScanEye, FlaskConical, Send, BookOpen,
-  Eye, RotateCcw, Info, BadgeCheck, BadgeX,
+  Eye, RotateCcw, Info, BadgeCheck, BadgeX, Printer,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
@@ -16,6 +16,7 @@ import { useFxRates } from '../hooks/useFxRates';
 import InvoicePreviewModal from '../components/InvoicePreviewModal';
 import CustomDialog from '../components/CustomDialog';
 import RecipePickerModal from '../components/RecipePickerModal';
+import { printDocument } from '../lib/printService';
 
 // ─── Sabitler & Yardımcılar ───────────────────────────────────────────────────
 const STATUS = {
@@ -1254,6 +1255,23 @@ function OrderDetailDrawer({ order, onClose, onEdit, onSendToWorkOrders, onStatu
                 <Edit3 size={12}/> Düzenle
               </button>
             )}
+            <button onClick={() => {
+              const items = (order.items || order.order_items || []).map(oi => ({
+                ...oi,
+                line_total: (Number(oi.quantity) || 0) * (Number(oi.unit_price) || 0),
+              }));
+              printDocument('order', {
+                ...order,
+                items,
+                subtotal: order.subtotal || items.reduce((s, i) => s + i.line_total, 0),
+                tax_total: order.tax_total || 0,
+                grand_total: order.grand_total || 0,
+              }, `Sipariş - ${order.order_number}`);
+            }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
+              style={{ background: 'rgba(59,130,246,0.1)', color: '#3b82f6' }}>
+              <Printer size={12}/> Yazdır
+            </button>
             <button onClick={onClose} className="p-1.5 rounded-lg" style={{ color: c.muted }}><X size={16}/></button>
           </div>
         </div>

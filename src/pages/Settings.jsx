@@ -2,11 +2,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Settings as SettingsIcon, Save, Server, Loader2, CheckCircle2,
-  AlertCircle, Plus, Trash2, Edit2, X, ChevronDown, ChevronRight, Tag
+  AlertCircle, Plus, Trash2, Edit2, X, ChevronDown, ChevronRight, Tag, Eye
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabaseClient';
+import { TEMPLATE_TYPES, DEFAULT_TEMPLATES, loadTemplates, saveTemplates, printDocument } from '../lib/printService';
 
 const FIELD_TYPES = [
   { value: 'text',   label: 'Metin' },
@@ -70,6 +71,7 @@ export default function Settings() {
     ...(profile?.role !== ROLES.ADMIN ? [{ id: 'uyumsoft',    label: '🔌 Uyumsoft' }] : []),
     { id: 'cat_raw',     label: '🔩 Ham. Kategoriler' },
     { id: 'cat_product', label: '⚡ Ürün Kategoriler' },
+    { id: 'templates',   label: '🖨️ Şablonlar' },
     ...((profile?.role === ROLES.DEV || profile?.role === ROLES.ADMIN) ? [{ id: 'users', label: '👥 Kullanıcılar' }] : [])
   ];
 
@@ -155,6 +157,11 @@ export default function Settings() {
           scope={activeTab === 'cat_raw' ? 'rawmaterial' : 'product'}
           c={c} currentColor={currentColor} isDark={isDark}
         />
+      )}
+
+      {/* ŞABLON YÖNETİMİ */}
+      {activeTab === 'templates' && (
+        <TemplateManager c={c} currentColor={currentColor} isDark={isDark} />
       )}
 
       {/* KULLANICI YÖNETİMİ */}
@@ -513,6 +520,193 @@ function CategoryRow({ cat, onEdit, onDelete, c, currentColor, isDark }) {
             </span>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════ ŞABLON YÖNETİCİSİ ═══════════════
+function TemplateManager({ c, currentColor, isDark }) {
+  const [templates, setTemplates] = useState({});
+  const [loading, setLoading]     = useState(true);
+  const [saving, setSaving]       = useState(false);
+  const [activeType, setActiveType] = useState(TEMPLATE_TYPES[0].id);
+  const [editorValue, setEditorValue] = useState('');
+  const [saved, setSaved]         = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    loadTemplates().then(t => { setTemplates(t); setLoading(false); });
+  }, []);
+
+  useEffect(() => {
+    setEditorValue(templates[activeType] || DEFAULT_TEMPLATES[activeType] || '');
+    setSaved(false);
+  }, [activeType, templates]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    const updated = { ...templates, [activeType]: editorValue };
+    await saveTemplates(updated);
+    setTemplates(updated);
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleReset = () => {
+    if (!window.confirm('Bu şablonu varsayılana sıfırlamak istediğinize emin misiniz?')) return;
+    setEditorValue(DEFAULT_TEMPLATES[activeType] || '');
+  };
+
+  const handlePreview = () => {
+    // Örnek veri ile önizleme
+    const sampleData = {
+      order_number: 'AYS-TEST-001', customer_name: 'Örnek Müşteri A.Ş.', customer_vkntckn: '1234567890',
+      status: 'Tamamlandı', currency: 'TRY', created_at: new Date().toISOString(),
+      subtotal: 5000, tax_total: 900, grand_total: 5900, notes: 'Örnek sipariş notu.',
+      items: [
+        { item_name: 'LED Panel 60x60', quantity: 10, unit: 'Adet', unit_price: 350, tax_rate: 20, line_total: 3500 },
+        { item_name: 'Driver 40W', quantity: 10, unit: 'Adet', unit_price: 150, tax_rate: 20, line_total: 1500 },
+      ],
+      // Reçete
+      product_name: 'LED Panel 60x60', recipe_name: 'Standart', description: 'Standart üretim reçetesi',
+      total_cost: 180,
+      ingredients: [
+        { item_name: 'LED Chip 0.5W', quantity: 120, unit: 'Adet', unit_cost: 0.50, total_cost: 60 },
+        { item_name: 'PCB Board', quantity: 1, unit: 'Adet', unit_cost: 45, total_cost: 45 },
+        { item_name: 'Alüminyum Profil', quantity: 2.4, unit: 'mt', unit_cost: 25, total_cost: 60 },
+        { item_name: 'Driver 40W', quantity: 1, unit: 'Adet', unit_cost: 15, total_cost: 15 },
+      ],
+      tags: 'standart, 60x60, panel',
+      // Çek
+      cheque_no: 'ÇK-2026-001', direction_label: 'Alınan', amount: 25000, bank_name: 'Garanti Bankası',
+      issue_date: new Date().toISOString(), due_date: new Date(Date.now() + 30 * 86400000).toISOString(),
+      from_name: 'ABC İnşaat Ltd.', to_name: 'AYSALED', status_label: 'Aktif', note: 'Proje ödemesi',
+      // İş Emri
+      wo_number: 'WO-2026-042', quantity: 50, unit: 'Adet', per_unit: 120,
+      production_note: 'Acil üretim - teslimat 3 gün içinde',
+      // Hesap Ekstresi
+      entity_name: 'Örnek Müşteri', vkntckn: '1234567890',
+      movements: [
+        { date: new Date().toISOString(), description: 'Fatura - AYS001', debit: 5900, credit: 0, balance: 5900 },
+        { date: new Date().toISOString(), description: 'Tahsilat', debit: 0, credit: 3000, balance: 2900 },
+      ],
+      total_debit: 5900, total_credit: 3000, net_balance: 2900,
+      // Kasa
+      receipt_type: 'TAHSİLAT MAKBUZU', date: new Date().toISOString(),
+      category: 'Satış Tahsilatı', entity_name: 'Örnek Müşteri', description: 'Sipariş ödemesi',
+      // Rapor
+      month_name: 'Nisan', year: 2026, total_sales: 125000, net_profit: 35000, margin: 28,
+      order_count: 45, invoiced_count: 30, invoiced_total: 95000, non_invoiced_count: 15, non_invoiced_total: 30000,
+      // Teklif
+      quote_number: 'TKF-2026-015', valid_until: new Date(Date.now() + 15 * 86400000).toISOString(),
+      project_name: 'Ofis Aydınlatma Projesi',
+    };
+    printDocument(activeType, sampleData, `Önizleme - ${TEMPLATE_TYPES.find(t => t.id === activeType)?.label}`);
+  };
+
+  const activeInfo = TEMPLATE_TYPES.find(t => t.id === activeType);
+
+  return (
+    <div className="rounded-3xl p-6 sm:p-8 space-y-5" style={{ background: c.card, border: `1px solid ${c.border}` }}>
+      <div>
+        <h2 className="text-lg font-bold" style={{ color: c.text }}>Yazdırma Şablonları</h2>
+        <p className="text-sm mt-0.5" style={{ color: c.muted }}>
+          Her belge türü için HTML şablonlarını düzenleyin. <code className="text-xs px-1 py-0.5 rounded" style={{ background: isDark ? 'rgba(255,255,255,0.06)' : '#f1f5f9' }}>{'{{değişken}}'}</code> söz dizimi ile veri bağlama yapılır.
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-8"><Loader2 size={20} className="animate-spin mx-auto" style={{ color: currentColor }} /></div>
+      ) : (
+        <>
+          {/* Şablon türü seçimi */}
+          <div className="flex flex-wrap gap-2">
+            {TEMPLATE_TYPES.map(t => (
+              <button key={t.id} onClick={() => setActiveType(t.id)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border"
+                style={{
+                  background: activeType === t.id ? currentColor + '18' : 'transparent',
+                  borderColor: activeType === t.id ? currentColor + '40' : c.border,
+                  color: activeType === t.id ? currentColor : c.muted,
+                }}>
+                <span>{t.icon}</span> {t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Aktif şablon bilgisi */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-bold" style={{ color: c.text }}>{activeInfo?.icon} {activeInfo?.label}</p>
+              <p className="text-xs" style={{ color: c.muted }}>{activeInfo?.desc}</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={handleReset}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors"
+                style={{ borderColor: c.border, color: '#ef4444' }}>
+                Varsayılana Sıfırla
+              </button>
+              <button onClick={handlePreview}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors"
+                style={{ borderColor: c.border, color: currentColor }}>
+                <Eye size={12} className="inline mr-1" />Önizle
+              </button>
+            </div>
+          </div>
+
+          {/* Editor */}
+          <textarea
+            value={editorValue}
+            onChange={e => { setEditorValue(e.target.value); setSaved(false); }}
+            className="w-full rounded-xl border outline-none font-mono text-xs leading-relaxed p-4 resize-y"
+            style={{
+              background: c.inputBg,
+              borderColor: c.border,
+              color: c.text,
+              minHeight: 350,
+              maxHeight: 600,
+            }}
+            spellCheck={false}
+          />
+
+          {/* Değişken referansı */}
+          <details className="rounded-xl border p-3" style={{ borderColor: c.border }}>
+            <summary className="text-xs font-bold cursor-pointer" style={{ color: c.muted }}>
+              📖 Kullanılabilir Değişkenler & Söz Dizimi
+            </summary>
+            <div className="mt-3 text-xs space-y-2" style={{ color: c.muted }}>
+              <p><code>{'{{değişken}}'}</code> — Veri bağlama</p>
+              <p><code>{'{{fmt:değişken}}'}</code> — Sayı formatı (1.234,56)</p>
+              <p><code>{'{{date:değişken}}'}</code> — Tarih formatı (19.04.2026)</p>
+              <p><code>{'{{money:değişken}}'}</code> — Para formatı (₺1.234,56)</p>
+              <p><code>{'{{#each items}} ... {{/each}}'}</code> — Liste döngüsü</p>
+              <p><code>{'{{#if var}} ... {{/if}}'}</code> — Koşullu gösterim</p>
+              <p><code>{'{{@index}}'}</code> — Döngü sıra numarası</p>
+              <div className="border-t pt-2 mt-2" style={{ borderColor: c.border }}>
+                <p className="font-bold" style={{ color: c.text }}>Otomatik değişkenler:</p>
+                <p><code>{'{{_today}}'}</code> — Bugünün tarihi · <code>{'{{_now}}'}</code> — Şu anki zaman · <code>{'{{_company}}'}</code> — Firma adı</p>
+              </div>
+            </div>
+          </details>
+
+          {/* Kaydet */}
+          <div className="flex items-center gap-3">
+            <button onClick={handleSave} disabled={saving}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all"
+              style={{ background: saving ? '#64748b' : currentColor }}>
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              {saving ? 'Kaydediliyor...' : 'Şablonu Kaydet'}
+            </button>
+            {saved && (
+              <motion.span initial={{ opacity: 0, x: -5 }} animate={{ opacity: 1, x: 0 }}
+                className="text-xs font-bold text-emerald-500 flex items-center gap-1">
+                <CheckCircle2 size={14} /> Kaydedildi!
+              </motion.span>
+            )}
+          </div>
+        </>
       )}
     </div>
   );

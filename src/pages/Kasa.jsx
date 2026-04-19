@@ -6,13 +6,14 @@ import {
   Coffee, Truck, ShoppingBag, Car, MoreHorizontal,
   CalendarDays, TrendingUp, TrendingDown, Check, Edit3,
   FileText, ArrowRightLeft, Image, Upload, Eye, Receipt,
-  Building2, Clock, AlertTriangle, Ban, ChevronRight, Scissors,
+  Building2, Clock, AlertTriangle, Ban, ChevronRight, Scissors, Printer,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import CustomDialog from '../components/CustomDialog';
 import ImageCropper from '../components/ImageCropper';
 import MediaPickerModal from '../components/MediaPickerModal';
+import { printDocument } from '../lib/printService';
 
 // ─── Sabitler ─────────────────────────────────────────────────────────────────
 const CATEGORIES = [
@@ -616,6 +617,20 @@ export default function Kasa() {
                               className="p-1.5 rounded-lg transition-colors"
                               style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', color: '#64748b' }}>
                               <Edit3 size={12} />
+                            </button>
+                            <button onClick={() => {
+                              const cat = catById(tx.category);
+                              printDocument('cash_receipt', {
+                                receipt_type: tx.direction === 'in' ? 'TAHSİLAT MAKBUZU' : 'ÖDEME MAKBUZU',
+                                amount: tx.amount, currency: tx.currency || 'TRY',
+                                date: tx.tx_date, category: cat.label,
+                                entity_name: tx.description || cat.label,
+                                description: tx.description || '',
+                              }, tx.direction === 'in' ? 'Tahsilat Makbuzu' : 'Ödeme Makbuzu');
+                            }}
+                              className="p-1.5 rounded-lg transition-colors"
+                              style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', color: '#3b82f6' }}>
+                              <Printer size={12} />
                             </button>
                             <button onClick={() => handleDelete(tx.id)}
                               className="p-1.5 rounded-lg transition-colors"
