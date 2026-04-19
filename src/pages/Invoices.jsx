@@ -303,12 +303,39 @@ function IsleWizard({ inv, allItems, supabase, onClose, onDone }) {
                           ...(isOutbox ? { company_name: inv.cari_name || 'İsimsiz' } : {}),
                           vkntckn: inv.vkntckn,
                         };
-                        // Varsa vergi dairesini de alalım
-                        const rawNode = inv.raw_detail?.AccountingCustomerParty || inv.raw_detail?.['cac:AccountingCustomerParty'] 
-                                     || inv.raw_detail?.AccountingSupplierParty || inv.raw_detail?.['cac:AccountingSupplierParty'];
-                        if (rawNode?.Party?.PartyTaxScheme?.TaxScheme?.Name) {
-                          payload.vergi_dairesi = rawNode.Party.PartyTaxScheme.TaxScheme.Name || rawNode.Party.PartyTaxScheme.TaxScheme.Name['#text'];
+                        const party = inv.raw_detail?.AccountingCustomerParty?.Party || 
+                                      inv.raw_detail?.['cac:AccountingCustomerParty']?.['cac:Party'] ||
+                                      inv.raw_detail?.AccountingSupplierParty?.Party || 
+                                      inv.raw_detail?.['cac:AccountingSupplierParty']?.['cac:Party'];
+                        if (party) {
+                          const taxNode = party.PartyTaxScheme || party['cac:PartyTaxScheme'];
+                          if (taxNode) {
+                            const taxScheme = taxNode.TaxScheme || taxNode['cac:TaxScheme'];
+                            if (taxScheme?.Name) payload.vergi_dairesi = taxScheme.Name['#text'] || taxScheme.Name;
+                          }
+                          const addr = party.PostalAddress || party['cac:PostalAddress'];
+                          if (addr) {
+                            const cityName = addr.CityName || addr['cbc:CityName'];
+                            if (cityName) payload.il = cityName['#text'] || cityName;
+                            const subCity = addr.CitySubdivisionName || addr['cbc:CitySubdivisionName'];
+                            if (subCity) payload.ilce = subCity['#text'] || subCity;
+                            const postalZone = addr.PostalZone || addr['cbc:PostalZone'];
+                            if (postalZone) payload.posta_kodu = postalZone['#text'] || postalZone;
+                            const country = addr.Country || addr['cac:Country'];
+                            if (country?.Name) payload.ulke = country.Name['#text'] || country.Name;
+                            const street = addr.StreetName || addr['cbc:StreetName'];
+                            const bldg = addr.BuildingName || addr['cbc:BuildingName'];
+                            const bldgNo = addr.BuildingNumber || addr['cbc:BuildingNumber'];
+                            const room = addr.Room || addr['cbc:Room'];
+                            let fullAdres = [];
+                            if (street) fullAdres.push(street['#text'] || street);
+                            if (bldg) fullAdres.push(bldg['#text'] || bldg);
+                            if (bldgNo) fullAdres.push('No:' + (bldgNo['#text'] || bldgNo));
+                            if (room) fullAdres.push('İç Kapı:' + (room['#text'] || room));
+                            if (fullAdres.length > 0) payload.adres = fullAdres.join(' ');
+                          }
                         }
+                        payload.kaynak = 'Fatura'; // "kaynak faturadan olarak geçmeli" isteği
                         const { data, error } = await supabase.from(tbl).insert(payload).select('id').single();
                         if (error) throw error;
                         setContactId(data.id);
