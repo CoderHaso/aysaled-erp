@@ -144,7 +144,7 @@ async function handleDetail(body, res) {
     const postal  = val(addrNode?.PostalZone ?? addrNode?.['cbc:PostalZone']) || '';
     const countryNode = addrNode?.Country || addrNode?.['cac:Country'];
     const country = val(countryNode?.Name ?? countryNode?.['cbc:Name'] ?? countryNode?.IdentificationCode ?? countryNode?.['cbc:IdentificationCode']) || '';
-    const taxOfficeName = val(taxScheme?.RegistrationName ?? taxScheme?.['cbc:RegistrationName']) || '';
+    const taxOfficeName = val(taxScheme?.TaxScheme?.Name ?? taxScheme?.['cac:TaxScheme']?.['cbc:Name'] ?? taxScheme?.RegistrationName ?? taxScheme?.['cbc:RegistrationName']) || '';
     const contactNode = party?.Contact || party?.['cac:Contact'];
     const phone = val(contactNode?.Telephone ?? contactNode?.['cbc:Telephone']) || '';
     const email = val(contactNode?.ElectronicMail ?? contactNode?.['cbc:ElectronicMail']) || '';
