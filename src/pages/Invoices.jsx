@@ -311,18 +311,18 @@ function IsleWizard({ inv, allItems, supabase, onClose, onDone }) {
                           const taxNode = party.PartyTaxScheme || party['cac:PartyTaxScheme'];
                           if (taxNode) {
                             const taxScheme = taxNode.TaxScheme || taxNode['cac:TaxScheme'];
-                            if (taxScheme?.Name) payload.vergi_dairesi = taxScheme.Name['#text'] || taxScheme.Name;
+                            if (taxScheme?.Name) payload.tax_office = taxScheme.Name['#text'] || taxScheme.Name;
                           }
                           const addr = party.PostalAddress || party['cac:PostalAddress'];
                           if (addr) {
                             const cityName = addr.CityName || addr['cbc:CityName'];
-                            if (cityName) payload.il = cityName['#text'] || cityName;
+                            if (cityName) payload.city = cityName['#text'] || cityName;
                             const subCity = addr.CitySubdivisionName || addr['cbc:CitySubdivisionName'];
-                            if (subCity) payload.ilce = subCity['#text'] || subCity;
+                            if (subCity) payload.district = subCity['#text'] || subCity;
                             const postalZone = addr.PostalZone || addr['cbc:PostalZone'];
-                            if (postalZone) payload.posta_kodu = postalZone['#text'] || postalZone;
+                            if (postalZone) payload.postal_code = postalZone['#text'] || postalZone;
                             const country = addr.Country || addr['cac:Country'];
-                            if (country?.Name) payload.ulke = country.Name['#text'] || country.Name;
+                            if (country?.Name) payload.country = country.Name['#text'] || country.Name;
                             const street = addr.StreetName || addr['cbc:StreetName'];
                             const bldg = addr.BuildingName || addr['cbc:BuildingName'];
                             const bldgNo = addr.BuildingNumber || addr['cbc:BuildingNumber'];
@@ -332,10 +332,10 @@ function IsleWizard({ inv, allItems, supabase, onClose, onDone }) {
                             if (bldg) fullAdres.push(bldg['#text'] || bldg);
                             if (bldgNo) fullAdres.push('No:' + (bldgNo['#text'] || bldgNo));
                             if (room) fullAdres.push('İç Kapı:' + (room['#text'] || room));
-                            if (fullAdres.length > 0) payload.adres = fullAdres.join(' ');
+                            if (fullAdres.length > 0) payload.address = fullAdres.join(' ');
                           }
                         }
-                        payload.kaynak = 'Fatura'; // "kaynak faturadan olarak geçmeli" isteği
+                        payload.source = 'Fatura'; // Supabase requires source instead of kaynak
                         const { data, error } = await supabase.from(tbl).insert(payload).select('id').single();
                         if (error) throw error;
                         setContactId(data.id);
