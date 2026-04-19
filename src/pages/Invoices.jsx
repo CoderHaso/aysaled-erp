@@ -302,51 +302,55 @@ function IsleWizard({ inv, allItems, supabase, onClose, onDone }) {
                           name: inv.cari_name || 'İsimsiz',
                           ...(isOutbox ? { company_name: inv.cari_name || 'İsimsiz' } : {}),
                           vkntckn: inv.vkntckn,
+                          source: 'Fatura',
                         };
-                        const val = (obj) => obj?.['#text'] ?? obj;
-                        const pNode = isOutbox 
-                          ? (inv.raw_detail?.AccountingCustomerParty || inv.raw_detail?.['cac:AccountingCustomerParty'])
-                          : (inv.raw_detail?.AccountingSupplierParty || inv.raw_detail?.['cac:AccountingSupplierParty']);
-                        
-                        const party = pNode?.Party || pNode?.['cac:Party'] || pNode;
-                        
-                        if (party) {
-                          const taxNode = party.PartyTaxScheme || party['cac:PartyTaxScheme'];
-                          if (taxNode) {
-                            const taxScheme = taxNode.TaxScheme || taxNode['cac:TaxScheme'];
-                            if (taxScheme) payload.tax_office = val(taxScheme.RegistrationName ?? taxScheme['cbc:RegistrationName'] ?? taxScheme.Name ?? taxScheme['cbc:Name']);
-                          }
-                          const addr = party.PostalAddress || party['cac:PostalAddress'] || party.Address || party['cac:Address'];
-                          if (addr) {
-                            const cityName = val(addr.CityName ?? addr['cbc:CityName']);
-                            if (cityName) payload.city = cityName;
-                            const subCity = val(addr.CitySubdivisionName ?? addr['cbc:CitySubdivisionName']);
-                            if (subCity) payload.district = subCity;
-                            const postalZone = val(addr.PostalZone ?? addr['cbc:PostalZone'] ?? addr.PostalCode);
-                            if (postalZone) payload.postal_code = postalZone;
-                            const country = addr.Country || addr['cac:Country'];
-                            if (country) payload.country = val(country.Name ?? country['cbc:Name']);
-                            
-                            const street = val(addr.StreetName ?? addr['cbc:StreetName']);
-                            const bldg = val(addr.BuildingName ?? addr['cbc:BuildingName']);
-                            const bldgNo = val(addr.BuildingNumber ?? addr['cbc:BuildingNumber']);
-                            const room = val(addr.Room ?? addr['cbc:Room']);
-                            let fullAdres = [];
-                            if (street) fullAdres.push(street);
-                            if (bldg) fullAdres.push(bldg);
-                            if (bldgNo) fullAdres.push('No:' + bldgNo);
-                            if (room) fullAdres.push('İç Kapı:' + room);
-                            if (fullAdres.length > 0) payload.address = fullAdres.join(' ');
-                          }
-                          const contactNode = party.Contact || party['cac:Contact'];
-                          if (contactNode) {
-                             const phone = val(contactNode.Telephone ?? contactNode['cbc:Telephone'] ?? contactNode.Telefax ?? contactNode['cbc:Telefax']);
-                             if (phone) payload.phone = phone;
-                             const email = val(contactNode.ElectronicMail ?? contactNode['cbc:ElectronicMail']);
-                             if (email) payload.email = email;
+
+                        // 1) Birincil kaynak: invoices tablosundaki cari_ sütunları (her zaman mevcut)
+                        if (inv.cari_tax_office) payload.tax_office = inv.cari_tax_office;
+                        if (inv.cari_address)    payload.address    = inv.cari_address;
+                        if (inv.cari_city)       payload.city       = inv.cari_city;
+                        if (inv.cari_district)   payload.district   = inv.cari_district;
+                        if (inv.cari_country)    payload.country    = inv.cari_country;
+                        if (inv.cari_postal)     payload.postal_code = inv.cari_postal;
+                        if (inv.cari_phone)      payload.phone      = inv.cari_phone;
+                        if (inv.cari_email)      payload.email      = inv.cari_email;
+
+                        // 2) İkincil kaynak: raw_detail (eksik alanları doldur)
+                        if (inv.raw_detail) {
+                          const v = (obj) => obj?.['#text'] ?? obj;
+                          const pNode = isOutbox
+                            ? (inv.raw_detail.AccountingCustomerParty || inv.raw_detail['cac:AccountingCustomerParty'])
+                            : (inv.raw_detail.AccountingSupplierParty || inv.raw_detail['cac:AccountingSupplierParty']);
+                          const party = pNode?.Party || pNode?.['cac:Party'] || pNode;
+                          if (party) {
+                            if (!payload.tax_office) {
+                              const taxNode = party.PartyTaxScheme || party['cac:PartyTaxScheme'];
+                              const taxScheme = taxNode?.TaxScheme || taxNode?.['cac:TaxScheme'];
+                              if (taxScheme) payload.tax_office = v(taxScheme.RegistrationName ?? taxScheme['cbc:RegistrationName'] ?? taxScheme.Name ?? taxScheme['cbc:Name']);
+                            }
+                            const addr = party.PostalAddress || party['cac:PostalAddress'] || party.Address || party['cac:Address'];
+                            if (addr) {
+                              if (!payload.city) payload.city = v(addr.CityName ?? addr['cbc:CityName']);
+                              if (!payload.district) payload.district = v(addr.CitySubdivisionName ?? addr['cbc:CitySubdivisionName']);
+                              if (!payload.postal_code) payload.postal_code = v(addr.PostalZone ?? addr['cbc:PostalZone']);
+                              if (!payload.country) { const c2 = addr.Country || addr['cac:Country']; if (c2) payload.country = v(c2.Name ?? c2['cbc:Name']); }
+                              if (!payload.address) {
+                                const parts = [v(addr.StreetName ?? addr['cbc:StreetName']), v(addr.BuildingName ?? addr['cbc:BuildingName'])].filter(Boolean);
+                                const bn = v(addr.BuildingNumber ?? addr['cbc:BuildingNumber']); if (bn) parts.push('No:' + bn);
+                                const rm = v(addr.Room ?? addr['cbc:Room']); if (rm) parts.push('İç Kapı:' + rm);
+                                if (parts.length) payload.address = parts.join(' ');
+                              }
+                            }
+                            if (!payload.phone || !payload.email) {
+                              const cn = party.Contact || party['cac:Contact'];
+                              if (cn) {
+                                if (!payload.phone) payload.phone = v(cn.Telephone ?? cn['cbc:Telephone'] ?? cn.Telefax ?? cn['cbc:Telefax']);
+                                if (!payload.email) payload.email = v(cn.ElectronicMail ?? cn['cbc:ElectronicMail']);
+                              }
+                            }
                           }
                         }
-                        payload.source = 'Fatura'; // Manuel yerine fatura logu
+                        console.log('[Hızlı Ekle] payload:', JSON.stringify(payload, null, 2));
                         const { data, error } = await supabase.from(tbl).insert(payload).select('id').single();
                         if (error) throw error;
                         setContactId(data.id);
@@ -869,7 +873,7 @@ export default function Invoices({ type = 'inbox' }) {
       // Detay açılınca get-invoice-detail endpoint'i ayrıca çeker.
       const { data, error: dbErr } = await supabase
         .from('invoices')
-        .select('id, invoice_id, document_id, type, cari_name, vkntckn, amount, currency, issue_date, status, line_items, invoice_type, invoice_tip_type, is_iade, envelope_identifier, tax_exclusive_amount, tax_total, exchange_rate, envelope_status, is_seen, order_document_id, message, create_date_utc, is_islendi, islendi_at')
+        .select('id, invoice_id, document_id, type, cari_name, vkntckn, amount, currency, issue_date, status, line_items, invoice_type, invoice_tip_type, is_iade, envelope_identifier, tax_exclusive_amount, tax_total, exchange_rate, envelope_status, is_seen, order_document_id, message, create_date_utc, is_islendi, islendi_at, cari_tax_office, cari_address, cari_city, cari_district, cari_country, cari_postal, cari_phone, cari_email')
         .eq('type', type)
         .order('issue_date', { ascending: false })
         .limit(500);
@@ -899,10 +903,8 @@ export default function Invoices({ type = 'inbox' }) {
   // İşle butonuna tıklandığında — kalemler yüklenmemişse önce API'den çek
   const [fetchingDetailsId, setFetchingDetailsId] = useState(null);
   const handleIsle = useCallback(async (inv) => {
-    if (inv.line_items?.length > 0) {
-      setIsleModal(inv);
-      return;
-    }
+    // raw_detail her zaman gerekli (Hızlı Ekle adres/telefon/email çıkarması için).
+    // Ana liste sorgusu raw_detail çekmiyor (performans), bu yüzden her zaman API'den alalım.
     setFetchingDetailsId(inv.invoice_id);
     try {
       const r = await fetch('/api/invoices-api?action=detail', {
@@ -916,10 +918,11 @@ export default function Invoices({ type = 'inbox' }) {
         handleLineItemsLoaded(inv.invoice_id, items, d.raw_detail);
         setIsleModal({ ...inv, line_items: items, raw_detail: d.raw_detail });
       } else {
-        setIsleModal(inv); // yine de aç ama boş
+        // API başarısız olsa bile line_items varsa onlarla aç
+        setIsleModal({ ...inv, line_items: inv.line_items || [] });
       }
     } catch {
-      setIsleModal(inv);
+      setIsleModal({ ...inv, line_items: inv.line_items || [] });
     } finally {
       setFetchingDetailsId(null);
     }
