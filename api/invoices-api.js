@@ -128,7 +128,7 @@ async function handleDetail(body, res) {
   await supabase.from('invoices').update({ line_items, raw_detail: invoice, updated_at: new Date().toISOString() })
     .eq('invoice_id', invoiceId).eq('type', type);
 
-  // Contact zenginleştirme
+  // invoices tablosundaki cari_* sütunlarını da doldur + contact zenginleştir
   try {
     const partyNode = type === 'inbox'
       ? (invoice.AccountingSupplierParty || invoice['cac:AccountingSupplierParty'])
@@ -140,20 +140,44 @@ async function handleDetail(body, res) {
     const addrNode = party?.PostalAddress || party?.['cac:PostalAddress'] || party?.Address || party?.['cac:Address'];
     const street  = val(addrNode?.StreetName ?? addrNode?.['cbc:StreetName']) || '';
     const cityName = val(addrNode?.CityName ?? addrNode?.['cbc:CityName']) || '';
+    const district = val(addrNode?.CitySubdivisionName ?? addrNode?.['cbc:CitySubdivisionName']) || '';
     const postal  = val(addrNode?.PostalZone ?? addrNode?.['cbc:PostalZone']) || '';
+    const countryNode = addrNode?.Country || addrNode?.['cac:Country'];
+    const country = val(countryNode?.Name ?? countryNode?.['cbc:Name'] ?? countryNode?.IdentificationCode ?? countryNode?.['cbc:IdentificationCode']) || '';
     const taxOfficeName = val(taxScheme?.RegistrationName ?? taxScheme?.['cbc:RegistrationName']) || '';
     const contactNode = party?.Contact || party?.['cac:Contact'];
     const phone = val(contactNode?.Telephone ?? contactNode?.['cbc:Telephone']) || '';
     const email = val(contactNode?.ElectronicMail ?? contactNode?.['cbc:ElectronicMail']) || '';
+    const bldgName = val(addrNode?.BuildingName ?? addrNode?.['cbc:BuildingName']) || '';
+    const bldgNo = val(addrNode?.BuildingNumber ?? addrNode?.['cbc:BuildingNumber']) || '';
+    const fullAddress = [street, bldgName, bldgNo ? 'No:' + bldgNo : ''].filter(Boolean).join(' ');
+
+    // invoices tablosundaki cari_* sütunlarını güncelle
+    const cariUpdate = {};
+    if (taxOfficeName) cariUpdate.cari_tax_office = taxOfficeName;
+    if (fullAddress)   cariUpdate.cari_address = fullAddress;
+    if (cityName)      cariUpdate.cari_city = cityName;
+    if (district)      cariUpdate.cari_district = district;
+    if (country)       cariUpdate.cari_country = country;
+    if (postal)        cariUpdate.cari_postal = postal;
+    if (phone)         cariUpdate.cari_phone = phone;
+    if (email)         cariUpdate.cari_email = email;
+    if (Object.keys(cariUpdate).length > 0) {
+      await supabase.from('invoices').update(cariUpdate)
+        .eq('invoice_id', invoiceId).eq('type', type);
+    }
+
+    // contact zenginleştirme (suppliers/customers)
     if (vkn) {
-      // inbox = bize gelen fatura → tedarikçi; outbox = bizim kestiğimiz → müşteri
       const table = type === 'inbox' ? 'suppliers' : 'customers';
       const cd = { vkntckn: vkn, name: partyName || 'Bilinmiyor', source: 'invoice_sync', updated_at: new Date().toISOString() };
       if (phone) cd.phone = phone;
       if (email) cd.email = email;
-      if (street) cd.address = street;
+      if (fullAddress) cd.address = fullAddress;
       if (cityName) cd.city = cityName;
+      if (district) cd.district = district;
       if (postal) cd.postal_code = postal;
+      if (country) cd.country = country;
       if (taxOfficeName) cd.tax_office = taxOfficeName;
       await supabase.from(table).upsert(cd, { onConflict: 'vkntckn', ignoreDuplicates: false });
     }
