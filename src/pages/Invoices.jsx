@@ -885,13 +885,13 @@ export default function Invoices({ type = 'inbox' }) {
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
 
-  const handleLineItemsLoaded = useCallback((invoiceId, items) => {
+  const handleLineItemsLoaded = useCallback((invoiceId, items, rawDetail) => {
     setInvoices(prev => {
       const updated = prev.map(inv =>
-        inv.invoice_id === invoiceId ? { ...inv, line_items: items } : inv
+        inv.invoice_id === invoiceId ? { ...inv, line_items: items, ...(rawDetail ? { raw_detail: rawDetail } : {}) } : inv
       );
       invoiceCache.set(type, updated);
-      setSelected(s => s?.invoice_id === invoiceId ? { ...s, line_items: items } : s);
+      setSelected(s => s?.invoice_id === invoiceId ? { ...s, line_items: items, ...(rawDetail ? { raw_detail: rawDetail } : {}) } : s);
       return updated;
     });
   }, [type]);
@@ -913,8 +913,8 @@ export default function Invoices({ type = 'inbox' }) {
       const d = await r.json();
       if (d.success) {
         const items = d.line_items || [];
-        handleLineItemsLoaded(inv.invoice_id, items);
-        setIsleModal({ ...inv, line_items: items });
+        handleLineItemsLoaded(inv.invoice_id, items, d.raw_detail);
+        setIsleModal({ ...inv, line_items: items, raw_detail: d.raw_detail });
       } else {
         setIsleModal(inv); // yine de aç ama boş
       }
