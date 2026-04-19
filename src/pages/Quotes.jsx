@@ -3,12 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, FileText, Loader2, Trash2, Eye, Edit3,
-  CheckCircle2, Clock, XCircle, Send, RefreshCw, FileMinus, Calendar, X
+  CheckCircle2, Clock, XCircle, Send, RefreshCw, FileMinus, Calendar, X, Printer
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import QuoteForm, { QuotePreview } from './QuoteForm';
 import CustomDialog from '../components/CustomDialog';
+import { printDocument } from '../lib/printService';
 
 const STATUS = {
   draft:    { label: 'Taslak',        color: '#94a3b8', icon: Clock },
@@ -311,9 +312,25 @@ export default function Quotes() {
 
                   <div className="w-[1px] h-4 bg-slate-200 mx-1" />
 
-                  <button onClick={() => setPreviewQ(q)} title="Önizle / Yazdır"
+                  <button onClick={() => setPreviewQ(q)} title="Önizle"
                     className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors">
                     <Eye size={15} />
+                  </button>
+                  <button onClick={() => {
+                    printDocument('quote', {
+                      quote_number: q.quote_no, customer_name: q.company_name,
+                      contact_person: q.contact_person, project_name: q.project_name,
+                      created_at: q.issue_date || q.created_at, valid_until: q.valid_until,
+                      currency: q.currency || 'TRY', grand_total: q.grand_total,
+                      notes: q.notes,
+                      items: (q.items || []).map(i => ({
+                        name: i.name || i.item_name, quantity: i.quantity, unit: i.unit || 'Adet',
+                        unit_price: i.unit_price || i.price, total: (i.quantity || 0) * (i.unit_price || i.price || 0),
+                      })),
+                    }, `Teklif - ${q.quote_no}`);
+                  }} title="Yazdır"
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-blue-500 hover:bg-blue-50 transition-colors">
+                    <Printer size={15} />
                   </button>
                   <button onClick={() => { setEditId(q.id); setView('form'); }} title="Düzenle"
                     className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">

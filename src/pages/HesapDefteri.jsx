@@ -4,11 +4,12 @@ import {
   BookOpen, ChevronDown, Plus, Search, Trash2,
   TrendingUp, TrendingDown, X, Check, Loader2,
   Receipt, User, Building2, AlertCircle, CheckCircle2,
-  ArrowUpDown, ChevronsUpDown
+  ArrowUpDown, ChevronsUpDown, Printer
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLocation } from 'react-router-dom';
+import { printDocument } from '../lib/printService';
 
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -408,6 +409,30 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
                 style={{ background: `${color}12`, color, border: `1px dashed ${color}35` }}>
                 <Plus size={12}/> Hareket Ekle
               </button>
+              {rows.length > 0 && (
+                <button onClick={() => {
+                  const totalDebit = rows.reduce((s, h) => s + (h.borc || 0), 0);
+                  const totalCredit = rows.reduce((s, h) => s + (h.alacak || 0), 0);
+                  printDocument('ledger', {
+                    entity_name: contact.name,
+                    vkntckn: contact.vkntckn || '',
+                    movements: rows.map(h => ({
+                      date: h.tarih,
+                      description: [h.baslik, h.aciklama].filter(Boolean).join(' - '),
+                      debit: h.borc || 0,
+                      credit: h.alacak || 0,
+                      balance: h.snapshot || 0,
+                    })),
+                    total_debit: totalDebit,
+                    total_credit: totalCredit,
+                    net_balance: totalBalance,
+                  }, `Ekstre - ${contact.name}`);
+                }}
+                  className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold transition-all mt-2"
+                  style={{ background: 'rgba(59,130,246,0.08)', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.2)' }}>
+                  <Printer size={12}/> Ekstre Yazdır
+                </button>
+              )}
             </div>
           </motion.div>
         )}

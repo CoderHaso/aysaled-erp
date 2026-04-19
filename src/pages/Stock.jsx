@@ -10,7 +10,7 @@ import {
   X, CheckCircle2, AlertOctagon, FolderDown, Eye, Save,
   Layers, ArrowRight, DollarSign, Hash, MapPin, Ruler, Tag,
   Clock, ArrowUpCircle, ArrowDownCircle, Wrench, ShoppingCart, FileText,
-  FlaskConical, Pencil, Check, Minus,
+  FlaskConical, Pencil, Check, Minus, Printer,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useStock } from '../hooks/useStock';
@@ -19,6 +19,7 @@ import { supabase } from '../lib/supabaseClient';
 import { pageCache } from '../lib/pageCache';
 import ItemDrawer from '../components/stock/ItemDrawer';
 import QuickAddModal from '../components/stock/QuickAddModal';
+import { printDocument } from '../lib/printService';
 
 const CURRENCY_SYM = { TRY: '₺', USD: '$', EUR: '€' };
 
@@ -1430,6 +1431,29 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
                         </div>
                       ) : null;
                     })()}
+                    {/* Reçete Yazdır */}
+                    <div className="px-3 pb-2.5 pt-1" style={{ borderTop: '1px solid rgba(139,92,246,0.06)' }}>
+                      <button onClick={(e) => {
+                        e.stopPropagation();
+                        printDocument('recipe', {
+                          product_name: item.name,
+                          recipe_name: r.name,
+                          tags: (r.tags || []).join(', '),
+                          ingredients: (r.recipe_items || []).map(ri => ({
+                            item_name: ri.item_name,
+                            quantity: ri.quantity,
+                            unit: ri.unit || 'Adet',
+                            unit_cost: Number(ri.item?.purchase_price || 0),
+                            total_cost: Number(ri.item?.purchase_price || 0) * Number(ri.quantity || 1),
+                          })),
+                          total_cost: (r.recipe_items || []).reduce((s, ri) => s + Number(ri.item?.purchase_price || 0) * Number(ri.quantity || 1), 0),
+                        }, `Reçete - ${item.name} (${r.name})`);
+                      }}
+                        className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[10px] font-bold transition-all"
+                        style={{ background: 'rgba(59,130,246,0.08)', color: '#3b82f6', border: '1px solid rgba(59,130,246,0.15)' }}>
+                        <Printer size={10}/> Reçete Yazdır
+                      </button>
+                    </div>
                   </div>
                 );
               })}

@@ -823,6 +823,19 @@ export default function Kasa() {
                         className="p-1.5 rounded-lg" style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', color: '#64748b' }}>
                         <Edit3 size={12}/>
                       </button>
+                      <button onClick={() => {
+                        const st = CHQ_STATUS[chq.status] || CHQ_STATUS.active;
+                        printDocument('cheque', {
+                          cheque_no: chq.cheque_no, direction_label: chq.direction === 'received' ? 'Alınan' : 'Verilen',
+                          amount: chq.amount, currency: chq.currency || 'TRY', bank_name: chq.bank_name,
+                          issue_date: chq.issue_date, due_date: chq.due_date,
+                          from_name: chq.from_name, to_name: chq.to_name,
+                          status_label: st.label, note: chq.notes,
+                        }, `Çek - ${chq.cheque_no || 'Numarasız'}`);
+                      }}
+                        className="p-1.5 rounded-lg" style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', color: '#3b82f6' }}>
+                        <Printer size={12}/>
+                      </button>
                       <button onClick={() => deleteCheque(chq.id)}
                         className="p-1.5 rounded-lg" style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', color: '#64748b' }}>
                         <Trash2 size={12}/>

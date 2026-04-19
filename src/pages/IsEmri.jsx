@@ -4,12 +4,13 @@ import {
   Hammer, Plus, Search, X, Loader2, ChevronDown, ChevronUp,
   Check, Clock, CheckCircle2, XCircle, AlertCircle, Package,
   User, Calendar, RefreshCw, Zap, FlaskConical, Edit3,
-  StickyNote, History, Activity, ChevronRight,
+  StickyNote, History, Activity, ChevronRight, Printer,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import { pageCache } from '../lib/pageCache';
 import RecipePickerModal from '../components/RecipePickerModal';
+import { printDocument } from '../lib/printService';
 
 // ── Durumlar ──────────────────────────────────────────────────────────────────
 const STATUS = {
@@ -426,6 +427,25 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
             Sil
           </button>
         )}
+        <button onClick={() => {
+          printDocument('work_order', {
+            wo_number: `WO-${wo.id?.slice(0,8).toUpperCase()}`,
+            product_name: item?.name || 'Bilinmeyen',
+            recipe_name: displayRecipeName || '',
+            quantity: wo.quantity, unit: item?.unit || 'Adet',
+            status: s.label, customer_name: orders.find(o => o.id === wo.order_id)?.customer_name || '',
+            created_at: wo.started_at || wo.created_at,
+            production_note: wo.production_note || noteInput || '',
+            ingredients: displayRecipeItems.map(ri => ({
+              item_name: ri.item_name, per_unit: ri.quantity, unit: ri.unit || 'Adet',
+              total_qty: Number(ri.quantity || 0) * Number(wo.quantity || 1),
+            })),
+          }, `İş Emri - ${item?.name || ''}`);
+        }}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold"
+          style={{ background:'rgba(59,130,246,0.1)', color:'#3b82f6', border:'1px solid rgba(59,130,246,0.25)' }}>
+          <Printer size={10}/> Yazdır
+        </button>
       </div>
 
       {showRecipePicker && (
