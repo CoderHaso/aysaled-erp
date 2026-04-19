@@ -24,7 +24,7 @@ import { supabase }   from './lib/supabaseClient';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 const PAGES = {
-  '/':           { title: 'Dashboard',      sub: 'Genel Bakış' },
+  '/':           { title: 'Genel Bakış',    sub: 'Aylık Raporlama & Analiz' },
   '/stock':      { title: 'Stok Merkezi',   sub: 'Hammadde & Mamül' },
   '/suppliers':  { title: 'Tedarikçiler',   sub: 'Tedarikçi Yönetimi' },
   '/contacts':   { title: 'Cari Takip',     sub: 'Müşteri & Tedarikçi' },

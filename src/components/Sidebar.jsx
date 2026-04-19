@@ -10,7 +10,7 @@ import ThemeSettings from './ThemeSettings';
 import { useAuth } from '../contexts/AuthContext';
 
 const MENU = [
-  { name: 'Dashboard',    icon: LayoutDashboard, id: 'dashboard' },
+  { name: 'Genel Bakış',  icon: LayoutDashboard, id: 'dashboard' },
   { name: 'Stok',         icon: Package,         id: 'stock'     },
   { name: 'Tedarikçiler', icon: Building2,       id: 'suppliers' },
   { name: 'Cariler',      icon: Users,           id: 'contacts'  },

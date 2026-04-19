@@ -171,7 +171,7 @@ function UsersManager({ c, currentColor, isDark, profile, ROLES }) {
   const [loading, setLoading] = useState(true);
 
   const ALL_TABS = [
-    { id: '/', label: 'Dashboard' },
+    { id: '/', label: 'Genel Bakış' },
     { id: '/stock', label: 'Stok Merkezi' },
     { id: '/suppliers', label: 'Tedarikçiler' },
     { id: '/contacts', label: 'Cari Takip' },
