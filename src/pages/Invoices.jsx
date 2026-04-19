@@ -302,7 +302,7 @@ function IsleWizard({ inv, allItems, supabase, onClose, onDone }) {
                           name: inv.cari_name || 'İsimsiz',
                           ...(isOutbox ? { company_name: inv.cari_name || 'İsimsiz' } : {}),
                           vkntckn: inv.vkntckn,
-                          source: 'Fatura',
+                          source: 'invoice_sync',
                         };
 
                         // 1) Birincil kaynak: invoices tablosundaki cari_ sütunları (her zaman mevcut)
