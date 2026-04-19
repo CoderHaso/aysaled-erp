@@ -307,7 +307,7 @@ export default function InvoiceStockModal({
                                 </p>
                               </div>
                               <span className="text-[10px] text-emerald-500 flex-shrink-0">
-                                {isInbox ? (item.purchase_price ? `₺${fmt(item.purchase_price)}` : '') : (item.sale_price ? `₺${fmt(item.sale_price)}` : '')}
+                                {isInbox ? (item.purchase_price ? `${fmt(item.purchase_price)} ${item.base_currency || 'TRY'}` : '') : (item.sale_price ? `${fmt(item.sale_price)} ${item.sale_currency || 'TRY'}` : '')}
                               </span>
                             </button>
                           ))}
