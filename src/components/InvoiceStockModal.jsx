@@ -17,7 +17,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Search, Check, Package, AlertCircle, Loader2,
-  ArrowRight, DollarSign, Plus, Info,
+  ArrowRight, Edit2, Plus, Info,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -35,10 +35,13 @@ export default function InvoiceStockModal({
   const [mappings, setMappings] = useState(() =>
     lines.map(l => ({
       invoiceLine: l,
-      stockItemId: null,       // seçili stok kartı id
-      qtyOverride: String(l.quantity || 1), // varsayılan: faturadaki miktar
-      updatePrice: true,       // fiyatı güncelle?
+      stockItemId: null,
+      qtyOverride: String(l.quantity || 1),
+      updatePrice: true,
       priceVal:    String(l.unit_price || ''),
+      currencyVal: inv.currency || 'TRY',
+      stockPrice:  '',
+      stockCurrency: 'TRY',
     }))
   );
 
@@ -106,14 +109,16 @@ export default function InvoiceStockModal({
             p_item_id:        m.stockItemId,
             p_purchase_price: isInbox ? price : null,
             p_sale_price:     isInbox ? null  : price,
-            p_currency:       inv.currency || 'TRY',
+            p_currency:       m.currencyVal || 'TRY',
             p_source:         'invoice',
             p_source_ref:     inv.invoice_id || null,
             p_note:           note,
           });
           // Fallback direkt güncelle
           if (priceRes.error) {
-            const upd = isInbox ? { purchase_price: price } : { sale_price: price };
+            const upd = {};
+            if (isInbox) { upd.purchase_price = price; upd.base_currency = m.currencyVal || 'TRY'; }
+            else { upd.sale_price = price; upd.sale_currency = m.currencyVal || 'TRY'; }
             await supabase.from('items').update(upd).eq('id', m.stockItemId);
           }
         }
@@ -279,8 +284,19 @@ export default function InvoiceStockModal({
                           {results.map(item => (
                             <button key={item.id}
                               onClick={() => {
-                                updateMapping(idx, 'stockItemId', item.id);
-                                updateMapping(idx, 'priceVal', String(isInbox ? (item.purchase_price || '') : (item.sale_price || '')));
+                                const stP = isInbox ? (item.purchase_price || 0) : (item.sale_price || 0);
+                                const stC = isInbox ? (item.base_currency || 'TRY') : (item.sale_currency || 'TRY');
+                                setMappings(prev => prev.map((mapping, i) => {
+                                  if (i !== idx) return mapping;
+                                  return {
+                                    ...mapping,
+                                    stockItemId: item.id,
+                                    stockPrice: String(stP),
+                                    stockCurrency: stC,
+                                    priceVal: mapping.updatePrice ? String(mapping.invoiceLine.unit_price || '') : String(stP || ''),
+                                    currencyVal: mapping.updatePrice ? (inv.currency || 'TRY') : stC
+                                  };
+                                }));
                                 setOpenRow(null);
                               }}
                               className="w-full text-left px-3 py-2 flex items-center justify-between gap-2 transition-colors hover:bg-white/5">
@@ -308,32 +324,58 @@ export default function InvoiceStockModal({
                     style={{ color: isDark ? '#e2e8f0' : '#1e293b', border: `1px solid ${isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0'}` }}/>
 
                   {/* Fiyat */}
-                  <input type="number" min="0" step="0.01" value={m.priceVal}
-                    onChange={e => updateMapping(idx, 'priceVal', e.target.value)}
-                    placeholder="Fiyat"
-                    className="w-full px-2 py-1.5 rounded-lg text-xs text-right font-bold text-emerald-400 outline-none bg-transparent"
-                    style={{ border: '1px solid rgba(148,163,184,0.12)' }}/>
+                  <div className="flex border rounded-lg overflow-hidden transition-all" style={{ borderColor: 'rgba(148,163,184,0.12)' }}>
+                    <input type="number" min="0" step="0.01" value={m.priceVal}
+                      disabled={!m.updatePrice}
+                      onChange={e => updateMapping(idx, 'priceVal', e.target.value)}
+                      placeholder="Fiyat"
+                      className="w-full px-2 py-1.5 text-xs text-right font-bold text-emerald-400 outline-none bg-transparent" />
+                    <select
+                      disabled={!m.updatePrice}
+                      value={m.currencyVal} onChange={e => updateMapping(idx, 'currencyVal', e.target.value)}
+                      className="bg-transparent border-l outline-none text-[10px] text-slate-500 font-bold px-1"
+                      style={{ borderColor: 'rgba(148,163,184,0.12)' }}>
+                      <option value="TRY">₺</option>
+                      <option value="USD">$</option>
+                      <option value="EUR">€</option>
+                    </select>
+                  </div>
 
                   {/* Fiyat güncelle toggle */}
-                  <button onClick={() => updateMapping(idx, 'updatePrice', !m.updatePrice)}
-                    title="Fiyatı güncellensin mi?"
-                    className="w-6 h-6 rounded-md flex items-center justify-center transition-all flex-shrink-0"
+                  <button onClick={() => {
+                      const nextUpdate = !m.updatePrice;
+                      setMappings(prev => prev.map((mapping, i) => {
+                        if (i !== idx) return mapping;
+                        return {
+                          ...mapping,
+                          updatePrice: nextUpdate,
+                          priceVal: nextUpdate ? String(mapping.invoiceLine.unit_price || '') : String(mapping.stockPrice || ''),
+                          currencyVal: nextUpdate ? (inv.currency || 'TRY') : (mapping.stockCurrency || 'TRY')
+                        };
+                      }));
+                    }}
+                    title="Faturadaki fiyat ile güncelle"
+                    className="w-6 h-6 rounded-md flex items-center justify-center transition-all flex-shrink-0 cursor-pointer"
                     style={{
                       background: m.updatePrice ? `${currentColor}20` : 'rgba(255,255,255,0.04)',
                       border: `1px solid ${m.updatePrice ? currentColor + '50' : 'rgba(148,163,184,0.1)'}`,
                     }}>
-                    <DollarSign size={10} style={{ color: m.updatePrice ? currentColor : '#475569' }}/>
+                    <Edit2 size={10} style={{ color: m.updatePrice ? currentColor : '#475569' }}/>
                   </button>
                 </div>
 
-                {/* Fiyat güncelle bilgisi */}
-                {selItem && m.updatePrice && (
-                  <p className="text-[10px] text-slate-600 pl-1">
-                    💡 {selItem.name} için {isInbox ? 'alış' : 'satış'} fiyatı <strong className="text-slate-400">₺{m.priceVal || '—'}</strong> olarak kaydedilecek ve geçmişe işlenecek
-                    {(isInbox ? selItem.purchase_price : selItem.sale_price) && (
-                      <span className="text-slate-700"> (mevcut: ₺{fmt(isInbox ? selItem.purchase_price : selItem.sale_price)})</span>
+                {/* Fiyat güncelle bilgisi ve Stok Mevcut Fiyatı */}
+                {selItem && (
+                  <div className="flex flex-col gap-1 pl-1 mt-1">
+                    <p className="text-[10px] text-slate-400 font-medium">
+                      Stoktaki Halihazır Mevcut Fiyatı: <strong className="text-emerald-500/80">{fmt(m.stockPrice)} {m.stockCurrency}</strong>
+                    </p>
+                    {m.updatePrice && (
+                      <p className="text-[10px] text-slate-500">
+                        💡 {selItem.name} için {isInbox ? 'alış' : 'satış'} fiyatı <strong className="text-emerald-400">{m.priceVal || '—'} {m.currencyVal}</strong> olarak faturadaki değer baz alınarak güncellenecek
+                      </p>
                     )}
-                  </p>
+                  </div>
                 )}
               </div>
             );

@@ -300,7 +300,7 @@ function IsleWizard({ inv, allItems, supabase, onClose, onDone }) {
                         const tbl = isOutbox ? 'customers' : 'suppliers';
                         const payload = {
                           name: inv.cari_name || 'İsimsiz',
-                          company_name: inv.cari_name || 'İsimsiz',
+                          ...(isOutbox ? { company_name: inv.cari_name || 'İsimsiz' } : {}),
                           vkntckn: inv.vkntckn,
                         };
                         // Varsa vergi dairesini de alalım
