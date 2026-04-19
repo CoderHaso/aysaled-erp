@@ -629,7 +629,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── Filtreler ── */}
-      <div className="rounded-2xl border p-4 space-y-4" style={{ background: c.card, borderColor: c.border, backdropFilter: 'blur(10px)' }}>
+      <div className="rounded-2xl border p-4 space-y-4 relative z-10" style={{ background: c.card, borderColor: c.border, backdropFilter: 'blur(10px)' }}>
 
         {/* Ay seçici */}
         <div className="flex items-center gap-3 flex-wrap">
@@ -666,8 +666,8 @@ export default function Dashboard() {
               {personOpen && (
                 <motion.div
                   initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}
-                  className="absolute right-0 top-full mt-1 w-72 rounded-2xl border shadow-xl z-50 overflow-hidden"
-                  style={{ background: isDark ? '#1e293b' : '#ffffff', borderColor: c.border }}>
+                  className="absolute right-0 top-full mt-1 w-72 rounded-2xl border shadow-2xl overflow-hidden"
+                  style={{ background: isDark ? '#1e293b' : '#ffffff', borderColor: c.border, zIndex: 9999 }}>
                   <div className="p-2 border-b flex gap-1" style={{ borderColor: c.border }}>
                     {['all', 'customer', 'supplier'].map(t => (
                       <button key={t} onClick={() => setPersonType(t)}
