@@ -27,8 +27,9 @@ function parseParty(party) {
   for (const t of tsList) {
     const cid = val(t?.CompanyID ?? t?.['cbc:CompanyID']);
     if (cid && cid.length >= 10) vkn = cid;
-    const rn = val(t?.RegistrationName ?? t?.['cbc:RegistrationName']);
-    if (rn) taxOffice = rn;
+    // Vergi dairesi: TaxScheme.Name (gerçek yapıda buradadır), fallback RegistrationName
+    const tn = val(t?.TaxScheme?.Name ?? t?.['cac:TaxScheme']?.['cbc:Name'] ?? t?.RegistrationName ?? t?.['cbc:RegistrationName']);
+    if (tn) taxOffice = tn;
   }
 
   // PostalAddress
@@ -150,14 +151,30 @@ export default async function handler(req, res) {
       pageIndex++;
     } while (pageIndex < totalPages);
 
-    // ── 3. Deduplicate ────────────────────────────────────────────────────────
-    const seen = new Set();
-    const list = allItems.filter(inv => {
+    // ── 3. Deduplicate: aynı InvoiceId varsa Approved/Sent olanı tercih et ────
+    // Uyumsoft aynı ID ile hem Cancelled taslak hem gerçek Approved fatura dönebilir
+    const byId = new Map();
+    for (const inv of allItems) {
       const id = inv.InvoiceId || inv.DocumentId;
-      if (!id || seen.has(id)) return false;
-      seen.add(id);
-      return true;
-    });
+      if (!id) continue;
+      const existing = byId.get(id);
+      if (!existing) {
+        byId.set(id, inv);
+      } else {
+        // Cancelled/Draft olanı at, gerçek olanı tut
+        const existStatus = (existing.Status || '').toLowerCase();
+        const newStatus = (inv.Status || '').toLowerCase();
+        const cancelledStatuses = ['cancelled', 'canceled', 'draft', 'queued'];
+        if (cancelledStatuses.includes(existStatus) && !cancelledStatuses.includes(newStatus)) {
+          byId.set(id, inv); // yenisi gerçek, onu tut
+        }
+        // Aynı status'taysa daha yeni olanı tut
+        else if (existStatus === newStatus && inv.CreateDateUtc > existing.CreateDateUtc) {
+          byId.set(id, inv);
+        }
+      }
+    }
+    const list = Array.from(byId.values());
 
     if (list.length === 0) {
       return res.json({ success: true, message: 'Yeni fatura yok.', inserted: 0, detailFetched: 0 });
@@ -222,11 +239,21 @@ export default async function handler(req, res) {
         message:              inv.Message,
         raw_data:             inv,
         updated_at:           new Date().toISOString(),
-        // Yeni faturalar is_islendi=false olarak gelir
-        // Mevcut faturaların is_islendi değeri korunur (aşağıda ON CONFLICT için ayrı batch)
+        // Mevcut kayıtlar: status, document_id, amount, vb. güncellenmeli (Cancelled→Approved geçişi)
         ...(existingSet.has(invoiceId) ? {} : { is_islendi: false, islendi_at: null }),
       };
     }).filter(Boolean);
+
+    // Status değişim tespiti: upsert öncesi mevcut status'ları al
+    const existingIds = basePayload.filter(r => existingSet.has(r.invoice_id)).map(r => r.invoice_id);
+    let oldStatusMap = {};
+    if (existingIds.length > 0) {
+      const { data: oldRows } = await supabase.from('invoices')
+        .select('invoice_id, status, document_id')
+        .eq('type', type)
+        .in('invoice_id', existingIds);
+      for (const r of (oldRows || [])) oldStatusMap[r.invoice_id] = r;
+    }
 
     const newCount = basePayload.filter(r => !existingSet.has(r.invoice_id)).length;
 
@@ -242,6 +269,19 @@ export default async function handler(req, res) {
     }
     console.log(`[sync] ${basePayload.length} fatura kaydedildi.`);
 
+    // Status veya document_id değişen faturaların detayını yeniden çek
+    const resetIds = basePayload.filter(r => {
+      const old = oldStatusMap[r.invoice_id];
+      if (!old) return false;
+      return old.status !== r.status || old.document_id !== r.document_id;
+    }).map(r => r.invoice_id);
+    if (resetIds.length > 0) {
+      await supabase.from('invoices')
+        .update({ detail_fetched_at: null, raw_detail: null, line_items: null })
+        .eq('type', type)
+        .in('invoice_id', resetIds);
+      console.log(`[sync] ${resetIds.length} fatura status/document değişti, detay sıfırlandı.`);
+    }
 
     // ── 5. UBL detayı çek → adres kolonlarını doldur ─────────────────────────
     // Sadece detail_fetched_at IS NULL olanları işle (daha önce çekilmemiş)

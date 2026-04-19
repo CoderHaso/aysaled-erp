@@ -814,7 +814,7 @@ export default function Invoices({ type = 'inbox' }) {
   useEffect(() => {
     if (!dbItems.length) {
       supabase.from('items')
-        .select('id, name, unit, purchase_price, sale_price, stock_count, sku')
+        .select('id, name, unit, purchase_price, sale_price, stock_count, sku, base_currency, sale_currency')
         .order('name')
         .then(({ data }) => setDbItems(data || []));
     }
@@ -973,7 +973,7 @@ export default function Invoices({ type = 'inbox' }) {
     const [custRes, suppRes, itemRes] = await Promise.all([
       supabase.from('customers').select('id, name, vkntckn, phone, email, city, address, tax_office, district'),
       supabase.from('suppliers').select('id, name, vkntckn, phone, email, city, address, tax_office, district'),
-      supabase.from('items').select('id, name, sku, unit, item_type, purchase_price, sale_price, base_currency')
+      supabase.from('items').select('id, name, sku, unit, item_type, purchase_price, sale_price, base_currency, sale_currency')
     ]);
     const raw = t === 'inbox' ? (suppRes.data || []) : (custRes.data || []);
     const unique = Array.from(new Map(raw.map(e => [e.id, e])).values());

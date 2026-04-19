@@ -116,7 +116,49 @@ WHERE s.vkntckn = sub.vkntckn
     s.district IS NULL OR s.country IS NULL OR s.phone IS NULL OR s.email IS NULL
   );
 
--- MÜŞTERİLERİ ZENGİNLEŞTİR
+-- MÜŞTERİLERİ KONTROL ET (ne bulundu detaylı göster)
+SELECT
+  c.name AS musteri,
+  c.vkntckn,
+  c.tax_office AS mevcut_vergi_dairesi,
+  i.cari_tax_office AS faturadaki_vergi_dairesi,
+  c.address AS mevcut_adres,
+  i.cari_address AS faturadaki_adres,
+  c.city AS mevcut_il,
+  i.cari_city AS faturadaki_il,
+  c.district AS mevcut_ilce,
+  i.cari_district AS faturadaki_ilce,
+  c.country AS mevcut_ulke,
+  i.cari_country AS faturadaki_ulke,
+  c.phone AS mevcut_telefon,
+  i.cari_phone AS faturadaki_telefon,
+  c.email AS mevcut_eposta,
+  i.cari_email AS faturadaki_eposta
+FROM customers c
+JOIN LATERAL (
+  SELECT DISTINCT ON (inv2.vkntckn)
+    inv2.cari_tax_office, inv2.cari_address, inv2.cari_city, inv2.cari_district,
+    inv2.cari_country, inv2.cari_phone, inv2.cari_email
+  FROM invoices inv2
+  WHERE inv2.vkntckn = c.vkntckn
+    AND inv2.vkntckn IS NOT NULL AND inv2.vkntckn <> ''
+  ORDER BY inv2.vkntckn, inv2.issue_date DESC NULLS LAST
+  LIMIT 1
+) i ON true
+WHERE c.vkntckn IS NOT NULL AND c.vkntckn <> ''
+  AND (
+    (c.tax_office IS NULL AND i.cari_tax_office IS NOT NULL) OR
+    (c.address    IS NULL AND i.cari_address    IS NOT NULL) OR
+    (c.city       IS NULL AND i.cari_city       IS NOT NULL) OR
+    (c.district   IS NULL AND i.cari_district   IS NOT NULL) OR
+    (c.country    IS NULL AND i.cari_country    IS NOT NULL) OR
+    (c.phone      IS NULL AND i.cari_phone      IS NOT NULL) OR
+    (c.email      IS NULL AND i.cari_email      IS NOT NULL)
+  )
+ORDER BY c.name;
+
+
+-- ▸ ADIM 5: MÜŞTERİLERİ ZENGİNLEŞTİR (kontrol sonrasında çalıştır)
 UPDATE customers c
 SET
   tax_office  = COALESCE(c.tax_office,  sub.cari_tax_office),
