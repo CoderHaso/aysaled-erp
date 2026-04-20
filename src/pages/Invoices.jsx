@@ -773,14 +773,16 @@ export default function Invoices({ type = 'inbox' }) {
     enabled: createModal,   // modal açılınca hemen başlar
   });
 
-  // exchange_rate alanını hook'tan gelen değerle senkronize et
+  const rateVal = exchangeRate?.rate;
+  const curr = createForm.currency;
+
   useEffect(() => {
-    if (exchangeRate?.rate && createForm.currency !== 'TRY') {
-      setCreateForm(p => ({ ...p, exchange_rate: String(exchangeRate.rate) }));
-    } else if (createForm.currency === 'TRY') {
-      setCreateForm(p => ({ ...p, exchange_rate: '' }));
-    }
-  }, [exchangeRate, createForm.currency]);
+    setCreateForm(p => {
+      const newRate = (rateVal && p.currency !== 'TRY') ? String(rateVal) : '';
+      if (p.exchange_rate === newRate) return p; // State değişmediyse referansı koru (sonsuz döngüyü engeller)
+      return { ...p, exchange_rate: newRate };
+    });
+  }, [rateVal, curr]);
 
   const [creating, setCreating]       = useState(false);
   const [createType, setCreateType]   = useState('outbox'); // Hangi sekme açtı
