@@ -611,26 +611,64 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
 
       const orderLines = lines.filter(l => l.item_name);
       if (orderLines.length > 0) {
-        const items = orderLines.map(l => ({
-          order_id:    orderId,
-          item_id:     l.item_id     || null,
-          item_name:   l.item_name,
-          item_type:   l.item_type   || 'product',
-          quantity:    Number(l.quantity)   || 1,
-          unit:        l.unit        || 'Adet',
-          unit_price:  Number(l.unit_price) || 0,
-          tax_rate:    Number(l.tax_rate)   || 0,
-          stock_count: l.stock_count != null ? Number(l.stock_count) : null,
-          notes:       l.notes       || null,
-          // Reçete bilgisi — iş emri + kart gösterimi için
-          recipe_id:   l.recipe_id   || null,
-          recipe_key:  l.recipe_key  || null,
-          recipe_note: l.recipe_note || null,
-          // Geçici reçete — özelleştirilmiş malzeme listesi
-          custom_recipe_items: l.custom_recipe_items || null,
-          // Stoktan kullan — iş emrine gönderilmeyecek
-          skip_work_order: l.skip_work_order || false,
-        }));
+        // Helper: birim maliyet hesapla (TRY cinsinden)
+        const calcCostAtSale = (l) => {
+          const itm = allItems.find(i => i.id === l.item_id);
+          if (!itm) return { cost: 0, currency: 'TRY', details: null };
+
+          // Reçeteli ürün — hammadde maliyetlerini topla
+          const recs = allRecipes.filter(r => r.product_id === l.item_id);
+          if (recs.length > 0) {
+            const rec = l.recipe_id
+              ? recs.find(r => r.id === l.recipe_id) || recs[0]
+              : recs.find(r => r.is_default) || recs[0];
+            const components = l.custom_recipe_items || (rec.recipe_items || []);
+            const details = components.map(ri => {
+              const raw = allItems.find(i => i.id === ri.item_id);
+              const rawPrice = raw?.purchase_price || 0;
+              const rawCur = raw?.base_currency || 'TRY';
+              const rawRate = rawCur === 'TRY' ? 1 : (fxRates[rawCur] || 1);
+              const costTRY = rawPrice * rawRate * (ri.quantity || 1);
+              return { item_id: ri.item_id, item_name: ri.item_name || raw?.name, qty: ri.quantity, unit_cost: rawPrice, currency: rawCur, rate: rawRate, cost_try: costTRY };
+            });
+            const totalCost = details.reduce((s, d) => s + d.cost_try, 0);
+            return { cost: totalCost, currency: 'TRY', details };
+          }
+
+          // Hammadde — direkt alış fiyatı
+          const rawCur = itm.base_currency || 'TRY';
+          const rawRate = rawCur === 'TRY' ? 1 : (fxRates[rawCur] || 1);
+          const costTRY = (itm.purchase_price || 0) * rawRate;
+          return { cost: costTRY, currency: rawCur, details: null };
+        };
+
+        const items = orderLines.map(l => {
+          const costInfo = calcCostAtSale(l);
+          return {
+            order_id:    orderId,
+            item_id:     l.item_id     || null,
+            item_name:   l.item_name,
+            item_type:   l.item_type   || 'product',
+            quantity:    Number(l.quantity)   || 1,
+            unit:        l.unit        || 'Adet',
+            unit_price:  Number(l.unit_price) || 0,
+            tax_rate:    Number(l.tax_rate)   || 0,
+            stock_count: l.stock_count != null ? Number(l.stock_count) : null,
+            notes:       l.notes       || null,
+            // Reçete bilgisi — iş emri + kart gösterimi için
+            recipe_id:   l.recipe_id   || null,
+            recipe_key:  l.recipe_key  || null,
+            recipe_note: l.recipe_note || null,
+            // Geçici reçete — özelleştirilmiş malzeme listesi
+            custom_recipe_items: l.custom_recipe_items || null,
+            // Stoktan kullan — iş emrine gönderilmeyecek
+            skip_work_order: l.skip_work_order || false,
+            // Satış anı maliyet kaydı
+            cost_at_sale:  Math.round(costInfo.cost * 100) / 100,
+            cost_currency: costInfo.currency,
+            cost_details:  costInfo.details,
+          };
+        });
         const { error: itemsErr } = await supabase.from('order_items').insert(items);
         if (itemsErr) console.warn('[order_items insert]', itemsErr.message);
       }

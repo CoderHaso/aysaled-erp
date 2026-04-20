@@ -12,6 +12,9 @@ import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import { useNavigate } from 'react-router-dom';
 import { printDocument } from '../lib/printService';
+import { useFxRates } from '../hooks/useFxRates';
+
+const CUR_SYM = { TRY: '₺', USD: '$', EUR: '€', GBP: '£' };
 
 /* ─── Helpers ─────────────────────────────────────────────────────────────── */
 const fmt = (n) => n != null ? Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0,00';
@@ -137,6 +140,7 @@ export default function Dashboard() {
   const { effectiveMode, currentColor } = useTheme();
   const isDark = effectiveMode === 'dark';
   const navigate = useNavigate();
+  const { convert } = useFxRates();
 
   // State
   const [month, setMonth] = useState(currentMonth);
@@ -182,7 +186,7 @@ export default function Dashboard() {
           .gte('created_at', startDate).lte('created_at', endDate)
           .not('status', 'eq', 'cancelled'),
         supabase.from('order_items')
-          .select('id, order_id, item_id, item_name, item_type, quantity, unit, unit_price, tax_rate, notes'),
+          .select('id, order_id, item_id, item_name, item_type, quantity, unit, unit_price, tax_rate, notes, cost_at_sale, cost_currency, cost_details'),
         supabase.from('invoices')
           .select('id, invoice_id, cari_name, vkntckn, amount, tax_exclusive_amount, tax_total, currency, exchange_rate, status, issue_date, is_iade')
           .eq('type', 'inbox')
@@ -258,7 +262,7 @@ export default function Dashboard() {
   // Helper: is item a recipe product
   const isRecipeProduct = (itemId) => !!recipeMap[itemId];
 
-  // Helper: cost of a recipe product (sum of raw materials * their purchase_price)
+  // Helper: cost of a recipe product (sum of raw materials * purchase_price, converted to TRY)
   const recipeCost = (itemId) => {
     const recs = recipeMap[itemId];
     if (!recs || recs.length === 0) return 0;
@@ -266,7 +270,9 @@ export default function Dashboard() {
     const rItems = recipeItems.filter(ri => ri.recipe_id === defaultRec.id);
     return rItems.reduce((sum, ri) => {
       const raw = itemMap[ri.item_id];
-      return sum + (ri.quantity || 0) * (raw?.purchase_price || 0);
+      const rawCost = (ri.quantity || 0) * (raw?.purchase_price || 0);
+      const rawCur = raw?.base_currency || 'TRY';
+      return sum + convert(rawCost, rawCur, 'TRY');
     }, 0);
   };
 
@@ -373,12 +379,24 @@ export default function Dashboard() {
         name: oi.item_name, qty: 0, revenue: 0,
         purchasePrice: itm?.purchase_price || 0,
         currency: itm?.base_currency || 'TRY',
+        recordedCost: 0, hasRecordedCost: false,
       };
       grouped[key].qty += Number(oi.quantity || 0);
       grouped[key].revenue += Number(oi.quantity || 0) * Number(oi.unit_price || 0);
+      // Use cost_at_sale if recorded
+      if (oi.cost_at_sale > 0) {
+        grouped[key].recordedCost += oi.cost_at_sale * Number(oi.quantity || 0);
+        grouped[key].hasRecordedCost = true;
+      }
     });
     Object.values(grouped).forEach(g => {
-      g.cost = g.purchasePrice * g.qty;
+      // Prefer cost_at_sale if available (recorded at time of sale)
+      if (g.hasRecordedCost) {
+        g.cost = g.recordedCost;
+      } else {
+        // Fallback: convert current purchase price to TRY
+        g.cost = convert(g.purchasePrice * g.qty, g.currency, 'TRY');
+      }
       g.profit = g.revenue - g.cost;
     });
     const sorted = Object.values(grouped).sort((a, b) => b.revenue - a.revenue);
@@ -387,7 +405,7 @@ export default function Dashboard() {
         columns={[
           { label: 'Hammadde', key: 'name', bold: true },
           { label: 'Miktar', key: 'qty', align: 'right', render: r => fmtInt(r.qty) },
-          { label: 'Alış Fiyatı', key: 'purchasePrice', align: 'right', render: r => `${fmt(r.purchasePrice)} ${r.currency}` },
+          { label: 'Birim Alış', key: 'purchasePrice', align: 'right', render: r => `${CUR_SYM[r.currency] || '₺'}${fmt(r.purchasePrice)}` },
           { label: 'Maliyet', key: 'cost', align: 'right', total: true, render: r => `₺${fmt(r.cost)}` },
           { label: 'Satış', key: 'revenue', align: 'right', total: true, render: r => `₺${fmt(r.revenue)}` },
           { label: 'Kâr', key: 'profit', align: 'right', total: true,
@@ -517,11 +535,16 @@ export default function Dashboard() {
       const ois = orderItems.filter(oi => ids.has(oi.order_id));
       let cost = 0;
       ois.forEach(oi => {
-        if (isRecipeProduct(oi.item_id)) {
-          cost += recipeCost(oi.item_id) * Number(oi.quantity || 0);
+        const qty = Number(oi.quantity || 0);
+        // Prefer cost_at_sale if recorded at time of sale
+        if (oi.cost_at_sale > 0) {
+          cost += oi.cost_at_sale * qty;
+        } else if (isRecipeProduct(oi.item_id)) {
+          cost += recipeCost(oi.item_id) * qty;
         } else {
           const itm = itemMap[oi.item_id];
-          cost += (itm?.purchase_price || 0) * Number(oi.quantity || 0);
+          const rawCur = itm?.base_currency || 'TRY';
+          cost += convert((itm?.purchase_price || 0) * qty, rawCur, 'TRY');
         }
       });
       return cost;

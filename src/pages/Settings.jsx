@@ -844,12 +844,34 @@ function FxRatesManager({ c, currentColor, isDark }) {
     setTestResult(null);
     try {
       const results = {};
+      const newRates = {};
       for (const cur of ['USD', 'EUR', 'GBP']) {
         const res = await fetch(`/api/exchange-rate?currency=${cur}`);
         const data = await res.json();
-        results[cur] = data.success ? { rate: data.rate, source: data.source } : { error: data.error };
+        if (data.success && data.rate) {
+          results[cur] = { rate: data.rate, source: data.source };
+          newRates[cur] = data.rate;
+        } else {
+          results[cur] = { error: data.error || 'Kur çekilemedi' };
+        }
       }
       setTestResult(results);
+      // Başarılı çekilen kurları otomatik güncelle
+      if (Object.keys(newRates).length > 0) {
+        const updated = {
+          USD: newRates.USD || parseFloat(rates.USD) || 0,
+          EUR: newRates.EUR || parseFloat(rates.EUR) || 0,
+          GBP: newRates.GBP || parseFloat(rates.GBP) || 0,
+        };
+        setRates({ USD: String(updated.USD), EUR: String(updated.EUR), GBP: String(updated.GBP) });
+        const now = new Date().toISOString();
+        setLastUpdate(now);
+        await supabase.from('app_settings').upsert({
+          id: FALLBACK_SETTINGS_KEY,
+          value: { ...updated, _updated: now },
+          updated_at: now,
+        });
+      }
     } catch (e) {
       setTestResult({ error: e.message });
     }
@@ -911,14 +933,14 @@ function FxRatesManager({ c, currentColor, isDark }) {
             ))}
           </div>
 
-          {/* Canlı Test */}
+          {/* Canlı Kur Güncelleme */}
           <div className="rounded-xl p-4" style={{ background: isDark ? 'rgba(59,130,246,0.05)' : 'rgba(59,130,246,0.03)', border: `1px solid ${isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.1)'}` }}>
             <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-bold" style={{ color: '#3b82f6' }}>🔍 API Bağlantı Testi</p>
+              <p className="text-xs font-bold" style={{ color: '#3b82f6' }}>🔄 Canlı Kur Güncelleme</p>
               <button onClick={handleTest} disabled={testing}
                 className="px-3 py-1 rounded-lg text-[10px] font-bold text-white"
-                style={{ background: testing ? '#64748b' : '#3b82f6' }}>
-                {testing ? 'Test ediliyor...' : 'Şimdi Test Et'}
+                style={{ background: testing ? '#64748b' : '#10b981' }}>
+                {testing ? 'Güncelleniyor...' : 'Kurları Güncelle'}
               </button>
             </div>
             {testResult && (
