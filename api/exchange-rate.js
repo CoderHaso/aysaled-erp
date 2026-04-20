@@ -88,7 +88,7 @@ export default async function handler(req, res) {
           }
         }
       } catch (_) {}
-      throw new Error('TCMB ve yedek döviz kaynağına 7 gün içinde ulaşılamadı');
+      throw new Error(`TCMB ve yedek kaynağa ulaşılamadı. Lütfen Ayarlar > Döviz Kurları bölümünden varsayılan kurları kontrol edin.`);
     }
 
     // XML'den kur çekme (basit regex)

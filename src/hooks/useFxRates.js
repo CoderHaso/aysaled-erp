@@ -2,19 +2,16 @@
  * useFxRates — Tüm kurları (USD, EUR, GBP) bir kerede çeken,
  * 5 dakika boyunca önbellekte tutan paylaşımlı hook.
  *
- * Kullanım:
- *   const { fxRates, exchangeRate, loadingRates } = useFxRates({ currency, date });
- *
- * fxRates         → { USD: 38.5, EUR: 42.1, GBP: 49.0 }  (her zaman dolu gelir)
- * exchangeRate    → seçili para birimi için { rate, source }  (TRY ise null)
- * loadingRates    → boolean
- * refreshRates()  → manuel yenileme (önbelleği bypass eder)
+ * Fallback: API hata verirse app_settings'deki varsayılan kurlar kullanılır.
+ * Her başarılı çekimde app_settings güncellenir.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { supabase } from '../lib/supabaseClient';
 
 const CURRENCIES = ['USD', 'EUR', 'GBP'];
 const CACHE_TTL  = 5 * 60 * 1000; // 5 dakika
+const FALLBACK_SETTINGS_KEY = 'default_fx_rates';
 
 // Modül düzeyinde önbellek — sayfa yenilenmeden paylaşılır
 const cache = {
@@ -22,11 +19,36 @@ const cache = {
   ts:   {},       // { 'YYYY-MM-DD': timestamp }
 };
 
+// Fallback kurları Supabase'den çek
+async function loadFallbackRates() {
+  try {
+    const { data } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('id', FALLBACK_SETTINGS_KEY)
+      .maybeSingle();
+    return data?.value || { USD: 38.50, EUR: 42.00, GBP: 49.00 };
+  } catch {
+    return { USD: 38.50, EUR: 42.00, GBP: 49.00 };
+  }
+}
+
+// Başarılı kur çekiminde fallback'i güncelle
+async function saveFallbackRates(rates) {
+  try {
+    await supabase.from('app_settings').upsert({
+      id: FALLBACK_SETTINGS_KEY,
+      value: { ...rates, _updated: new Date().toISOString() },
+      updated_at: new Date().toISOString(),
+    });
+  } catch { /* sessizce geç */ }
+}
+
 async function fetchRatesForDate(dateStr) {
   const now = Date.now();
   // Önbellekte taze veri var mı?
   if (cache.data[dateStr] && (now - (cache.ts[dateStr] || 0)) < CACHE_TTL) {
-    return cache.data[dateStr];
+    return { rates: cache.data[dateStr], fromFallback: false };
   }
 
   const results = await Promise.allSettled(
@@ -36,6 +58,7 @@ async function fetchRatesForDate(dateStr) {
       const res = await fetch(`/api/exchange-rate?${qs.toString()}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'API error');
       return { curr, rate: data?.rate || null };
     })
   );
@@ -50,21 +73,26 @@ async function fetchRatesForDate(dateStr) {
   if (Object.keys(map).length > 0) {
     cache.data[dateStr] = map;
     cache.ts[dateStr]   = now;
+    // Başarılı çekimde fallback'i güncelle
+    saveFallbackRates(map);
+    return { rates: map, fromFallback: false };
   }
 
-  return map;
+  // API'den hiç veri gelmedi → fallback kullan
+  const fallback = await loadFallbackRates();
+  console.warn('[useFxRates] API başarısız, fallback kurlar kullanılıyor:', fallback);
+  cache.data[dateStr] = fallback;
+  cache.ts[dateStr]   = now;
+  return { rates: fallback, fromFallback: true };
 }
 
 /**
  * @param {{ currency?: string, date?: string, enabled?: boolean }} options
- *   - currency : seçili para birimi ('TRY', 'USD', 'EUR', 'GBP')
- *   - date     : YYYY-MM-DD tarih (opsiyonel, bugün kullanılır)
- *   - enabled  : false gönderilirse hiç fetch yapmaz (default: true)
  */
 export function useFxRates({ currency = 'TRY', date = '', enabled = true } = {}) {
   const [fxRates, setFxRates]         = useState({});
   const [loadingRates, setLoading]    = useState(false);
-  const didFetchRef = useRef(false);
+  const [usingFallback, setUsingFallback] = useState(false);
 
   const today = new Date().toISOString().slice(0, 10);
   const dateKey = date || today;
@@ -72,28 +100,31 @@ export function useFxRates({ currency = 'TRY', date = '', enabled = true } = {})
   const loadRates = useCallback(async (forceDate) => {
     setLoading(true);
     try {
-      const map = await fetchRatesForDate(forceDate || dateKey);
-      setFxRates(map);
+      const { rates, fromFallback } = await fetchRatesForDate(forceDate || dateKey);
+      setFxRates(rates);
+      setUsingFallback(fromFallback);
     } catch (e) {
       console.warn('[useFxRates] Kur çekme hatası:', e.message);
+      // Son çare: hardcoded fallback
+      const fallback = await loadFallbackRates();
+      setFxRates(fallback);
+      setUsingFallback(true);
     } finally {
       setLoading(false);
     }
   }, [dateKey]);
 
-  // Modal açılır açılmaz (enabled=true olduğu anda) ilk fetch
   useEffect(() => {
     if (!enabled) return;
     loadRates(dateKey);
-  }, [enabled, dateKey]);  // dateKey değişirse (tarih seçilince) yeniler
+  }, [enabled, dateKey]);
 
   // Seçili currency için exchangeRate türet
   const exchangeRate = fxRates[currency]
-    ? { rate: fxRates[currency], source: 'tcmb' }
+    ? { rate: fxRates[currency], source: usingFallback ? 'fallback' : 'tcmb' }
     : null;
 
   const refreshRates = useCallback(() => {
-    // Önbelleği geçersiz kıl ve yenile
     cache.ts[dateKey] = 0;
     loadRates(dateKey);
   }, [dateKey, loadRates]);
@@ -115,5 +146,8 @@ export function useFxRates({ currency = 'TRY', date = '', enabled = true } = {})
     return valInTry / toRate;
   }, [fxRates]);
 
-  return { fxRates, exchangeRate, loadingRates, refreshRates, convert };
+  return { fxRates, exchangeRate, loadingRates, refreshRates, convert, usingFallback };
 }
+
+// Export for external use (Settings page)
+export { loadFallbackRates, saveFallbackRates, FALLBACK_SETTINGS_KEY };

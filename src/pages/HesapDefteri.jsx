@@ -19,6 +19,7 @@ const supabase = createClient(
 const fmtN = (n) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtD = (d) => d ? new Date(d).toLocaleDateString('tr-TR') : '—';
 const today = () => new Date().toISOString().slice(0, 10);
+const CUR_SYM = { TRY: '₺', USD: '$', EUR: '€', GBP: '£' };
 
 // ── Tab tanımları ──────────────────────────────────────────────────────────────
 const TABS = [
@@ -314,6 +315,7 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
                       <col style={{ width: '88px' }}/>  {/* Alacak */}
                       <col style={{ width: '88px' }}/>  {/* Verecek */}
                       <col style={{ width: '92px' }}/>  {/* Bakiye */}
+                      <col style={{ width: '48px' }}/>  {/* Döviz */}
                       <col style={{ width: '28px' }}/>  {/* Sil */}
                     </colgroup>
                     <thead>
@@ -327,6 +329,7 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
                           {contactType === 'customer' ? 'Alınan' : 'Verilen'}
                         </th>
                         <th className="text-right pb-2 pt-1 px-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: '#64748b' }}>Bakiye</th>
+                        <th className="text-center pb-2 pt-1 px-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: '#64748b' }}>Döviz</th>
                         <th/>
                       </tr>
                     </thead>
@@ -351,12 +354,12 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
                             </td>
                             <td className="py-2 px-1 font-mono text-right whitespace-nowrap">
                               {h.borc > 0
-                                ? <span className="text-[12px]" style={{ color: '#10b981' }}>{fmtN(h.borc)}</span>
+                                ? <span className="text-[12px]" style={{ color: '#10b981' }}>{CUR_SYM[h.currency] || '₺'}{fmtN(h.borc)}</span>
                                 : <span className="text-[11px]" style={{ color: '#94a3b8' }}>—</span>}
                             </td>
                             <td className="py-2 px-1 font-mono text-right whitespace-nowrap">
                               {h.alacak > 0
-                                ? <span className="text-[12px]" style={{ color: '#ef4444' }}>{fmtN(h.alacak)}</span>
+                                ? <span className="text-[12px]" style={{ color: '#ef4444' }}>{CUR_SYM[h.currency] || '₺'}{fmtN(h.alacak)}</span>
                                 : <span className="text-[11px]" style={{ color: '#94a3b8' }}>—</span>}
                             </td>
                             <td className="py-2 px-1 font-mono text-right whitespace-nowrap">
@@ -364,6 +367,9 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
                                 {fmtN(Math.abs(h.snapshot))}
                               </span>
                               <span className="block text-[9px] font-semibold" style={{ color: balColor }}>{balLabel}</span>
+                            </td>
+                            <td className="py-2 px-1 text-center whitespace-nowrap">
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: h.currency && h.currency !== 'TRY' ? 'rgba(59,130,246,0.1)' : 'rgba(148,163,184,0.08)', color: h.currency && h.currency !== 'TRY' ? '#3b82f6' : '#94a3b8' }}>{h.currency || 'TRY'}</span>
                             </td>
                             <td className="py-2 px-1">
                               <button onClick={() => handleDelete(h.id)} disabled={deleting === h.id}
@@ -397,6 +403,7 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
                           </span>
                         </td>
                         <td/>
+                        <td/>
                       </tr>
                     </tfoot>
                   </table>
@@ -413,7 +420,7 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
                 <button onClick={() => {
                   const totalDebit = rows.reduce((s, h) => s + (h.borc || 0), 0);
                   const totalCredit = rows.reduce((s, h) => s + (h.alacak || 0), 0);
-                  const fmtN = (n) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                  const fmtPr = (n) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                   const fmtDt = (d) => d ? new Date(d).toLocaleDateString('tr-TR') : '-';
                   const isCust = contactType === 'customer';
                   printDocument('ledger', {
@@ -421,13 +428,17 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
                     vkntckn: contact.vkntckn || '',
                     col_debit: isCust ? 'Alacak' : 'Verecek',
                     col_credit: isCust ? 'Alınan' : 'Verilen',
-                    movements: rows.map(h => ({
-                      date: fmtDt(h.tarih),
-                      description: [h.baslik, h.aciklama].filter(Boolean).join(' - '),
-                      debit_fmt: h.borc > 0 ? fmtN(h.borc) : '-',
-                      credit_fmt: h.alacak > 0 ? fmtN(h.alacak) : '-',
-                      balance_fmt: fmtN(Math.abs(h.snapshot)) + (h.snapshot > 0 ? ' (A)' : h.snapshot < 0 ? ' (V)' : ''),
-                    })),
+                    movements: rows.map(h => {
+                      const cs = CUR_SYM[h.currency] || '₺';
+                      return {
+                        date: fmtDt(h.tarih),
+                        description: [h.baslik, h.aciklama].filter(Boolean).join(' - '),
+                        debit_fmt: h.borc > 0 ? `${cs}${fmtPr(h.borc)}` : '-',
+                        credit_fmt: h.alacak > 0 ? `${cs}${fmtPr(h.alacak)}` : '-',
+                        balance_fmt: `${fmtPr(Math.abs(h.snapshot))}`,
+                        currency: h.currency || 'TRY',
+                      };
+                    }),
                     total_debit: totalDebit,
                     total_credit: totalCredit,
                     net_balance: totalBalance,

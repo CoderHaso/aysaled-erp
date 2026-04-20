@@ -1435,20 +1435,29 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
                     <div className="px-3 pb-2.5 pt-1" style={{ borderTop: '1px solid rgba(139,92,246,0.06)' }}>
                       <button onClick={(e) => {
                         e.stopPropagation();
+                        const baseCur = item.base_currency || 'TRY';
+                        const baseSym = CURRENCY_SYM[baseCur] || '₺';
+                        const convertedIngredients = (r.recipe_items || []).map(ri => {
+                          const rawCost = Number(ri.item?.purchase_price || 0);
+                          const riCur = ri.item?.base_currency || 'TRY';
+                          const convertedUnitCost = convert(rawCost, riCur, baseCur);
+                          return {
+                            item_name: ri.item_name,
+                            quantity: ri.quantity,
+                            unit: ri.unit || 'Adet',
+                            unit_cost: convertedUnitCost,
+                            total_cost: convertedUnitCost * Number(ri.quantity || 1),
+                            currency_sym: baseSym,
+                          };
+                        });
+                        const totalCost = convertedIngredients.reduce((s, ci) => s + ci.total_cost, 0);
                         printDocument('recipe', {
                           product_name: item.name,
                           recipe_name: r.name,
                           tags: (r.tags || []).join(', '),
-                          currency_sym: CURRENCY_SYM[item.base_currency] || '₺',
-                          ingredients: (r.recipe_items || []).map(ri => ({
-                            item_name: ri.item_name,
-                            quantity: ri.quantity,
-                            unit: ri.unit || 'Adet',
-                            unit_cost: Number(ri.item?.purchase_price || 0),
-                            total_cost: Number(ri.item?.purchase_price || 0) * Number(ri.quantity || 1),
-                            currency_sym: CURRENCY_SYM[ri.item?.base_currency || 'TRY'] || '₺',
-                          })),
-                          total_cost: (r.recipe_items || []).reduce((s, ri) => s + Number(ri.item?.purchase_price || 0) * Number(ri.quantity || 1), 0),
+                          currency_sym: baseSym,
+                          ingredients: convertedIngredients,
+                          total_cost: totalCost,
                         }, `Reçete - ${item.name} (${r.name})`);
                       }}
                         className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[10px] font-bold transition-all"

@@ -8,6 +8,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabaseClient';
 import { TEMPLATE_TYPES, printDocument } from '../lib/printService';
+import { FALLBACK_SETTINGS_KEY } from '../hooks/useFxRates';
 
 const FIELD_TYPES = [
   { value: 'text',   label: 'Metin' },
@@ -72,6 +73,7 @@ export default function Settings() {
     { id: 'cat_raw',     label: '🔩 Ham. Kategoriler' },
     { id: 'cat_product', label: '⚡ Ürün Kategoriler' },
     { id: 'templates',   label: '🖨️ Şablonlar' },
+    { id: 'fx_rates',    label: '💱 Döviz Kurları' },
     ...((profile?.role === ROLES.DEV || profile?.role === ROLES.ADMIN) ? [{ id: 'users', label: '👥 Kullanıcılar' }] : [])
   ];
 
@@ -162,6 +164,11 @@ export default function Settings() {
       {/* ŞABLON YÖNETİMİ */}
       {activeTab === 'templates' && (
         <TemplateManager c={c} currentColor={currentColor} isDark={isDark} />
+      )}
+
+      {/* DÖVİZ KURLARI */}
+      {activeTab === 'fx_rates' && (
+        <FxRatesManager c={c} currentColor={currentColor} isDark={isDark} />
       )}
 
       {/* KULLANICI YÖNETİMİ */}
@@ -790,3 +797,168 @@ function TemplateManager({ c, currentColor, isDark }) {
   );
 }
 
+// ═══════════════ DÖVİZ KURLARI YÖNETİCİSİ ═══════════════
+function FxRatesManager({ c, currentColor, isDark }) {
+  const [rates, setRates] = useState({ USD: '', EUR: '', GBP: '' });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState('');
+  const [testResult, setTestResult] = useState(null);
+  const [testing, setTesting] = useState(false);
+
+  useEffect(() => {
+    supabase.from('app_settings').select('value').eq('id', FALLBACK_SETTINGS_KEY).maybeSingle()
+      .then(({ data }) => {
+        if (data?.value) {
+          setRates({
+            USD: data.value.USD || '',
+            EUR: data.value.EUR || '',
+            GBP: data.value.GBP || '',
+          });
+          setLastUpdate(data.value._updated || '');
+        }
+        setLoading(false);
+      });
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    await supabase.from('app_settings').upsert({
+      id: FALLBACK_SETTINGS_KEY,
+      value: {
+        USD: parseFloat(rates.USD) || 0,
+        EUR: parseFloat(rates.EUR) || 0,
+        GBP: parseFloat(rates.GBP) || 0,
+        _updated: new Date().toISOString(),
+      },
+      updated_at: new Date().toISOString(),
+    });
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const results = {};
+      for (const cur of ['USD', 'EUR', 'GBP']) {
+        const res = await fetch(`/api/exchange-rate?currency=${cur}`);
+        const data = await res.json();
+        results[cur] = data.success ? { rate: data.rate, source: data.source } : { error: data.error };
+      }
+      setTestResult(results);
+    } catch (e) {
+      setTestResult({ error: e.message });
+    }
+    setTesting(false);
+  };
+
+  const CUR_INFO = [
+    { key: 'USD', label: 'ABD Doları', sym: '$', flag: '🇺🇸' },
+    { key: 'EUR', label: 'Euro', sym: '€', flag: '🇪🇺' },
+    { key: 'GBP', label: 'İngiliz Sterlini', sym: '£', flag: '🇬🇧' },
+  ];
+
+  return (
+    <div className="rounded-3xl p-6 sm:p-8 space-y-5" style={{ background: c.card, border: `1px solid ${c.border}` }}>
+      <div>
+        <h2 className="text-lg font-bold" style={{ color: c.text }}>Döviz Kurları</h2>
+        <p className="text-sm mt-0.5" style={{ color: c.muted }}>
+          TCMB ve yedek API'ya ulaşılamadığında bu kurlar otomatik kullanılır. Her başarılı kur çekiminde bu değerler otomatik güncellenir.
+        </p>
+        {lastUpdate && (
+          <p className="text-[10px] mt-1" style={{ color: c.muted }}>
+            Son güncelleme: {new Date(lastUpdate).toLocaleString('tr-TR')}
+          </p>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="text-center py-8"><Loader2 size={20} className="animate-spin mx-auto" style={{ color: currentColor }} /></div>
+      ) : (
+        <>
+          <div className="space-y-3">
+            {CUR_INFO.map(cur => (
+              <div key={cur.key}
+                className="flex items-center justify-between px-4 py-3.5 rounded-xl"
+                style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', border: `1px solid ${c.border}` }}>
+                <div className="flex items-center gap-3">
+                  <span className="text-xl">{cur.flag}</span>
+                  <div>
+                    <p className="text-sm font-bold" style={{ color: c.text }}>{cur.key}</p>
+                    <p className="text-[10px]" style={{ color: c.muted }}>{cur.label}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold" style={{ color: c.muted }}>1 {cur.key} =</span>
+                  <input
+                    type="number" step="0.01" min="0"
+                    value={rates[cur.key]}
+                    onChange={e => setRates(p => ({ ...p, [cur.key]: e.target.value }))}
+                    className="w-28 px-3 py-1.5 rounded-lg text-sm font-bold text-right outline-none"
+                    style={{
+                      background: isDark ? 'rgba(255,255,255,0.06)' : '#ffffff',
+                      border: `1px solid ${c.border}`, color: c.text,
+                    }}
+                    placeholder="0.00"
+                  />
+                  <span className="text-xs font-bold" style={{ color: c.muted }}>₺</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Canlı Test */}
+          <div className="rounded-xl p-4" style={{ background: isDark ? 'rgba(59,130,246,0.05)' : 'rgba(59,130,246,0.03)', border: `1px solid ${isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.1)'}` }}>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-bold" style={{ color: '#3b82f6' }}>🔍 API Bağlantı Testi</p>
+              <button onClick={handleTest} disabled={testing}
+                className="px-3 py-1 rounded-lg text-[10px] font-bold text-white"
+                style={{ background: testing ? '#64748b' : '#3b82f6' }}>
+                {testing ? 'Test ediliyor...' : 'Şimdi Test Et'}
+              </button>
+            </div>
+            {testResult && (
+              <div className="space-y-1.5 mt-2">
+                {testResult.error ? (
+                  <p className="text-xs text-red-400">❌ {testResult.error}</p>
+                ) : (
+                  ['USD', 'EUR', 'GBP'].map(k => (
+                    <div key={k} className="flex items-center justify-between text-[11px]">
+                      <span style={{ color: c.text }}>{k}</span>
+                      {testResult[k]?.error ? (
+                        <span className="text-red-400">❌ {testResult[k].error}</span>
+                      ) : (
+                        <span style={{ color: '#10b981' }}>
+                          ✅ {testResult[k]?.rate?.toFixed(4)} ₺ ({testResult[k]?.source})
+                        </span>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button onClick={handleSave} disabled={saving}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all"
+              style={{ background: saving ? '#64748b' : currentColor }}>
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              {saving ? 'Kaydediliyor...' : 'Kurları Kaydet'}
+            </button>
+            {saved && (
+              <motion.span initial={{ opacity: 0, x: -5 }} animate={{ opacity: 1, x: 0 }}
+                className="text-xs font-bold text-emerald-500 flex items-center gap-1">
+                <CheckCircle2 size={14} /> Kaydedildi!
+              </motion.span>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
