@@ -7,7 +7,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabaseClient';
-import { TEMPLATE_TYPES, DEFAULT_TEMPLATES, loadTemplates, saveTemplates, printDocument } from '../lib/printService';
+import { TEMPLATE_TYPES, printDocument } from '../lib/printService';
 
 const FIELD_TYPES = [
   { value: 'text',   label: 'Metin' },
@@ -525,85 +525,170 @@ function CategoryRow({ cat, onEdit, onDelete, c, currentColor, isDark }) {
   );
 }
 
-// ═══════════════ ŞABLON YÖNETİCİSİ ═══════════════
+// ═══════════════ ŞABLON YÖNETİCİSİ (Görsel Editör) ═══════════════
+
+const TEMPLATE_SETTINGS_SCHEMA = {
+  order: {
+    fields: [
+      { key: 'doc_title', label: 'Belge Başlığı', type: 'text', default: 'SİPARİŞ FİŞİ' },
+      { key: 'show_vkn', label: 'VKN Göster', type: 'toggle', default: true },
+      { key: 'show_tax_col', label: 'KDV Sütunu', type: 'toggle', default: true },
+      { key: 'show_subtotal', label: 'Ara Toplam / KDV Satırı', type: 'toggle', default: true },
+      { key: 'show_stamp', label: 'İmza Alanları', type: 'toggle', default: true },
+      { key: 'stamp_left', label: 'Sol İmza Etiketi', type: 'text', default: 'Düzenleyen' },
+      { key: 'stamp_right', label: 'Sağ İmza Etiketi', type: 'text', default: 'Teslim Alan' },
+      { key: 'footer_text', label: 'Alt Bilgi Metni', type: 'text', default: 'Bu belge {{_company}} A-ERP sistemi tarafından oluşturulmuştur.' },
+    ],
+  },
+  quote: {
+    fields: [
+      { key: 'doc_title', label: 'Belge Başlığı', type: 'text', default: 'TEKLİF FORMU' },
+      { key: 'show_project', label: 'Proje Adı Göster', type: 'toggle', default: true },
+      { key: 'show_validity', label: 'Geçerlilik Tarihi', type: 'toggle', default: true },
+      { key: 'show_stamp', label: 'İmza Alanları', type: 'toggle', default: true },
+      { key: 'stamp_left', label: 'Sol İmza Etiketi', type: 'text', default: 'Teklif Veren' },
+      { key: 'stamp_right', label: 'Sağ İmza Etiketi', type: 'text', default: 'Müşteri Onayı' },
+      { key: 'footer_text', label: 'Alt Bilgi Metni', type: 'text', default: 'Bu teklif {{_company}} tarafından hazırlanmıştır.' },
+    ],
+  },
+  recipe: {
+    fields: [
+      { key: 'doc_title', label: 'Belge Başlığı', type: 'text', default: 'REÇETE KARTI' },
+      { key: 'show_cost', label: 'Maliyet Sütunları', type: 'toggle', default: true },
+      { key: 'show_tags', label: 'Etiketleri Göster', type: 'toggle', default: true },
+      { key: 'footer_text', label: 'Alt Bilgi Metni', type: 'text', default: '{{_company}} Reçete Yönetim Sistemi' },
+    ],
+  },
+  cheque: {
+    fields: [
+      { key: 'doc_title', label: 'Belge Başlığı', type: 'text', default: 'ÇEK BİLGİSİ' },
+      { key: 'show_stamp', label: 'İmza Alanları', type: 'toggle', default: false },
+      { key: 'footer_text', label: 'Alt Bilgi Metni', type: 'text', default: '{{_company}} Çek Yönetim Sistemi' },
+    ],
+  },
+  work_order: {
+    fields: [
+      { key: 'doc_title', label: 'Belge Başlığı', type: 'text', default: 'İŞ EMRİ' },
+      { key: 'show_customer', label: 'Müşteri Bilgisi', type: 'toggle', default: true },
+      { key: 'show_stamp', label: 'İmza Alanları', type: 'toggle', default: true },
+      { key: 'stamp_left', label: 'Sol İmza Etiketi', type: 'text', default: 'Onaylayan' },
+      { key: 'stamp_right', label: 'Sağ İmza Etiketi', type: 'text', default: 'Teslim Alan' },
+      { key: 'show_note', label: 'Üretim Notu', type: 'toggle', default: true },
+      { key: 'footer_text', label: 'Alt Bilgi Metni', type: 'text', default: '{{_company}}' },
+    ],
+  },
+  ledger: {
+    fields: [
+      { key: 'doc_title', label: 'Belge Başlığı', type: 'text', default: 'HESAP EKSTRESİ' },
+      { key: 'show_vkn', label: 'VKN Göster', type: 'toggle', default: true },
+      { key: 'footer_text', label: 'Alt Bilgi Metni', type: 'text', default: '{{_company}} Hesap Defteri' },
+    ],
+  },
+  cash_receipt: {
+    fields: [
+      { key: 'show_stamp', label: 'İmza Alanları', type: 'toggle', default: true },
+      { key: 'stamp_left', label: 'Sol İmza Etiketi', type: 'text', default: 'Düzenleyen' },
+      { key: 'stamp_right', label: 'Sağ İmza Etiketi', type: 'text', default: 'Teslim Alan/Eden' },
+      { key: 'footer_text', label: 'Alt Bilgi Metni', type: 'text', default: '{{_company}} Kasa Sistemi' },
+    ],
+  },
+  report: {
+    fields: [
+      { key: 'doc_title', label: 'Belge Başlığı', type: 'text', default: 'AYLIK RAPOR' },
+      { key: 'show_top_products', label: 'En Çok Satılanlar Tablosu', type: 'toggle', default: true },
+      { key: 'footer_text', label: 'Alt Bilgi Metni', type: 'text', default: '{{_company}} Aylık Rapor' },
+    ],
+  },
+};
+
+const TEMPLATE_SETTINGS_KEY = 'print_template_settings';
+
 function TemplateManager({ c, currentColor, isDark }) {
-  const [templates, setTemplates] = useState({});
-  const [loading, setLoading]     = useState(true);
-  const [saving, setSaving]       = useState(false);
+  const [settings, setSettings] = useState({});
+  const [loading, setLoading]   = useState(true);
+  const [saving, setSaving]     = useState(false);
   const [activeType, setActiveType] = useState(TEMPLATE_TYPES[0].id);
-  const [editorValue, setEditorValue] = useState('');
-  const [saved, setSaved]         = useState(false);
+  const [saved, setSaved]       = useState(false);
 
   useEffect(() => {
     setLoading(true);
-    loadTemplates().then(t => { setTemplates(t); setLoading(false); });
+    supabase.from('app_settings').select('value').eq('id', TEMPLATE_SETTINGS_KEY).maybeSingle()
+      .then(({ data }) => {
+        setSettings(data?.value || {});
+        setLoading(false);
+      });
   }, []);
 
-  useEffect(() => {
-    setEditorValue(templates[activeType] || DEFAULT_TEMPLATES[activeType] || '');
+  const schema = TEMPLATE_SETTINGS_SCHEMA[activeType];
+  const currentSettings = settings[activeType] || {};
+  
+  const getVal = (key) => {
+    if (currentSettings[key] !== undefined) return currentSettings[key];
+    const field = schema?.fields?.find(f => f.key === key);
+    return field?.default;
+  };
+
+  const setVal = (key, value) => {
     setSaved(false);
-  }, [activeType, templates]);
+    setSettings(prev => ({
+      ...prev,
+      [activeType]: { ...(prev[activeType] || {}), [key]: value },
+    }));
+  };
 
   const handleSave = async () => {
     setSaving(true);
-    const updated = { ...templates, [activeType]: editorValue };
-    await saveTemplates(updated);
-    setTemplates(updated);
+    await supabase.from('app_settings').upsert({
+      id: TEMPLATE_SETTINGS_KEY,
+      value: settings,
+      updated_at: new Date().toISOString(),
+    });
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
-  const handleReset = () => {
-    if (!window.confirm('Bu şablonu varsayılana sıfırlamak istediğinize emin misiniz?')) return;
-    setEditorValue(DEFAULT_TEMPLATES[activeType] || '');
-  };
-
   const handlePreview = () => {
-    // Örnek veri ile önizleme
     const sampleData = {
       order_number: 'AYS-TEST-001', customer_name: 'Örnek Müşteri A.Ş.', customer_vkntckn: '1234567890',
       status: 'Tamamlandı', currency: 'TRY', created_at: new Date().toISOString(),
       subtotal: 5000, tax_total: 900, grand_total: 5900, notes: 'Örnek sipariş notu.',
       items: [
-        { item_name: 'LED Panel 60x60', quantity: 10, unit: 'Adet', unit_price: 350, tax_rate: 20, line_total: 3500 },
-        { item_name: 'Driver 40W', quantity: 10, unit: 'Adet', unit_price: 150, tax_rate: 20, line_total: 1500 },
+        { item_name: 'LED Panel 60x60', name: 'LED Panel 60x60', quantity: 10, unit: 'Adet', unit_price: 350, tax_rate: 20, line_total: 3500, total: 3500 },
+        { item_name: 'Driver 40W', name: 'Driver 40W', quantity: 10, unit: 'Adet', unit_price: 150, tax_rate: 20, line_total: 1500, total: 1500 },
       ],
-      // Reçete
-      product_name: 'LED Panel 60x60', recipe_name: 'Standart', description: 'Standart üretim reçetesi',
-      total_cost: 180,
+      product_name: 'LED Panel 60x60', recipe_name: 'Standart', total_cost: 180, currency_sym: '₺',
       ingredients: [
-        { item_name: 'LED Chip 0.5W', quantity: 120, unit: 'Adet', unit_cost: 0.50, total_cost: 60 },
-        { item_name: 'PCB Board', quantity: 1, unit: 'Adet', unit_cost: 45, total_cost: 45 },
-        { item_name: 'Alüminyum Profil', quantity: 2.4, unit: 'mt', unit_cost: 25, total_cost: 60 },
-        { item_name: 'Driver 40W', quantity: 1, unit: 'Adet', unit_cost: 15, total_cost: 15 },
+        { item_name: 'LED Chip', quantity: 120, unit: 'Adet', unit_cost: 0.50, total_cost: 60, currency_sym: '₺', per_unit: 120, total_qty: 600 },
+        { item_name: 'PCB Board', quantity: 1, unit: 'Adet', unit_cost: 45, total_cost: 45, currency_sym: '₺', per_unit: 1, total_qty: 5 },
       ],
-      tags: 'standart, 60x60, panel',
-      // Çek
-      cheque_no: 'ÇK-2026-001', direction_label: 'Alınan', amount: 25000, bank_name: 'Garanti Bankası',
-      issue_date: new Date().toISOString(), due_date: new Date(Date.now() + 30 * 86400000).toISOString(),
-      from_name: 'ABC İnşaat Ltd.', to_name: 'AYSALED', status_label: 'Aktif', note: 'Proje ödemesi',
-      // İş Emri
-      wo_number: 'WO-2026-042', quantity: 50, unit: 'Adet', per_unit: 120,
-      production_note: 'Acil üretim - teslimat 3 gün içinde',
-      // Hesap Ekstresi
+      tags: 'standart, 60x60',
+      cheque_no: 'ÇK-2026-001', direction_label: 'Alınan', amount: 25000, bank_name: 'Garanti',
+      issue_date: new Date().toISOString(), due_date: new Date(Date.now()+30*86400000).toISOString(),
+      from_name: 'ABC Ltd.', to_name: 'AYSALED', status_label: 'Aktif', note: 'Proje ödemesi',
+      wo_number: 'WO-2026-042', quantity: 5, unit: 'Adet',
+      production_note: 'Acil üretim',
       entity_name: 'Örnek Müşteri', vkntckn: '1234567890',
+      col_debit: 'Alacak', col_credit: 'Alınan',
       movements: [
-        { date: new Date().toISOString(), description: 'Fatura - AYS001', debit: 5900, credit: 0, balance: 5900 },
-        { date: new Date().toISOString(), description: 'Tahsilat', debit: 0, credit: 3000, balance: 2900 },
+        { date: '19.04.2026', description: 'Fatura', debit_fmt: '5.900,00', credit_fmt: '-', balance_fmt: '5.900,00 (A)' },
+        { date: '20.04.2026', description: 'Tahsilat', debit_fmt: '-', credit_fmt: '3.000,00', balance_fmt: '2.900,00 (A)' },
       ],
       total_debit: 5900, total_credit: 3000, net_balance: 2900,
-      // Kasa
       receipt_type: 'TAHSİLAT MAKBUZU', date: new Date().toISOString(),
-      category: 'Satış Tahsilatı', entity_name: 'Örnek Müşteri', description: 'Sipariş ödemesi',
-      // Rapor
+      category: 'Satış', description: 'Ödeme',
       month_name: 'Nisan', year: 2026, total_sales: 125000, net_profit: 35000, margin: 28,
       order_count: 45, invoiced_count: 30, invoiced_total: 95000, non_invoiced_count: 15, non_invoiced_total: 30000,
-      // Teklif
-      quote_number: 'TKF-2026-015', valid_until: new Date(Date.now() + 15 * 86400000).toISOString(),
-      project_name: 'Ofis Aydınlatma Projesi',
+      quote_number: 'TKF-2026-015', valid_until: new Date(Date.now()+15*86400000).toISOString(),
+      project_name: 'Ofis Projesi',
     };
     printDocument(activeType, sampleData, `Önizleme - ${TEMPLATE_TYPES.find(t => t.id === activeType)?.label}`);
+  };
+
+  const handleReset = () => {
+    if (!window.confirm('Bu şablonu varsayılan ayarlara sıfırlamak istediğinize emin misiniz?')) return;
+    setSettings(prev => { const n = { ...prev }; delete n[activeType]; return n; });
+    setSaved(false);
   };
 
   const activeInfo = TEMPLATE_TYPES.find(t => t.id === activeType);
@@ -613,7 +698,7 @@ function TemplateManager({ c, currentColor, isDark }) {
       <div>
         <h2 className="text-lg font-bold" style={{ color: c.text }}>Yazdırma Şablonları</h2>
         <p className="text-sm mt-0.5" style={{ color: c.muted }}>
-          Her belge türü için HTML şablonlarını düzenleyin. <code className="text-xs px-1 py-0.5 rounded" style={{ background: isDark ? 'rgba(255,255,255,0.06)' : '#f1f5f9' }}>{'{{değişken}}'}</code> söz dizimi ile veri bağlama yapılır.
+          Belge şablonlarını görsel olarak özelleştirin. Değişiklikler yazdırma çıktılarına yansır.
         </p>
       </div>
 
@@ -636,7 +721,7 @@ function TemplateManager({ c, currentColor, isDark }) {
             ))}
           </div>
 
-          {/* Aktif şablon bilgisi */}
+          {/* Aktif şablon bilgisi + aksiyonlar */}
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-bold" style={{ color: c.text }}>{activeInfo?.icon} {activeInfo?.label}</p>
@@ -646,7 +731,7 @@ function TemplateManager({ c, currentColor, isDark }) {
               <button onClick={handleReset}
                 className="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors"
                 style={{ borderColor: c.border, color: '#ef4444' }}>
-                Varsayılana Sıfırla
+                Sıfırla
               </button>
               <button onClick={handlePreview}
                 className="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors"
@@ -656,40 +741,33 @@ function TemplateManager({ c, currentColor, isDark }) {
             </div>
           </div>
 
-          {/* Editor */}
-          <textarea
-            value={editorValue}
-            onChange={e => { setEditorValue(e.target.value); setSaved(false); }}
-            className="w-full rounded-xl border outline-none font-mono text-xs leading-relaxed p-4 resize-y"
-            style={{
-              background: c.inputBg,
-              borderColor: c.border,
-              color: c.text,
-              minHeight: 350,
-              maxHeight: 600,
-            }}
-            spellCheck={false}
-          />
-
-          {/* Değişken referansı */}
-          <details className="rounded-xl border p-3" style={{ borderColor: c.border }}>
-            <summary className="text-xs font-bold cursor-pointer" style={{ color: c.muted }}>
-              📖 Kullanılabilir Değişkenler & Söz Dizimi
-            </summary>
-            <div className="mt-3 text-xs space-y-2" style={{ color: c.muted }}>
-              <p><code>{'{{değişken}}'}</code> — Veri bağlama</p>
-              <p><code>{'{{fmt:değişken}}'}</code> — Sayı formatı (1.234,56)</p>
-              <p><code>{'{{date:değişken}}'}</code> — Tarih formatı (19.04.2026)</p>
-              <p><code>{'{{money:değişken}}'}</code> — Para formatı (₺1.234,56)</p>
-              <p><code>{'{{#each items}} ... {{/each}}'}</code> — Liste döngüsü</p>
-              <p><code>{'{{#if var}} ... {{/if}}'}</code> — Koşullu gösterim</p>
-              <p><code>{'{{@index}}'}</code> — Döngü sıra numarası</p>
-              <div className="border-t pt-2 mt-2" style={{ borderColor: c.border }}>
-                <p className="font-bold" style={{ color: c.text }}>Otomatik değişkenler:</p>
-                <p><code>{'{{_today}}'}</code> — Bugünün tarihi · <code>{'{{_now}}'}</code> — Şu anki zaman · <code>{'{{_company}}'}</code> — Firma adı</p>
+          {/* Görsel Ayar Kartları */}
+          <div className="space-y-2.5">
+            {schema?.fields.map(field => (
+              <div key={field.key}
+                className="flex items-center justify-between px-4 py-3 rounded-xl transition-all"
+                style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', border: `1px solid ${c.border}` }}>
+                <p className="text-sm font-semibold flex-1 min-w-0 mr-3" style={{ color: c.text }}>{field.label}</p>
+                {field.type === 'toggle' ? (
+                  <button onClick={() => setVal(field.key, !getVal(field.key))}
+                    className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
+                    style={{ background: getVal(field.key) ? currentColor : (isDark ? 'rgba(255,255,255,0.1)' : '#cbd5e1') }}>
+                    <div className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-transform"
+                      style={{ left: getVal(field.key) ? '22px' : '2px' }} />
+                  </button>
+                ) : (
+                  <input type="text"
+                    value={getVal(field.key) ?? ''}
+                    onChange={e => setVal(field.key, e.target.value)}
+                    className="px-3 py-1.5 rounded-lg text-sm outline-none flex-shrink-0"
+                    style={{
+                      background: isDark ? 'rgba(255,255,255,0.06)' : '#ffffff',
+                      border: `1px solid ${c.border}`, color: c.text, width: '240px',
+                    }} />
+                )}
               </div>
-            </div>
-          </details>
+            ))}
+          </div>
 
           {/* Kaydet */}
           <div className="flex items-center gap-3">
@@ -711,3 +789,4 @@ function TemplateManager({ c, currentColor, isDark }) {
     </div>
   );
 }
+

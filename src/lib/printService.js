@@ -32,7 +32,27 @@ const fmtNum = (n) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDi
 
 // ─── Şablon Motoru ──────────────────────────────────────────────────────────
 function resolveValue(obj, path) {
+  if (!obj || !path) return undefined;
   return path.split('.').reduce((acc, key) => acc?.[key], obj);
+}
+
+/** Tek bir satırdaki tüm {{...}} ifadelerini çöz (helpers dahil) */
+function resolveAllBindings(text, ctx) {
+  // 1) Helpers: {{fmt:x}} {{date:x}} {{datetime:x}} {{money:x}}
+  text = text.replace(/\{\{fmt:([^}]+)\}\}/g, (_, key) => fmtNum(resolveValue(ctx, key.trim())));
+  text = text.replace(/\{\{date:([^}]+)\}\}/g, (_, key) => fmtDate(resolveValue(ctx, key.trim())));
+  text = text.replace(/\{\{datetime:([^}]+)\}\}/g, (_, key) => fmtDateTime(resolveValue(ctx, key.trim())));
+  text = text.replace(/\{\{money:([^}]+)\}\}/g, (_, key) => fmtMoney(resolveValue(ctx, key.trim())));
+
+  // 2) Simple: {{variable}} ve {{@index}}
+  text = text.replace(/\{\{([^}]+)\}\}/g, (_, key) => {
+    const k = key.trim();
+    if (k === '@index') return ctx._index ?? '';
+    const val = resolveValue(ctx, k);
+    return val !== undefined && val !== null ? val : '';
+  });
+
+  return text;
 }
 
 function renderTemplate(template, data) {
@@ -42,36 +62,30 @@ function renderTemplate(template, data) {
   // {{#each items}} ... {{/each}}
   html = html.replace(/\{\{#each\s+(\w+)\}\}([\s\S]*?)\{\{\/each\}\}/g, (_, key, inner) => {
     const arr = data[key];
-    if (!Array.isArray(arr)) return '';
+    if (!Array.isArray(arr) || arr.length === 0) return '';
     return arr.map((item, index) => {
+      // İtem context: item verileri + parent data + _index
+      const ctx = { ...data, ...item, _index: index + 1 };
       let row = inner;
-      // Replace {{this.xxx}} and {{xxx}} within each block
-      row = row.replace(/\{\{(?:this\.)?(\w[\w.]*)\}\}/g, (__, prop) => {
-        if (prop === '@index') return index + 1;
-        const val = resolveValue(item, prop);
-        return val !== undefined && val !== null ? val : '';
+
+      // Nested #if inside #each
+      row = row.replace(/\{\{#if\s+([^}]+)\}\}([\s\S]*?)\{\{\/if\}\}/g, (__, ifKey, ifInner) => {
+        const val = resolveValue(ctx, ifKey.trim());
+        return val ? resolveAllBindings(ifInner, ctx) : '';
       });
-      return row;
+
+      return resolveAllBindings(row, ctx);
     }).join('');
   });
 
-  // {{#if var}} ... {{/if}}
-  html = html.replace(/\{\{#if\s+(\w[\w.]*)\}\}([\s\S]*?)\{\{\/if\}\}/g, (_, key, inner) => {
-    const val = resolveValue(data, key);
-    return val ? inner : '';
+  // {{#if var}} ... {{/if}} (top-level)
+  html = html.replace(/\{\{#if\s+([^}]+)\}\}([\s\S]*?)\{\{\/if\}\}/g, (_, key, inner) => {
+    const val = resolveValue(data, key.trim());
+    return val ? resolveAllBindings(inner, data) : '';
   });
 
-  // {{variable}} — simple replacement
-  html = html.replace(/\{\{(\w[\w.]*)\}\}/g, (_, key) => {
-    const val = resolveValue(data, key);
-    return val !== undefined && val !== null ? val : '';
-  });
-
-  // Helper fonksiyonları: {{fmt:variable}}, {{date:variable}}, {{money:variable}}
-  html = html.replace(/\{\{fmt:(\w[\w.]*)\}\}/g, (_, key) => fmtNum(resolveValue(data, key)));
-  html = html.replace(/\{\{date:(\w[\w.]*)\}\}/g, (_, key) => fmtDate(resolveValue(data, key)));
-  html = html.replace(/\{\{datetime:(\w[\w.]*)\}\}/g, (_, key) => fmtDateTime(resolveValue(data, key)));
-  html = html.replace(/\{\{money:(\w[\w.]*)\}\}/g, (_, key) => fmtMoney(resolveValue(data, key)));
+  // Kalan tüm binding'leri çöz
+  html = resolveAllBindings(html, data);
 
   return html;
 }
@@ -317,17 +331,17 @@ export const DEFAULT_TEMPLATES = {
     <tr>
       <td>{{@index}}</td>
       <td class="font-bold">{{item_name}}</td>
-      <td class="text-right">{{fmt:quantity}}</td>
+      <td class="text-right">{{quantity}}</td>
       <td>{{unit}}</td>
-      <td class="text-right">{{fmt:unit_cost}}</td>
-      <td class="text-right font-bold">{{fmt:total_cost}}</td>
+      <td class="text-right">{{currency_sym}}{{fmt:unit_cost}}</td>
+      <td class="text-right font-bold">{{currency_sym}}{{fmt:total_cost}}</td>
     </tr>
     {{/each}}
   </tbody>
   <tfoot>
     <tr class="total-row">
       <td colspan="5">TOPLAM MALİYET</td>
-      <td class="text-right">{{fmt:total_cost}}</td>
+      <td class="text-right">{{currency_sym}}{{fmt:total_cost}}</td>
     </tr>
   </tfoot>
 </table>
@@ -389,7 +403,7 @@ export const DEFAULT_TEMPLATES = {
     {{#if recipe_name}}<p class="text-xs">Reçete: {{recipe_name}}</p>{{/if}}
   </div>
   <div style="text-align:right">
-    <p class="text-xs text-muted">MİKTAR</p>
+    <p class="text-xs text-muted">ÜRETİM MİKTARI</p>
     <p class="font-bold text-lg">{{quantity}} {{unit}}</p>
     <p class="text-xs">Durum: {{status}}</p>
   </div>
@@ -399,15 +413,15 @@ export const DEFAULT_TEMPLATES = {
 
 <table>
   <thead>
-    <tr><th>#</th><th>Hammadde</th><th class="text-right">Birim Miktar</th><th class="text-right">Toplam Miktar</th><th>Birim</th></tr>
+    <tr><th>#</th><th>Hammadde</th><th class="text-right">Birim Reçete</th><th class="text-right">Toplam Gerekli</th><th>Birim</th></tr>
   </thead>
   <tbody>
     {{#each ingredients}}
     <tr>
       <td>{{@index}}</td>
       <td class="font-bold">{{item_name}}</td>
-      <td class="text-right">{{fmt:per_unit}}</td>
-      <td class="text-right font-bold">{{fmt:total_qty}}</td>
+      <td class="text-right">{{per_unit}}</td>
+      <td class="text-right font-bold" style="font-size:13px">{{total_qty}}</td>
       <td>{{unit}}</td>
     </tr>
     {{/each}}
@@ -417,8 +431,8 @@ export const DEFAULT_TEMPLATES = {
 {{#if production_note}}<div class="mt-4 text-xs"><strong>Üretim Notu:</strong> {{production_note}}</div>{{/if}}
 
 <div class="stamp-area">
-  <div class="stamp-box"><div class="line">Üretime Veren</div></div>
-  <div class="stamp-box"><div class="line">Üreten</div></div>
+  <div class="stamp-box"><div class="line">Onaylayan</div></div>
+  <div class="stamp-box"><div class="line">Teslim Alan</div></div>
 </div>
 
 <div class="footer">{{_company}} · {{_now}}</div>`,
@@ -438,16 +452,16 @@ export const DEFAULT_TEMPLATES = {
 
 <table>
   <thead>
-    <tr><th>Tarih</th><th>Açıklama</th><th class="text-right">Borç</th><th class="text-right">Alacak</th><th class="text-right">Bakiye</th></tr>
+    <tr><th>Tarih</th><th>Açıklama</th><th class="text-right">{{col_debit}}</th><th class="text-right">{{col_credit}}</th><th class="text-right">Bakiye</th></tr>
   </thead>
   <tbody>
     {{#each movements}}
     <tr>
-      <td>{{date:date}}</td>
+      <td>{{date}}</td>
       <td>{{description}}</td>
-      <td class="text-right">{{fmt:debit}}</td>
-      <td class="text-right">{{fmt:credit}}</td>
-      <td class="text-right font-bold">{{fmt:balance}}</td>
+      <td class="text-right">{{debit_fmt}}</td>
+      <td class="text-right">{{credit_fmt}}</td>
+      <td class="text-right font-bold">{{balance_fmt}}</td>
     </tr>
     {{/each}}
   </tbody>

@@ -3,22 +3,21 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, FileText, Loader2, Trash2, Eye, Edit3,
-  CheckCircle2, Clock, XCircle, Send, RefreshCw, FileMinus, Calendar, X, Printer
+  CheckCircle2, Clock, XCircle, Send, RefreshCw, FileMinus, Calendar, X
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import QuoteForm, { QuotePreview } from './QuoteForm';
 import CustomDialog from '../components/CustomDialog';
-import { printDocument } from '../lib/printService';
 
 const STATUS = {
-  draft:    { label: 'Taslak',        color: '#94a3b8', icon: Clock },
-  sent:     { label: 'Gönderildi',    color: '#3b82f6', icon: Send },
-  accepted: { label: 'Kabul Edildi',  color: '#10b981', icon: CheckCircle2 },
-  rejected: { label: 'Reddedildi',    color: '#ef4444', icon: XCircle },
+  draft: { label: 'Taslak', color: '#94a3b8', icon: Clock },
+  sent: { label: 'Gönderildi', color: '#3b82f6', icon: Send },
+  accepted: { label: 'Kabul Edildi', color: '#10b981', icon: CheckCircle2 },
+  rejected: { label: 'Reddedildi', color: '#ef4444', icon: XCircle },
 };
 
-const fmt  = (n) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 });
+const fmt = (n) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 });
 const fmtD = (d) => d ? new Date(d).toLocaleDateString('tr-TR') : '-';
 
 function StatusBadge({ status }) {
@@ -48,19 +47,19 @@ export default function Quotes() {
   const isDark = effectiveMode === 'dark';
   const navigate = useNavigate();
 
-  const [quotes, setQuotes]     = useState([]);
+  const [quotes, setQuotes] = useState([]);
   const [allItems, setAllItems] = useState([]);
-  const [loading, setLoading]   = useState(true);
-  const [search, setSearch]     = useState('');
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [dateFrom,     setDateFrom]     = useState('');
-  const [dateTo,       setDateTo]       = useState('');
-  const [view, setView]         = useState('list'); // 'list' | 'form'
-  const [editId, setEditId]     = useState(null);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [view, setView] = useState('list'); // 'list' | 'form'
+  const [editId, setEditId] = useState(null);
   const [previewQ, setPreviewQ] = useState(null);
   const [acceptModal, setAcceptModal] = useState(null);
-  const [toast, setToast]       = useState(null);
-  const [dialog, setDialog]     = useState({ open: false, title: '', message: '', type: 'confirm', onConfirm: null, loading: false });
+  const [toast, setToast] = useState(null);
+  const [dialog, setDialog] = useState({ open: false, title: '', message: '', type: 'confirm', onConfirm: null, loading: false });
 
   const showToast = (msg, type = 'success') => setToast({ msg, type });
 
@@ -75,14 +74,14 @@ export default function Quotes() {
       setAcceptModal(null);
       // Satış ekranına yönlendir — teklif durumunu henüz değiştirme.
       // Kullanıcı sipariş oluşturursa -> accepted, iptal ederse -> orijinal durum kalır.
-      navigate('/sales', { 
-        state: { 
-          createFromQuote: q, 
+      navigate('/sales', {
+        state: {
+          createFromQuote: q,
           quoteOriginalStatus: q.status, // geri dönüş için
           quoteMsg: 'Sipariş formunu doldurup oluşturduğunuzda teklif kabul edilmiş olarak işaretlenecek.'
-        } 
+        }
       });
-    } catch (e) { 
+    } catch (e) {
       setDialog({ open: true, title: 'Hata', message: 'İşlem sırasında hata oluştu: ' + e.message, type: 'alert' });
     }
   };
@@ -133,17 +132,17 @@ export default function Quotes() {
 
   // İstatistikler
   const stats = {
-    total:    quotes.length,
-    draft:    quotes.filter(q => q.status === 'draft').length,
+    total: quotes.length,
+    draft: quotes.filter(q => q.status === 'draft').length,
     accepted: quotes.filter(q => q.status === 'accepted').length,
     totalValue: quotes.filter(q => q.status !== 'rejected').reduce((s, q) => s + Number(q.grand_total || 0), 0),
   };
 
   const c = {
-    card:   isDark ? 'rgba(30,41,59,0.7)' : '#ffffff',
+    card: isDark ? 'rgba(30,41,59,0.7)' : '#ffffff',
     border: isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0',
-    text:   isDark ? '#f1f5f9' : '#0f172a',
-    muted:  isDark ? '#94a3b8' : '#64748b',
+    text: isDark ? '#f1f5f9' : '#0f172a',
+    muted: isDark ? '#94a3b8' : '#64748b',
   };
 
   // Teklif formu aç/kapat
@@ -184,10 +183,10 @@ export default function Quotes() {
         {/* İstatistikler */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
           {[
-            { label: 'Toplam Teklif', value: stats.total,    color: '#6366f1' },
-            { label: 'Taslak',        value: stats.draft,    color: '#94a3b8' },
-            { label: 'Kabul Edildi',  value: stats.accepted, color: '#10b981' },
-            { label: 'Toplam Değer',  value: `${fmt(stats.totalValue)} ₺`, color: '#1a6b2c', isText: true },
+            { label: 'Toplam Teklif', value: stats.total, color: '#6366f1' },
+            { label: 'Taslak', value: stats.draft, color: '#94a3b8' },
+            { label: 'Kabul Edildi', value: stats.accepted, color: '#10b981' },
+            { label: 'Toplam Değer', value: `${fmt(stats.totalValue)} ₺`, color: '#1a6b2c', isText: true },
           ].map(s => (
             <div key={s.label} className="rounded-2xl p-4" style={{ background: c.card, border: `1px solid ${c.border}` }}>
               <p className="text-xs font-medium mb-1" style={{ color: c.muted }}>{s.label}</p>
@@ -221,21 +220,21 @@ export default function Quotes() {
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl"
               style={{ background: 'rgba(255,255,255,0.06)', border: `1px solid ${c.border}` }}>
-              <Calendar size={11} style={{ color: c.muted }}/>
+              <Calendar size={11} style={{ color: c.muted }} />
               <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-                className="bg-transparent text-[11px] outline-none" style={{ color: c.text }}/>
+                className="bg-transparent text-[11px] outline-none" style={{ color: c.text }} />
             </div>
             <span className="text-[10px] font-bold" style={{ color: c.muted }}>—</span>
             <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl"
               style={{ background: 'rgba(255,255,255,0.06)', border: `1px solid ${c.border}` }}>
-              <Calendar size={11} style={{ color: c.muted }}/>
+              <Calendar size={11} style={{ color: c.muted }} />
               <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-                className="bg-transparent text-[11px] outline-none" style={{ color: c.text }}/>
+                className="bg-transparent text-[11px] outline-none" style={{ color: c.text }} />
             </div>
             {(dateFrom || dateTo) && (
               <button onClick={() => { setDateFrom(''); setDateTo(''); }}
                 className="p-1.5 rounded-lg" style={{ color: '#ef4444', background: 'rgba(239,68,68,0.08)' }}>
-                <X size={11}/>
+                <X size={11} />
               </button>
             )}
           </div>
@@ -312,25 +311,9 @@ export default function Quotes() {
 
                   <div className="w-[1px] h-4 bg-slate-200 mx-1" />
 
-                  <button onClick={() => setPreviewQ(q)} title="Önizle"
+                  <button onClick={() => setPreviewQ(q)} title="Önizle / Yazdır"
                     className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors">
                     <Eye size={15} />
-                  </button>
-                  <button onClick={() => {
-                    printDocument('quote', {
-                      quote_number: q.quote_no, customer_name: q.company_name,
-                      contact_person: q.contact_person, project_name: q.project_name,
-                      created_at: q.issue_date || q.created_at, valid_until: q.valid_until,
-                      currency: q.currency || 'TRY', grand_total: q.grand_total,
-                      notes: q.notes,
-                      items: (q.items || []).map(i => ({
-                        name: i.name || i.item_name, quantity: i.quantity, unit: i.unit || 'Adet',
-                        unit_price: i.unit_price || i.price, total: (i.quantity || 0) * (i.unit_price || i.price || 0),
-                      })),
-                    }, `Teklif - ${q.quote_no}`);
-                  }} title="Yazdır"
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-blue-500 hover:bg-blue-50 transition-colors">
-                    <Printer size={15} />
                   </button>
                   <button onClick={() => { setEditId(q.id); setView('form'); }} title="Düzenle"
                     className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
@@ -379,8 +362,8 @@ export default function Quotes() {
         {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
       </AnimatePresence>
 
-      <CustomDialog 
-        {...dialog} 
+      <CustomDialog
+        {...dialog}
         onClose={() => setDialog({ ...dialog, open: false })}
         onConfirm={dialog.onConfirm ? dialog.onConfirm : () => setDialog({ ...dialog, open: false })}
       />

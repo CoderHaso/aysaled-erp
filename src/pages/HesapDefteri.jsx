@@ -413,15 +413,20 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
                 <button onClick={() => {
                   const totalDebit = rows.reduce((s, h) => s + (h.borc || 0), 0);
                   const totalCredit = rows.reduce((s, h) => s + (h.alacak || 0), 0);
+                  const fmtN = (n) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                  const fmtDt = (d) => d ? new Date(d).toLocaleDateString('tr-TR') : '-';
+                  const isCust = contactType === 'customer';
                   printDocument('ledger', {
                     entity_name: contact.name,
                     vkntckn: contact.vkntckn || '',
+                    col_debit: isCust ? 'Alacak' : 'Verecek',
+                    col_credit: isCust ? 'Alınan' : 'Verilen',
                     movements: rows.map(h => ({
-                      date: h.tarih,
+                      date: fmtDt(h.tarih),
                       description: [h.baslik, h.aciklama].filter(Boolean).join(' - '),
-                      debit: h.borc || 0,
-                      credit: h.alacak || 0,
-                      balance: h.snapshot || 0,
+                      debit_fmt: h.borc > 0 ? fmtN(h.borc) : '-',
+                      credit_fmt: h.alacak > 0 ? fmtN(h.alacak) : '-',
+                      balance_fmt: fmtN(Math.abs(h.snapshot)) + (h.snapshot > 0 ? ' (A)' : h.snapshot < 0 ? ' (V)' : ''),
                     })),
                     total_debit: totalDebit,
                     total_credit: totalCredit,
