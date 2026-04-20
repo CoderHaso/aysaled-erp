@@ -1050,6 +1050,7 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
             <SumRow isDark={isDark} label="Ara Toplam (KDV hariç)" value={fmt(subtotal, form.currency)} />
             <SumRow isDark={isDark} label="Toplam KDV" value={fmt(taxTotal, form.currency)} color="#60a5fa" />
 
+            {form.currency !== 'TRY' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4"
               style={{
                 background: isDark ? 'rgba(15,23,42,0.4)' : 'rgba(241,245,249,0.8)',
@@ -1062,20 +1063,23 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
                 <div className="flex items-center gap-2 text-xs font-semibold"
                   style={{ color: isDark ? '#cbd5e1' : '#334155' }}>
                   <TrendingUp size={12} className="text-violet-400" />
-                  {exchangeRate ? (
-                    <span>1 {form.currency} = {exchangeRate.rate?.toFixed(4)} ₺ ({exchangeRate.source === 'tcmb' ? 'TCMB' : 'Manuel'})</span>
+                  {loadingRates ? (
+                    <span className="text-blue-400 italic">Kur yükleniyor...</span>
+                  ) : exchangeRate ? (
+                    <span>1 {form.currency} = {exchangeRate.rate?.toFixed(4)} ₺ ({
+                      exchangeRate.source === 'tcmb' ? 'TCMB' : exchangeRate.source === 'fallback' ? 'Varsayılan' : 'Manuel'
+                    })</span>
                   ) : (
-                    <span className="text-red-400 italic">Kur bulunamadı!</span>
+                    <span className="text-amber-400 italic">Kur çekilemedi — manuel girin</span>
                   )}
                 </div>
               </div>
-              {form.currency !== 'TRY' && (
-                <Field label="Kur (Manuel Düzenle)" type="number"
-                  value={manualRate ?? exchangeRate?.rate ?? ''}
-                  onChange={v => setManualRate(v ? Number(v) : null)}
-                  placeholder="Örn: 32.45" />
-              )}
+              <Field label="Kur (Manuel Düzenle)" type="number"
+                value={manualRate ?? exchangeRate?.rate ?? ''}
+                onChange={v => setManualRate(v ? Number(v) : null)}
+                placeholder="Örn: 32.45" />
             </div>
+            )}
 
             <div style={{
               borderTop: `2px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`,

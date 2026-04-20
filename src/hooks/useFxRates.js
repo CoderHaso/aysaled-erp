@@ -120,9 +120,11 @@ export function useFxRates({ currency = 'TRY', date = '', enabled = true } = {})
   }, [enabled, dateKey]);
 
   // Seçili currency için exchangeRate türet
-  const exchangeRate = fxRates[currency]
-    ? { rate: fxRates[currency], source: usingFallback ? 'fallback' : 'tcmb' }
-    : null;
+  const exchangeRate = currency === 'TRY'
+    ? { rate: 1, source: 'identity' }
+    : fxRates[currency]
+      ? { rate: fxRates[currency], source: usingFallback ? 'fallback' : 'tcmb' }
+      : null;
 
   const refreshRates = useCallback(() => {
     cache.ts[dateKey] = 0;
