@@ -504,6 +504,7 @@ export default function Stock() {
                           if (changes.stock_count !== undefined) patch.stock_count = Number(changes.stock_count);
                           if (changes.purchase_price !== undefined) patch.purchase_price = Number(changes.purchase_price);
                           if (changes.sale_price !== undefined) patch.sale_price = Number(changes.sale_price);
+                          if (changes.critical_limit !== undefined) patch.critical_limit = Number(changes.critical_limit);
                           if (changes.base_currency !== undefined) patch.base_currency = changes.base_currency;
                           if (changes.sale_currency !== undefined) patch.sale_currency = changes.sale_currency;
                           if (Object.keys(patch).length > 0) {
@@ -554,7 +555,11 @@ export default function Stock() {
                       { key: 'stock_count',    label: 'Stok',     w: quickEditMode ? '100px' : '140px' },
                       { key: 'purchase_price', label: 'Alış',    w: quickEditMode ? '100px' : '85px'  },
                       { key: 'sale_price',     label: 'Satış',   w: quickEditMode ? '100px' : '85px' },
-                      ...(quickEditMode ? [{ key: 'base_currency', label: 'A.Döviz', w: '70px' }, { key: 'sale_currency', label: 'S.Döviz', w: '70px' }] : []),
+                      ...(quickEditMode ? [
+                        { key: 'critical_limit', label: 'Kritik', w: '80px' },
+                        { key: 'base_currency', label: 'A.Döviz', w: '70px' },
+                        { key: 'sale_currency', label: 'S.Döviz', w: '70px' },
+                      ] : []),
                       { key: null,             label: '',         w: '72px'  },
                     ].map((col, i) => (
                       <th key={i}
@@ -682,9 +687,17 @@ export default function Stock() {
                             </span>
                           )}
                         </td>
-                        {/* Döviz (sadece quick edit) */}
+                        {/* Döviz + Kritik Limit (sadece quick edit) */}
                         {quickEditMode && (
                           <>
+                            <td className="px-3 py-3.5" onClick={e => e.stopPropagation()}>
+                              <input type="number" step="1" min="0"
+                                value={ed.critical_limit ?? item.critical_limit ?? ''}
+                                onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), critical_limit: e.target.value}}))}
+                                placeholder="0"
+                                className="w-full px-1.5 py-1 text-xs font-bold rounded-lg outline-none"
+                                style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: '#f59e0b' }}/>
+                            </td>
                             <td className="px-3 py-3.5" onClick={e => e.stopPropagation()}>
                               <select value={ed.base_currency ?? item.base_currency ?? 'TRY'}
                                 onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), base_currency: e.target.value}}))}
