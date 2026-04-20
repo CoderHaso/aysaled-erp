@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  BookOpen, ChevronDown, Plus, Search, Trash2,
+  BookOpen, ChevronDown, Plus, Search, Trash2, Edit3,
   TrendingUp, TrendingDown, X, Check, Loader2,
   Receipt, User, Building2, AlertCircle, CheckCircle2,
   ArrowUpDown, ChevronsUpDown, Printer
@@ -10,6 +10,7 @@ import { supabase } from '../lib/supabaseClient';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLocation } from 'react-router-dom';
 import { printDocument } from '../lib/printService';
+import { useFxRates } from '../hooks/useFxRates';
 
 const fmtN = (n) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtD = (d) => d ? new Date(d).toLocaleDateString('tr-TR') : '—';
@@ -41,18 +42,23 @@ const SORT_OPTIONS = [
 ];
 
 // ── Hareket formu modal ────────────────────────────────────────────────────────
-function HareketModal({ contact, contactType, onClose, onSaved, prefill }) {
+function HareketModal({ contact, contactType, onClose, onSaved, prefill, editData }) {
   const { currentColor } = useTheme();
+  const isEdit = !!editData?.id;
   const [form, setForm] = useState({
-    tarih: today(), baslik: '', aciklama: '',
-    borc: '', alacak: '', currency: 'TRY',
+    tarih: editData?.tarih?.slice(0, 10) || today(),
+    baslik: editData?.baslik || '',
+    aciklama: editData?.aciklama || '',
+    borc: editData?.borc || '',
+    alacak: editData?.alacak || '',
+    currency: editData?.currency || 'TRY',
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr]       = useState('');
 
   // Prefill: dışardan gelen ön-doldurma (Ödemeye Geçir butonundan)
   useEffect(() => {
-    if (!prefill) return;
+    if (!prefill || isEdit) return;
     setForm(f => ({
       ...f,
       baslik:   prefill.baslik   || prefill.description || '',
@@ -81,8 +87,13 @@ function HareketModal({ contact, contactType, onClose, onSaved, prefill }) {
       if (contactType === 'customer') payload.musteri_id   = contact.id;
       else                             payload.tedarikci_id = contact.id;
 
-      const { error } = await supabase.from('cari_hareketler').insert(payload);
-      if (error) throw error;
+      if (isEdit) {
+        const { error } = await supabase.from('cari_hareketler').update(payload).eq('id', editData.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('cari_hareketler').insert(payload);
+        if (error) throw error;
+      }
       onSaved();
     } catch (e) { setErr(e.message); }
     finally { setSaving(false); }
@@ -102,7 +113,7 @@ function HareketModal({ contact, contactType, onClose, onSaved, prefill }) {
 
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>Yeni Hareket</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>{isEdit ? 'Hareket Düzenle' : 'Yeni Hareket'}</p>
             <h3 className="text-sm font-bold mt-0.5" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{contact.name}</h3>
           </div>
           <button onClick={onClose}><X size={16} style={{ color: '#94a3b8' }}/></button>
@@ -170,7 +181,7 @@ function HareketModal({ contact, contactType, onClose, onSaved, prefill }) {
             className="flex-1 py-2 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
             style={{ background: currentColor, opacity: saving ? 0.7 : 1 }}>
             {saving ? <Loader2 size={14} className="animate-spin"/> : <Check size={14}/>}
-            Kaydet
+            {isEdit ? 'Güncelle' : 'Kaydet'}
           </button>
         </div>
       </motion.div>
@@ -196,11 +207,13 @@ function BalanceChip({ value, compact = false }) {
 function ContactRow({ contact, contactType, color, preloadedBalance, externalOpen, externalPrefill, externalAutoModal, onExternalHandled }) {
   const { effectiveMode } = useTheme();
   const isDark = effectiveMode === 'dark';
+  const { convert } = useFxRates();
   const [open, setOpen]       = useState(false);
   const [hareketler, setHar]  = useState([]);
   const [loading, setLoading] = useState(false);
   const [showModal, setModal] = useState(false);
   const [prefill, setPrefill] = useState(null);
+  const [editing, setEditing] = useState(null);  // hareket to edit
   const [deleting, setDel]    = useState(null);
   const loaded = useRef(false);
 
@@ -245,11 +258,14 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
     setDel(null);
   };
 
-  // Anlık bakiye (borc=Alacak, alacak=Verecek → net = borc - alacak)
+  // Anlık bakiye — tüm dövizleri TRY'ye çevirerek hesapla
   let running = 0;
   const rows = hareketler.map(h => {
-    running += (h.borc || 0) - (h.alacak || 0);
-    return { ...h, snapshot: running };
+    const cur = h.currency || 'TRY';
+    const borcTRY   = convert(h.borc   || 0, cur, 'TRY');
+    const alacakTRY = convert(h.alacak || 0, cur, 'TRY');
+    running += borcTRY - alacakTRY;
+    return { ...h, borcTRY, alacakTRY, snapshot: running };
   });
   // Yerel veri yüklenmeden önce parent'ın önceden hesapladığı bakiyeyi göster
   const totalBalance = hareketler.length > 0 ? running : (preloadedBalance ?? 0);
@@ -311,7 +327,7 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
                       <col style={{ width: '88px' }}/>  {/* Verecek */}
                       <col style={{ width: '92px' }}/>  {/* Bakiye */}
                       <col style={{ width: '48px' }}/>  {/* Döviz */}
-                      <col style={{ width: '28px' }}/>  {/* Sil */}
+                      <col style={{ width: '52px' }}/>  {/* Aksiyonlar */}
                     </colgroup>
                     <thead>
                       <tr style={{ borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.1)' : '#e2e8f0'}` }}>
@@ -367,10 +383,16 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
                               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: h.currency && h.currency !== 'TRY' ? 'rgba(59,130,246,0.1)' : 'rgba(148,163,184,0.08)', color: h.currency && h.currency !== 'TRY' ? '#3b82f6' : '#94a3b8' }}>{h.currency || 'TRY'}</span>
                             </td>
                             <td className="py-2 px-1">
-                              <button onClick={() => handleDelete(h.id)} disabled={deleting === h.id}
-                                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:text-red-400 transition-all" style={{ color: '#94a3b8' }}>
-                                {deleting === h.id ? <Loader2 size={11} className="animate-spin"/> : <Trash2 size={11}/>}
-                              </button>
+                              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
+                                <button onClick={() => { setEditing(h); setModal(true); }}
+                                  className="p-1 rounded hover:text-blue-400 transition-all" style={{ color: '#94a3b8' }}>
+                                  <Edit3 size={11}/>
+                                </button>
+                                <button onClick={() => handleDelete(h.id)} disabled={deleting === h.id}
+                                  className="p-1 rounded hover:text-red-400 transition-all" style={{ color: '#94a3b8' }}>
+                                  {deleting === h.id ? <Loader2 size={11} className="animate-spin"/> : <Trash2 size={11}/>}
+                                </button>
+                              </div>
                             </td>
                           </motion.tr>
                         );
@@ -381,12 +403,12 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
                       <tr style={{ borderTop: `2px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}` }}>
                          <td colSpan={2} className="pt-2 pb-1 px-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: '#64748b' }}>Net Bakiye</td>
                         <td className="pt-2 pb-1 px-1 font-mono font-bold text-right text-emerald-500 text-[11px]">
-                          {fmtN(rows.reduce((s, h) => s + (h.borc || 0), 0))} ₺
+                          {fmtN(rows.reduce((s, h) => s + (h.borcTRY || 0), 0))} ₺
                           <span className="block text-[9px] font-normal text-slate-400">{contactType === 'customer' ? 'Alacak' : 'Verecek'}</span>
                         </td>
                         <td className="pt-2 pb-1 px-1 font-mono font-bold text-right text-[11px]"
                           style={{ color: contactType === 'customer' ? '#2563eb' : '#f97316' }}>
-                          {fmtN(rows.reduce((s, h) => s + (h.alacak || 0), 0))} ₺
+                          {fmtN(rows.reduce((s, h) => s + (h.alacakTRY || 0), 0))} ₺
                           <span className="block text-[9px] font-normal text-slate-400">{contactType === 'customer' ? 'Alınan' : 'Verilen'}</span>
                         </td>
                         <td className="pt-2 pb-1 px-1 font-mono font-bold text-right text-[11px]"
@@ -413,8 +435,6 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
               </button>
               {rows.length > 0 && (
                 <button onClick={() => {
-                  const totalDebit = rows.reduce((s, h) => s + (h.borc || 0), 0);
-                  const totalCredit = rows.reduce((s, h) => s + (h.alacak || 0), 0);
                   const fmtPr = (n) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                   const fmtDt = (d) => d ? new Date(d).toLocaleDateString('tr-TR') : '-';
                   const isCust = contactType === 'customer';
@@ -434,8 +454,8 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
                         currency: h.currency || 'TRY',
                       };
                     }),
-                    total_debit: totalDebit,
-                    total_credit: totalCredit,
+                    total_debit: rows.reduce((s, h) => s + (h.borcTRY || 0), 0),
+                    total_credit: rows.reduce((s, h) => s + (h.alacakTRY || 0), 0),
                     net_balance: totalBalance,
                   }, `Ekstre - ${contact.name}`);
                 }}
@@ -452,10 +472,12 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
       {showModal && (
         <HareketModal contact={contact} contactType={contactType}
           prefill={prefill}
-          onClose={() => { setModal(false); setPrefill(null); }}
+          editData={editing}
+          onClose={() => { setModal(false); setPrefill(null); setEditing(null); }}
           onSaved={async () => {
             setModal(false);
             setPrefill(null);
+            setEditing(null);
             loaded.current = false;
             await loadHareketler();
             loaded.current = true;
