@@ -6,15 +6,10 @@ import {
   Receipt, User, Building2, AlertCircle, CheckCircle2,
   ArrowUpDown, ChevronsUpDown, Printer
 } from 'lucide-react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../lib/supabaseClient';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLocation } from 'react-router-dom';
 import { printDocument } from '../lib/printService';
-
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-);
 
 const fmtN = (n) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtD = (d) => d ? new Date(d).toLocaleDateString('tr-TR') : '—';
