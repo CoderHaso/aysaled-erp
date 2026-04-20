@@ -227,13 +227,14 @@ function AppShell() {
 
         {/* ── Sayfa içeriği (tek scroll burası) ───────────────────────── */}
         <main className="flex-1 overflow-y-auto" style={{ background: c.bg, color: c.text }}>
-          {!isRouteAllowed() ? (
+          {!isRouteAllowed() && (
             <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 px-4 text-center">
                <h2 className="text-2xl font-bold text-red-500">Yetkisiz Erişim</h2>
                <p style={{ color: c.muted }}>Bu sayfayı görüntüleme yetkiniz yok.</p>
                <button onClick={logout} className="mt-4 px-6 py-2 rounded-xl text-sm font-bold bg-slate-200 dark:bg-slate-800">Çıkış Yap</button>
             </div>
-          ) : (
+          )}
+          {isRouteAllowed() && (
           <Routes location={location}>
             <Route path="/"           element={<Dashboard />} />
             <Route path="/stock"      element={<Stock />} />
