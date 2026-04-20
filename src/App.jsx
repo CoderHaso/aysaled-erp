@@ -259,6 +259,9 @@ function AppShell() {
           </Routes>
         </main>
       </div>
+
+      {/* WhatsApp İletişim Butonu */}
+      <WhatsAppFab />
     </div>
   );
 }
@@ -304,6 +307,82 @@ function ComingSoon({ title, icon = '🚧' }) {
       <p className="text-sm text-center" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
         Bu modül yakında aktif olacak.
       </p>
+    </div>
+  );
+}
+
+// ─── WhatsApp İletişim Butonu ──────────────────────────────────────────────────
+function WhatsAppFab() {
+  const [open, setOpen] = useState(false);
+
+  const WA_NUMBER = '905512429300';
+  const WA_URL = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Merhaba, bilgi almak istiyorum.')}`;
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        bottom: 'calc(24px + env(safe-area-inset-bottom, 0px))',
+        right: 0,
+        zIndex: 9999,
+        display: 'flex',
+        alignItems: 'center',
+        transition: 'transform 0.35s cubic-bezier(0.4,0,0.2,1)',
+        transform: open ? 'translateX(0)' : 'translateX(calc(100% - 48px))',
+      }}
+    >
+      {/* Toggle tab */}
+      <button
+        onClick={() => setOpen(v => !v)}
+        aria-label="WhatsApp"
+        style={{
+          width: 48,
+          height: 48,
+          borderRadius: '14px 0 0 14px',
+          border: 'none',
+          background: '#25D366',
+          color: '#fff',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: '-2px 2px 12px rgba(0,0,0,0.25)',
+          flexShrink: 0,
+          transition: 'background 0.2s',
+        }}
+        onMouseEnter={e => e.currentTarget.style.background = '#1ebe5d'}
+        onMouseLeave={e => e.currentTarget.style.background = '#25D366'}
+      >
+        <svg viewBox="0 0 32 32" width="26" height="26" fill="white">
+          <path d="M16.004 2.002c-7.732 0-14.002 6.27-14.002 14.002 0 2.468.657 4.876 1.904 6.986L2 30l7.204-1.887A13.94 13.94 0 0016.004 30c7.732 0 14.002-6.27 14.002-14.002S23.736 2.002 16.004 2.002zm0 25.63a11.594 11.594 0 01-5.916-1.62l-.424-.252-4.398 1.154 1.174-4.293-.276-.44a11.58 11.58 0 01-1.778-6.177c0-6.406 5.214-11.62 11.618-11.62s11.618 5.214 11.618 11.62-5.214 11.628-11.618 11.628zm6.37-8.706c-.35-.174-2.068-1.02-2.388-1.136-.32-.118-.552-.174-.786.174-.234.348-.904 1.136-1.11 1.37-.204.234-.408.262-.758.088-.35-.174-1.476-.544-2.812-1.736-1.04-.926-1.742-2.07-1.946-2.42-.204-.35-.022-.538.154-.712.158-.156.35-.408.524-.612.174-.204.232-.35.348-.582.118-.234.058-.438-.03-.612-.088-.174-.786-1.894-1.076-2.594-.284-.68-.572-.588-.786-.598l-.67-.012c-.234 0-.612.088-.932.438-.32.348-1.224 1.196-1.224 2.916s1.254 3.382 1.428 3.616c.174.234 2.468 3.768 5.98 5.284.836.36 1.488.576 1.996.738.838.266 1.602.228 2.204.138.672-.1 2.068-.846 2.36-1.662.292-.816.292-1.516.204-1.662-.088-.146-.32-.234-.67-.408z"/>
+        </svg>
+      </button>
+
+      {/* Expanded panel */}
+      <a
+        href={WA_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          padding: '10px 18px 10px 14px',
+          background: '#25D366',
+          color: '#fff',
+          textDecoration: 'none',
+          fontSize: 13,
+          fontWeight: 700,
+          fontFamily: "'Inter', system-ui, sans-serif",
+          whiteSpace: 'nowrap',
+          borderRadius: '0 0 0 0',
+          boxShadow: '-2px 2px 12px rgba(0,0,0,0.25)',
+          letterSpacing: '0.01em',
+        }}
+      >
+        <span>İletişim Hattı</span>
+        <span style={{ fontSize: 11, fontWeight: 500, opacity: 0.9 }}>+90 551 242 93 00</span>
+      </a>
     </div>
   );
 }
