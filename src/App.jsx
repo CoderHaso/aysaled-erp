@@ -234,7 +234,7 @@ function AppShell() {
                <button onClick={logout} className="mt-4 px-6 py-2 rounded-xl text-sm font-bold bg-slate-200 dark:bg-slate-800">Çıkış Yap</button>
             </div>
           ) : (
-          <Routes>
+          <Routes location={location}>
             <Route path="/"           element={<Dashboard />} />
             <Route path="/stock"      element={<Stock />} />
             {/* Eski hash tabanlı QR kodları (A-ERP.com/#/stock/id) için kurtarma rotası */}
@@ -244,8 +244,8 @@ function AppShell() {
             <Route path="/suppliers"  element={<Suppliers />} />
             <Route path="/settings"   element={<Settings />} />
             <Route path="/contacts"   element={<Customers />} />
-            <Route path="/incoming-invoices" element={<Invoices type="outbox" />} />
-            <Route path="/outgoing-invoices" element={<Invoices type="inbox" />} />
+            <Route path="/incoming-invoices" element={<Invoices key="outbox" type="outbox" />} />
+            <Route path="/outgoing-invoices" element={<Invoices key="inbox" type="inbox" />} />
             <Route path="/sales"      element={<Sales />} />
             <Route path="/quotes"     element={<Quotes />} />
             <Route path="/media"      element={<Media />} />
