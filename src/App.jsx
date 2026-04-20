@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { HashRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { useTheme } from './contexts/ThemeContext';
 import Sidebar from './components/Sidebar';
 import { Menu, Bell, Search } from 'lucide-react';
@@ -112,6 +112,15 @@ function AppShell() {
   if (!session) {
     return <Login />;
   }
+
+  // Atölye rolü: otomatik olarak iş emri sayfasına yönlendir
+  useEffect(() => {
+    if (!profile) return;
+    const r = profile.role || ROLES.ATOLYE;
+    if (r === ROLES.ATOLYE && location.pathname !== '/is-emri') {
+      navigate('/is-emri', { replace: true });
+    }
+  }, [profile, location.pathname, navigate, ROLES]);
 
   // RBAC checks
   const isRouteAllowed = () => {
@@ -228,28 +237,59 @@ function AppShell() {
         {/* ── Sayfa içeriği (tek scroll burası) ───────────────────────── */}
         <main className="flex-1 overflow-y-auto" style={{ background: c.bg, color: c.text }}>
           <Routes location={location} key={location.pathname}>
-            <Route path="/"           element={<Dashboard />} />
-            <Route path="/stock"      element={<Stock />} />
+            <Route path="/"           element={<RBACGuard><Dashboard /></RBACGuard>} />
+            <Route path="/stock"      element={<RBACGuard><Stock /></RBACGuard>} />
             <Route path="/stock/:id"  element={<QRDetail />} />
             <Route path="/qr/:id"     element={<QRDetail />} />
-            <Route path="/suppliers"  element={<Suppliers />} />
-            <Route path="/settings"   element={<Settings />} />
-            <Route path="/contacts"   element={<Customers />} />
-            <Route path="/incoming-invoices" element={<Invoices key="outbox" type="outbox" />} />
-            <Route path="/outgoing-invoices" element={<Invoices key="inbox" type="inbox" />} />
-            <Route path="/sales"      element={<Sales />} />
-            <Route path="/quotes"     element={<Quotes />} />
-            <Route path="/media"      element={<Media />} />
-            <Route path="/notifications" element={<Notifications />} />
-            <Route path="/kasa"          element={<Kasa />} />
-            <Route path="/reports"    element={<Reports />} />
-            <Route path="/ledger"     element={<HesapDefteri />} />
+            <Route path="/suppliers"  element={<RBACGuard><Suppliers /></RBACGuard>} />
+            <Route path="/settings"   element={<RBACGuard><Settings /></RBACGuard>} />
+            <Route path="/contacts"   element={<RBACGuard><Customers /></RBACGuard>} />
+            <Route path="/incoming-invoices" element={<RBACGuard><Invoices key="outbox" type="outbox" /></RBACGuard>} />
+            <Route path="/outgoing-invoices" element={<RBACGuard><Invoices key="inbox" type="inbox" /></RBACGuard>} />
+            <Route path="/sales"      element={<RBACGuard><Sales /></RBACGuard>} />
+            <Route path="/quotes"     element={<RBACGuard><Quotes /></RBACGuard>} />
+            <Route path="/media"      element={<RBACGuard><Media /></RBACGuard>} />
+            <Route path="/notifications" element={<RBACGuard><Notifications /></RBACGuard>} />
+            <Route path="/kasa"          element={<RBACGuard><Kasa /></RBACGuard>} />
+            <Route path="/reports"    element={<RBACGuard><Reports /></RBACGuard>} />
+            <Route path="/ledger"     element={<RBACGuard><HesapDefteri /></RBACGuard>} />
             <Route path="/is-emri"    element={<IsEmri />} />
-            <Route path="/katalog"    element={<Katalog />} />
+            <Route path="/katalog"    element={<RBACGuard><Katalog /></RBACGuard>} />
             <Route path="*"           element={<Dashboard />} />
           </Routes>
         </main>
       </div>
+    </div>
+  );
+}
+
+function RBACGuard({ children }) {
+  const { effectiveMode } = useTheme();
+  const { profile, logout, ROLES } = useAuth();
+  const isDark = effectiveMode === 'dark';
+
+  if (!profile) return children; // profil yüklenirken göster
+
+  const r = profile.role || ROLES.ATOLYE;
+  if (r === ROLES.DEV || r === ROLES.ADMIN) return children;
+
+  // Atölye kullanıcıları useEffect ile /is-emri'ye yönlendirilir (AppShell'de)
+  // Buraya gelirse yönlendirme henüz gerçekleşmedi, boş göster
+  if (r === ROLES.ATOLYE) return null;
+
+  // OZEL rol  
+  if (r === ROLES.OZEL) {
+    const allowed = profile.allowed_tabs || [];
+    if (allowed.includes('*')) return children;
+    // Route path kontrolü burada yapılamaz (iç bileşen)  
+    // AppShell zaten yönlendirme yapıyor, burada sadece yakalama
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 px-4 text-center">
+       <h2 className="text-2xl font-bold text-red-500">Yetkisiz Erişim</h2>
+       <p style={{ color: isDark ? '#94a3b8' : '#64748b' }}>Bu sayfayı görüntüleme yetkiniz yok.</p>
+       <button onClick={logout} className="mt-4 px-6 py-2 rounded-xl text-sm font-bold bg-slate-200 dark:bg-slate-800">Çıkış Yap</button>
     </div>
   );
 }

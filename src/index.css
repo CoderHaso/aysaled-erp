@@ -43,9 +43,19 @@ body {
   transition: background-color 0.3s ease, color 0.2s ease;
 }
 
-/* ─── PWA Safe Area ─── */
+/* ─── PWA Safe Area (iOS notch / dynamic island) ─── */
 .safe-top    { padding-top: env(safe-area-inset-top); }
 .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+/* iOS standalone PWA'da üst kısımın bildirim çubuğuna taşmaması için */
+@supports (padding-top: env(safe-area-inset-top)) {
+  @media all and (display-mode: standalone) {
+    html, body, #root {
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+  }
+}
 
 /* ─── Glass Card ─── */
 .glass-card {
