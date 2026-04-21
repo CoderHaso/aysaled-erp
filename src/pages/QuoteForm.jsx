@@ -329,6 +329,59 @@ export function QuotePreview({ quote, onClose, colWidths = {}, rowHeight = 58 })
         <div className="no-print flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-gray-50">
           <p className="font-bold text-gray-700">Teklif Önizleme · {quote.quote_no}</p>
           <div className="flex gap-2">
+            <button onClick={async () => {
+              // Teklif PDF'ini oluştur ve WhatsApp ile paylaş
+              const el = document.getElementById('quote-print');
+              if (!el) return;
+              try {
+                // html2canvas ile yakalama
+                const { default: html2canvas } = await import('html2canvas');
+                const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+                
+                // Canvas'ı blob'a çevir
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png', 0.95));
+                const file = new File([blob], `${quote.quote_no || 'Teklif'}.png`, { type: 'image/png' });
+                
+                // Önce Web Share API dene (mobilde WhatsApp seçeneği çıkar)
+                if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                  await navigator.share({
+                    title: `Teklif - ${quote.quote_no}`,
+                    text: `${quote.company_name || ''} - ${quote.quote_no} Teklif`,
+                    files: [file],
+                  });
+                } else {
+                  // Fallback: WhatsApp Web ile aç (dosya eklenmez ama mesaj gider)
+                  const phone = (quote.phone || '').replace(/\D/g, '');
+                  const msg = encodeURIComponent(
+                    `Merhaba, ${quote.company_name || ''} adına hazırlanan ${quote.quote_no} numaralı teklifimiz ektedir. İyi günler.`
+                  );
+                  const waUrl = phone 
+                    ? `https://wa.me/90${phone.startsWith('0') ? phone.slice(1) : phone}?text=${msg}`
+                    : `https://wa.me/?text=${msg}`;
+                  window.open(waUrl, '_blank');
+                  
+                  // Aynı anda dosyayı da indir (kullanıcı WP'ye eklesin)
+                  const link = document.createElement('a');
+                  link.href = URL.createObjectURL(blob);
+                  link.download = `${quote.quote_no || 'Teklif'}.png`;
+                  link.click();
+                  URL.revokeObjectURL(link.href);
+                }
+              } catch (err) {
+                // Son fallback: sadece WP aç
+                const phone = (quote.phone || '').replace(/\D/g, '');
+                const msg = encodeURIComponent(
+                  `Merhaba, ${quote.company_name || ''} adına hazırlanan ${quote.quote_no} numaralı teklifimiz hakkında bilgi vermek istiyoruz.`
+                );
+                const waUrl = phone 
+                  ? `https://wa.me/90${phone.startsWith('0') ? phone.slice(1) : phone}?text=${msg}`
+                  : `https://wa.me/?text=${msg}`;
+                window.open(waUrl, '_blank');
+              }
+            }}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700">
+              <Send size={15} /> WhatsApp Paylaş
+            </button>
             <button onClick={() => window.print()}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-700 text-white text-sm font-semibold hover:bg-green-800">
               <Printer size={15} /> Yazdır / PDF
