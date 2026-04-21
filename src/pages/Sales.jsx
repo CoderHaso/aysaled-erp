@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 import {
@@ -711,11 +711,10 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
 
       // ── Teklif varsa accepted olarak işaretle ──
       if (quoteId && !isEdit) {
-        try {
-          await supabase.from('quotes')
-            .update({ status: 'accepted', updated_at: new Date().toISOString() })
-            .eq('id', quoteId);
-        } catch (_) { /* teklif güncelleme kritik değil */ }
+        const { error: qErr } = await supabase.from('quotes')
+          .update({ status: 'accepted', updated_at: new Date().toISOString() })
+          .eq('id', quoteId);
+        if (qErr) console.warn('[quote accept] failed:', qErr.message);
       }
 
       // ── UYUMSOFT INVOICE DRAFT CREATION ──
@@ -1038,14 +1037,14 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
         <SectionCard title="Sipariş Özeti" icon={TrendingUp} isDark={isDark}>
           <div className="rounded-2xl overflow-hidden"
             style={{ border: `1px solid ${isDark ? 'rgba(148,163,184,0.1)' : '#e2e8f0'}` }}>
-            {Object.entries(vatBreak).map(([pct, amt]) => (
+            {invoiceToggle && Object.entries(vatBreak).map(([pct, amt]) => (
               <React.Fragment key={pct}>
                 <SumRow isDark={isDark} label={`Matrah (%${pct} KDV için)`} value={fmt(lines.filter(l=>(l.tax_rate||0)==pct).reduce((s,l)=>s+(l.quantity||0)*(l.unit_price||0),0), form.currency)} />
                 <SumRow isDark={isDark} label={`KDV %${pct}`} value={fmt(amt, form.currency)} color="#60a5fa" />
               </React.Fragment>
             ))}
-            <SumRow isDark={isDark} label="Ara Toplam (KDV hariç)" value={fmt(subtotal, form.currency)} />
-            <SumRow isDark={isDark} label="Toplam KDV" value={fmt(taxTotal, form.currency)} color="#60a5fa" />
+            <SumRow isDark={isDark} label={invoiceToggle ? 'Ara Toplam (KDV hariç)' : 'Toplam'} value={fmt(subtotal, form.currency)} />
+            {invoiceToggle && <SumRow isDark={isDark} label="Toplam KDV" value={fmt(taxTotal, form.currency)} color="#60a5fa" />}
 
             {form.currency !== 'TRY' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4"
@@ -1082,9 +1081,9 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
               borderTop: `2px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`,
               background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(248,250,252,0.9)'
             }}>
-              <SumRow isDark={isDark} label="GENEL TOPLAM" value={fmt(grandTotal, form.currency)} bold accent />
+              <SumRow isDark={isDark} label="GENEL TOPLAM" value={fmt(invoiceToggle ? grandTotal : subtotal, form.currency)} bold accent />
               <div className="px-4 py-2 border-b text-center text-[10.5px] font-bold text-violet-500 uppercase tracking-widest" style={{ borderColor: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9' }}>
-                {buildAmountWords(grandTotal, form.currency)}
+                {buildAmountWords(invoiceToggle ? grandTotal : subtotal, form.currency)}
               </div>
               {form.currency !== 'TRY' && (
                 <div className="px-4 py-2 flex justify-between items-center text-[10px] font-bold uppercase tracking-wider"
@@ -1424,21 +1423,14 @@ function OrderDetailDrawer({ order, onClose, onEdit, onSendToWorkOrders, onStatu
             </button>
           </div>
         )}
-        {isCancelled && !isRefunded && (
+        {/* Geçmiş sekmesinde: Kalıcı Sil */}
+        {isHistory && onHardDelete && (
           <div className="px-5 py-4 flex-shrink-0" style={{ borderTop: `1px solid ${c.border}` }}>
-            <button onClick={() => onRefund(order)}
+            <button onClick={() => onHardDelete(order)}
               className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all"
-              style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.25)' }}>
-              <RotateCcw size={15}/> İade Et (Stokları Geri Yükle)
+              style={{ background: 'rgba(220,38,38,0.08)', color: '#dc2626', border: '1px solid rgba(220,38,38,0.2)' }}>
+              <Trash2 size={15}/> Kalıcı Sil (Veritabanından)
             </button>
-          </div>
-        )}
-        {isRefunded && (
-          <div className="px-5 py-4 flex-shrink-0" style={{ borderTop: `1px solid ${c.border}` }}>
-            <div className="flex items-center justify-center gap-2 py-2 rounded-xl text-sm font-semibold"
-              style={{ background: 'rgba(16,185,129,0.08)', color: '#10b981' }}>
-              <CheckCircle2 size={14}/> İade Tamamlandı — Stoklar Geri Yüklendi
-            </div>
           </div>
         )}
       </motion.div>
@@ -1607,16 +1599,6 @@ function OrderCard({ order, onView, onEdit, onStatusChange, onSendToWorkOrders, 
             </>
           )}
 
-          {/* Geçmiş sekmesinde: Kalıcı Sil */}
-          {isHistory && onHardDelete && (
-            <button onClick={() => onHardDelete(order)}
-              className="flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 mt-1"
-              style={BtnStyle('#dc2626', 'rgba(220,38,38,0.06)')}
-              onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-1px)'}
-              onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
-              <Trash2 size={11}/> Kalıcı Sil (Veritabanından)
-            </button>
-          )}
         </div>
       )}
     </motion.div>
@@ -1758,10 +1740,12 @@ export default function Sales() {
     }
   }, [location.state]);
 
+  const quoteProcessedRef = useRef(false);
   useEffect(() => {
     const initFromQuote = async () => {
       const state = location.state;
-      if (state?.createFromQuote && customers.length > 0 && allItems.length > 0) {
+      if (state?.createFromQuote && customers.length > 0 && allItems.length > 0 && !quoteProcessedRef.current) {
+        quoteProcessedRef.current = true; // Sadece bir kez işle
         const q = state.createFromQuote;
         const cName = q.company_name || '';
         const matchedCust = customers.find(c => c.name.toLowerCase() === cName.toLowerCase());
