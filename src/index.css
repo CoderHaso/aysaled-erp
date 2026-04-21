@@ -29,7 +29,9 @@
 html, body, #root {
   height: 100%;
   width: 100%;
-  overflow-x: hidden;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
 }
 
 body {
@@ -47,15 +49,7 @@ body {
 .safe-top    { padding-top: env(safe-area-inset-top); }
 .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
 
-/* iOS standalone PWA'da üst kısımın bildirim çubuğuna taşmaması için */
-@supports (padding-top: env(safe-area-inset-top)) {
-  @media all and (display-mode: standalone) {
-    html, body, #root {
-      padding-top: env(safe-area-inset-top);
-      padding-bottom: env(safe-area-inset-bottom);
-    }
-  }
-}
+/* iOS standalone PWA: safe area'yı body'ye DEĞİL, layout bileşenlerine uygula */
 
 /* ─── Glass Card ─── */
 .glass-card {

@@ -55,9 +55,9 @@ export default function Sidebar({ isOpen, toggle, activeId = 'dashboard', onNavi
   return (
     <>
       <aside
-        style={{ background: 'var(--bg-sidebar)', width: `${sidebarWidth}px` }}
+        style={{ background: 'var(--bg-sidebar)', width: `${sidebarWidth}px`, height: '100dvh', paddingTop: 'env(safe-area-inset-top, 0px)' }}
         className={`
-          fixed top-0 left-0 h-full z-50
+          fixed top-0 left-0 z-50
           flex flex-col
           transition-all duration-300
           ${mobileSidebarShow ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}

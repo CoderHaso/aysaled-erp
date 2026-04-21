@@ -813,7 +813,7 @@ export default function Stock() {
                     </div>
                     {/* Hızlı düzenle alanları */}
                     {quickEditMode && (
-                      <div className="grid grid-cols-2 gap-2 mt-2.5 pl-4" onClick={e => e.stopPropagation()}>
+                      <div className="grid grid-cols-3 gap-2 mt-2.5 pl-4" onClick={e => e.stopPropagation()}>
                         <div>
                           <label className="text-[9px] font-bold uppercase" style={{ color: c.muted }}>Stok</label>
                           <input type="number" step="0.01"
@@ -821,6 +821,15 @@ export default function Stock() {
                             onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), stock_count: e.target.value}}))}
                             className="w-full px-2 py-1.5 text-xs font-bold rounded-lg outline-none mt-0.5"
                             style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: clr }} />
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-bold uppercase" style={{ color: c.muted }}>Birim</label>
+                          <select value={ed.unit ?? item.unit}
+                            onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), unit: e.target.value}}))}
+                            className="w-full px-1.5 py-1.5 text-xs font-bold rounded-lg outline-none mt-0.5"
+                            style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
+                            {['Adet','Metre','cm','mm','Kg','g','Litre','ml','m²','Rulo','Paket','Kutu','Set','Takım'].map(u => <option key={u} value={u}>{u}</option>)}
+                          </select>
                         </div>
                         <div>
                           <label className="text-[9px] font-bold uppercase" style={{ color: c.muted }}>Kritik</label>
@@ -832,7 +841,7 @@ export default function Stock() {
                             style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: '#f59e0b' }} />
                         </div>
                         <div>
-                          <label className="text-[9px] font-bold uppercase" style={{ color: c.muted }}>Alış ({sym})</label>
+                          <label className="text-[9px] font-bold uppercase" style={{ color: c.muted }}>Alış</label>
                           <input type="number" step="0.01"
                             value={ed.purchase_price ?? item.purchase_price ?? ''}
                             onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), purchase_price: e.target.value}}))}
@@ -841,13 +850,31 @@ export default function Stock() {
                             style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: '#10b981' }} />
                         </div>
                         <div>
-                          <label className="text-[9px] font-bold uppercase" style={{ color: c.muted }}>Satış ({saleSym})</label>
+                          <label className="text-[9px] font-bold uppercase" style={{ color: c.muted }}>A.Döviz</label>
+                          <select value={ed.base_currency ?? item.base_currency ?? 'TRY'}
+                            onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), base_currency: e.target.value}}))}
+                            className="w-full px-1.5 py-1.5 text-xs font-bold rounded-lg outline-none mt-0.5"
+                            style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
+                            {['TRY','USD','EUR','GBP'].map(cu => <option key={cu} value={cu}>{cu}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-bold uppercase" style={{ color: c.muted }}>Satış</label>
                           <input type="number" step="0.01"
                             value={ed.sale_price ?? item.sale_price ?? ''}
                             onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), sale_price: e.target.value}}))}
                             placeholder="0.00"
                             className="w-full px-2 py-1.5 text-xs font-bold rounded-lg outline-none mt-0.5"
                             style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: '#3b82f6' }} />
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-bold uppercase" style={{ color: c.muted }}>S.Döviz</label>
+                          <select value={ed.sale_currency ?? item.sale_currency ?? 'TRY'}
+                            onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), sale_currency: e.target.value}}))}
+                            className="w-full px-1.5 py-1.5 text-xs font-bold rounded-lg outline-none mt-0.5"
+                            style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
+                            {['TRY','USD','EUR','GBP'].map(cu => <option key={cu} value={cu}>{cu}</option>)}
+                          </select>
                         </div>
                       </div>
                     )}

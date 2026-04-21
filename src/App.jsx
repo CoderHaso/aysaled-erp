@@ -175,7 +175,7 @@ function AppShell() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: c.bg }}>
+    <div className="flex overflow-hidden" style={{ background: c.bg, height: '100dvh', paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
 
       {/* ── Sidebar ─────────────────────────────────────────────────────── */}
       <Sidebar
