@@ -367,12 +367,13 @@ export function QuotePreview({ quote, onClose, colWidths = {}, rowHeight = 58 })
                 } else {
                   // Desktop: PDF indir + WhatsApp Web aç
                   const phone = (quote.phone || '').replace(/\D/g, '');
+                  const fullPhone = phone ? `90${phone.startsWith('0') ? phone.slice(1) : phone}` : '';
                   const msg = encodeURIComponent(
                     `Merhaba, ${quote.company_name || ''} adına hazırlanan ${quote.quote_no} numaralı teklifimiz ektedir. İyi günler.`
                   );
-                  const waUrl = phone 
-                    ? `https://wa.me/90${phone.startsWith('0') ? phone.slice(1) : phone}?text=${msg}`
-                    : `https://wa.me/?text=${msg}`;
+                  const waUrl = fullPhone 
+                    ? `https://web.whatsapp.com/send?phone=${fullPhone}&text=${msg}`
+                    : `https://web.whatsapp.com/send?text=${msg}`;
                   window.open(waUrl, '_blank');
                   
                   // PDF'i indir
@@ -385,12 +386,13 @@ export function QuotePreview({ quote, onClose, colWidths = {}, rowHeight = 58 })
               } catch (err) {
                 console.error('WhatsApp paylaşım hatası:', err);
                 const phone = (quote.phone || '').replace(/\D/g, '');
+                const fullPhone = phone ? `90${phone.startsWith('0') ? phone.slice(1) : phone}` : '';
                 const msg = encodeURIComponent(
                   `Merhaba, ${quote.company_name || ''} adına hazırlanan ${quote.quote_no} numaralı teklifimiz hakkında bilgi vermek istiyoruz.`
                 );
-                const waUrl = phone 
-                  ? `https://wa.me/90${phone.startsWith('0') ? phone.slice(1) : phone}?text=${msg}`
-                  : `https://wa.me/?text=${msg}`;
+                const waUrl = fullPhone 
+                  ? `https://web.whatsapp.com/send?phone=${fullPhone}&text=${msg}`
+                  : `https://web.whatsapp.com/send?text=${msg}`;
                 window.open(waUrl, '_blank');
               }
             }}
