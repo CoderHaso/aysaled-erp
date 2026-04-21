@@ -735,7 +735,7 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
           }
           if (form.notes) noteParts.push(form.notes);
           if (invSettings.custom_note) noteParts.push(invSettings.custom_note);
-          const finalNotes = noteParts.filter(Boolean).join(' ');
+          const finalNotes = noteParts.filter(Boolean).join('\n');
           
           const invBody = {
             type: 'outbox',

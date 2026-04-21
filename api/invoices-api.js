@@ -404,7 +404,7 @@ async function handleFormalize(body, res) {
       <cbc:CopyIndicator>false</cbc:CopyIndicator>
       <cbc:IssueDate>${issueDate}</cbc:IssueDate>
       <cbc:IssueTime>${trTime}</cbc:IssueTime>
-      ${invoiceNote ? `<cbc:Note>${encodeXml(invoiceNote)}</cbc:Note>` : ''}
+      ${invoiceNote ? invoiceNote.split('\n').filter(Boolean).map(line => `<cbc:Note>${encodeXml(line)}</cbc:Note>`).join('\n      ') : ''}
       <cbc:InvoiceTypeCode>SATIS</cbc:InvoiceTypeCode>
       <cbc:DocumentCurrencyCode>${currency}</cbc:DocumentCurrencyCode>
       <cbc:LineCountNumeric>${lines.length}</cbc:LineCountNumeric>
