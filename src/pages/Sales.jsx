@@ -452,7 +452,7 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
   // Başarılı kayıt sonrası temiz kapat (revert YOK)
   const closeClean = () => {
     onSaved?.();
-    onClose();
+    // onClose artık onSaved içinde çağrılıyor, tekrar çağırmıyoruz
   };
 
   const blankLine = () => ({
@@ -590,8 +590,8 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
         billing_address:  form.billing_address  || null,
         notes:            form.notes            || null,
         subtotal:         Math.round(subtotal   * 100) / 100,
-        tax_total:        Math.round(taxTotal   * 100) / 100,
-        grand_total:      Math.round(grandTotal * 100) / 100,
+        tax_total:        invoiceToggle ? Math.round(taxTotal * 100) / 100 : 0,
+        grand_total:      invoiceToggle ? Math.round(grandTotal * 100) / 100 : Math.round(subtotal * 100) / 100,
         is_invoiced:      invoiceToggle ? true : false,
         // quote_id — tekliften gelen siparişlerde bağlantı kurulur
         ...(quoteId ? { quote_id: quoteId } : {}),
@@ -775,7 +775,6 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
       } else {
         // Faturasız sipariş — direkt kapat
         onSaved?.();
-        onClose();
       }
       // Fatura listesini yenilemek için cache temizle
       if (invoiceToggle) {
@@ -1256,7 +1255,7 @@ function OrderSummaryModal({ order, onConfirm, onCancel, c, currentColor, isDark
 }
 
 // ─── Sipariş Detay Drawer ─────────────────────────────────────────────────────
-function OrderDetailDrawer({ order, onClose, onEdit, onSendToWorkOrders, onStatusChange, onRefund, onConfirmComplete, allRecipes, c, currentColor, isDark, tab }) {
+function OrderDetailDrawer({ order, onClose, onEdit, onSendToWorkOrders, onStatusChange, onRefund, onConfirmComplete, onHardDelete, allRecipes, c, currentColor, isDark, tab }) {
   const urgent = isUrgent(order);
   const isHistory = tab === 'history';
   const isCancelled = order.status === 'cancelled';
@@ -1607,6 +1606,17 @@ function OrderCard({ order, onView, onEdit, onStatusChange, onSendToWorkOrders, 
               )}
             </>
           )}
+
+          {/* Geçmiş sekmesinde: Kalıcı Sil */}
+          {isHistory && onHardDelete && (
+            <button onClick={() => onHardDelete(order)}
+              className="flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 mt-1"
+              style={BtnStyle('#dc2626', 'rgba(220,38,38,0.06)')}
+              onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-1px)'}
+              onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
+              <Trash2 size={11}/> Kalıcı Sil (Veritabanından)
+            </button>
+          )}
         </div>
       )}
     </motion.div>
@@ -1805,6 +1815,32 @@ export default function Sales() {
   }, [location.state, customers, allItems]);
 
   const [dialog, setDialog] = useState({ open: false, title: '', message: '', type: 'confirm', onConfirm: null, loading: false });
+
+  // ── Kalıcı silme (veritabanından tamamen kaldır) ──
+  const handleHardDelete = (order) => {
+    setDialog({
+      open: true,
+      title: '⚠ Kalıcı Silme',
+      message: `"${order.order_number}" siparişi veritabanından KALICI olarak silinecek.\n\nBu işlem geri alınamaz!\n\n• Sipariş kaydı silinecek\n• Sipariş kalemleri silinecek`,
+      type: 'danger',
+      onConfirm: async () => {
+        setDialog(d => ({ ...d, loading: true }));
+        try {
+          // 1. Sipariş kalemlerini sil
+          await supabase.from('order_items').delete().eq('order_id', order.id);
+          // 2. Siparişi sil
+          await supabase.from('orders').delete().eq('id', order.id);
+          // 3. State güncelle
+          setOrders(prev => prev.filter(o => o.id !== order.id));
+          setDetailOrder(null);
+          showToast('Sipariş kalıcı olarak silindi ✓');
+          setDialog({ open: false });
+        } catch (err) {
+          setDialog({ open: true, title: 'Hata', message: 'Silme başarısız: ' + err.message, type: 'alert' });
+        }
+      }
+    });
+  };
 
   const updateStatus = async (orderId, status) => {
     const order = orders.find(o => o.id === orderId);
@@ -2154,6 +2190,7 @@ export default function Sales() {
             onSendToWorkOrders={sendToWorkOrders}
             onStatusChange={updateStatus}
             onRefund={handleRefund}
+            onHardDelete={handleHardDelete}
             onConfirmComplete={o => setConfirmOrder(o)}
           />
         )}
