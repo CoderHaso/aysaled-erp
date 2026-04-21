@@ -767,44 +767,90 @@ export default function Stock() {
                 const pct = item.critical_limit > 0 ? Math.min(100, (item.stock_count / (item.critical_limit * 3)) * 100) : 80;
                 const sym = CURRENCY_SYM[item.base_currency] || '₺';
                 const saleSym = CURRENCY_SYM[item.sale_currency] || '₺';
+                const ed = quickEdits[item.id] || {};
                 return (
                   <motion.div key={item.id}
                     initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.02 }}
-                    onClick={() => setDetailItem(item)}
-                    className="flex items-center gap-3 px-4 py-3.5 active:opacity-70 transition-opacity"
-                    style={{ borderBottom: `1px solid ${c.border}`, cursor: 'pointer' }}>
-                    <div className="w-1 self-stretch rounded-full flex-shrink-0" style={{ background: clr }} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <p className="font-semibold text-sm truncate" style={{ color: c.text }}>{item.name}</p>
-                        {item.sku && (
-                          <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded flex-shrink-0"
-                            style={{ background: `${currentColor}18`, color: currentColor }}>
-                            {item.sku}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                          <span className="text-xs font-bold flex-shrink-0" style={{ color: clr }}>{item.stock_count}</span>
-                          <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: c.border }}>
-                            <div className="h-full rounded-full" style={{ width: `${pct}%`, background: clr }} />
-                          </div>
-                          <span className="text-[10px] flex-shrink-0" style={{ color: c.muted }}>{item.unit}</span>
+                    onClick={() => !quickEditMode && setDetailItem(item)}
+                    className="px-4 py-3.5 active:opacity-70 transition-opacity"
+                    style={{ borderBottom: `1px solid ${c.border}`, cursor: quickEditMode ? 'default' : 'pointer' }}>
+                    {/* Üst satır: İsim + SKU + Buton */}
+                    <div className="flex items-center gap-3">
+                      <div className="w-1 self-stretch rounded-full flex-shrink-0" style={{ background: clr }} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <p className="font-semibold text-sm truncate" style={{ color: c.text }}>{item.name}</p>
+                          {item.sku && (
+                            <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded flex-shrink-0"
+                              style={{ background: `${currentColor}18`, color: currentColor }}>
+                              {item.sku}
+                            </span>
+                          )}
                         </div>
-                        {item.purchase_price > 0 && (
-                          <span className="text-xs font-semibold flex-shrink-0" style={{ color: c.muted }}>
-                            {sym}{item.purchase_price}
-                          </span>
+                        {!quickEditMode && (
+                          <div className="flex items-center gap-2 mt-1">
+                            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                              <span className="text-xs font-bold flex-shrink-0" style={{ color: clr }}>{item.stock_count}</span>
+                              <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: c.border }}>
+                                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: clr }} />
+                              </div>
+                              <span className="text-[10px] flex-shrink-0" style={{ color: c.muted }}>{item.unit}</span>
+                            </div>
+                            {item.purchase_price > 0 && (
+                              <span className="text-xs font-semibold flex-shrink-0" style={{ color: c.muted }}>
+                                {sym}{item.purchase_price}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </div>
+                      <button
+                        onClick={e => { e.stopPropagation(); openForm(item, item.item_type); }}
+                        className="p-2 rounded-xl flex-shrink-0"
+                        style={{ background: `${currentColor}15`, color: currentColor }}>
+                        <Edit2 size={14} />
+                      </button>
                     </div>
-                    <button
-                      onClick={e => { e.stopPropagation(); openForm(item, item.item_type); }}
-                      className="p-2 rounded-xl flex-shrink-0"
-                      style={{ background: `${currentColor}15`, color: currentColor }}>
-                      <Edit2 size={14} />
-                    </button>
+                    {/* Hızlı düzenle alanları */}
+                    {quickEditMode && (
+                      <div className="grid grid-cols-2 gap-2 mt-2.5 pl-4" onClick={e => e.stopPropagation()}>
+                        <div>
+                          <label className="text-[9px] font-bold uppercase" style={{ color: c.muted }}>Stok</label>
+                          <input type="number" step="0.01"
+                            value={ed.stock_count ?? item.stock_count}
+                            onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), stock_count: e.target.value}}))}
+                            className="w-full px-2 py-1.5 text-xs font-bold rounded-lg outline-none mt-0.5"
+                            style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: clr }} />
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-bold uppercase" style={{ color: c.muted }}>Kritik</label>
+                          <input type="number" step="1" min="0"
+                            value={ed.critical_limit ?? item.critical_limit ?? ''}
+                            onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), critical_limit: e.target.value}}))}
+                            placeholder="0"
+                            className="w-full px-2 py-1.5 text-xs font-bold rounded-lg outline-none mt-0.5"
+                            style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: '#f59e0b' }} />
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-bold uppercase" style={{ color: c.muted }}>Alış ({sym})</label>
+                          <input type="number" step="0.01"
+                            value={ed.purchase_price ?? item.purchase_price ?? ''}
+                            onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), purchase_price: e.target.value}}))}
+                            placeholder="0.00"
+                            className="w-full px-2 py-1.5 text-xs font-bold rounded-lg outline-none mt-0.5"
+                            style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: '#10b981' }} />
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-bold uppercase" style={{ color: c.muted }}>Satış ({saleSym})</label>
+                          <input type="number" step="0.01"
+                            value={ed.sale_price ?? item.sale_price ?? ''}
+                            onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), sale_price: e.target.value}}))}
+                            placeholder="0.00"
+                            className="w-full px-2 py-1.5 text-xs font-bold rounded-lg outline-none mt-0.5"
+                            style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: '#3b82f6' }} />
+                        </div>
+                      </div>
+                    )}
                   </motion.div>
                 );
               })}
