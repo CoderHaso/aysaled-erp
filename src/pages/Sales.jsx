@@ -712,11 +712,9 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
       // ── Teklif varsa accepted olarak işaretle ──
       if (quoteId && !isEdit) {
         try {
-          await fetch(`/api/quotes?id=${quoteId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: 'accepted' })
-          });
+          await supabase.from('quotes')
+            .update({ status: 'accepted', updated_at: new Date().toISOString() })
+            .eq('id', quoteId);
         } catch (_) { /* teklif güncelleme kritik değil */ }
       }
 
@@ -2133,6 +2131,7 @@ export default function Sales() {
               setPendingQuoteOriginal(null);
               setShowForm(false);
               setEditOrder(null);
+              window.history.replaceState({}, '');
               loadAll(); 
               showToast(editOrder?.id ? 'Sipariş güncellendi ✓' : 'Sipariş oluşturuldu ✓'); 
             }}

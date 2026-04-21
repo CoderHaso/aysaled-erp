@@ -654,80 +654,53 @@ export default function HesapDefteri() {
 
         {/* Tümünü Yazdır */}
         {!loading && filtered.length > 0 && (
-          <button onClick={async () => {
+          <button onClick={() => {
             const isCust = tab?.type === 'customer';
-            const idCol = isCust ? 'musteri_id' : 'tedarikci_id';
             // Sadece hareketi olanları al
             const withMovements = filtered.filter(c => balances[c.id] !== undefined && balances[c.id] !== 0);
             if (withMovements.length === 0) return;
-            // Her biri için hareketleri çek
-            const allIds = withMovements.map(c => c.id);
-            const { data: allH } = await supabase.from('cari_hareketler')
-              .select('*').in(idCol, allIds).order('tarih', { ascending: true });
-            // Gruplama
-            const grouped = {};
-            (allH || []).forEach(h => {
-              const cid = h[idCol];
-              if (!grouped[cid]) grouped[cid] = [];
-              grouped[cid].push(h);
-            });
-            const sections = withMovements.map(contact => {
-              const rows = grouped[contact.id] || [];
-              let running = 0;
-              rows.forEach(h => { running += (h.borc || 0) - (h.alacak || 0); });
-              return {
-                entity_name: contact.name,
-                vkntckn: contact.vkntckn || '',
-                col_debit: isCust ? 'Alacak' : 'Verecek',
-                col_credit: isCust ? 'Alınan' : 'Verilen',
-                movements: rows.map(h => {
-                  const cs = CUR_SYM[h.currency] || '₺';
-                  return {
-                    date: fmtD(h.tarih),
-                    description: [h.baslik, h.aciklama].filter(Boolean).join(' - '),
-                    debit_fmt: h.borc > 0 ? `${cs}${fmtN(h.borc)}` : '-',
-                    credit_fmt: h.alacak > 0 ? `${cs}${fmtN(h.alacak)}` : '-',
-                    balance_fmt: fmtN(Math.abs(balances[contact.id] || 0)),
-                    currency: h.currency || 'TRY',
-                  };
-                }),
-                total_debit: rows.reduce((s, h) => s + (h.borc || 0), 0),
-                total_credit: rows.reduce((s, h) => s + (h.alacak || 0), 0),
-                net_balance: balances[contact.id] || 0,
-              };
-            });
-            // Multi-section print
-            const html = sections.map(sec => {
-              const movRows = sec.movements.map(m =>
-                `<tr><td style="padding:6px 8px;border-bottom:1px solid #e2e8f0;font-size:12px">${m.date}</td>
-                 <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0;font-size:12px">${m.description}</td>
-                 <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0;font-size:12px;text-align:right;color:#10b981">${m.debit_fmt}</td>
-                 <td style="padding:6px 8px;border-bottom:1px solid #e2e8f0;font-size:12px;text-align:right;color:#ef4444">${m.credit_fmt}</td></tr>`
-              ).join('');
-              return `<div style="page-break-inside:avoid;margin-bottom:24px">
-                <h3 style="font-size:14px;font-weight:700;margin:0 0 4px">${sec.entity_name}</h3>
-                <p style="font-size:11px;color:#64748b;margin:0 0 8px">${sec.vkntckn}</p>
-                <table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0">
-                  <thead><tr style="background:#f1f5f9">
-                    <th style="padding:6px 8px;text-align:left;font-size:11px;font-weight:700">Tarih</th>
-                    <th style="padding:6px 8px;text-align:left;font-size:11px;font-weight:700">Açıklama</th>
-                    <th style="padding:6px 8px;text-align:right;font-size:11px;font-weight:700">${sec.col_debit}</th>
-                    <th style="padding:6px 8px;text-align:right;font-size:11px;font-weight:700">${sec.col_credit}</th>
-                  </tr></thead>
-                  <tbody>${movRows}</tbody>
-                  <tfoot><tr style="font-weight:700;background:#f8fafc">
-                    <td colspan="2" style="padding:6px 8px;font-size:12px">Bakiye</td>
-                    <td style="padding:6px 8px;text-align:right;font-size:12px;color:#10b981">₺${fmtN(sec.total_debit)}</td>
-                    <td style="padding:6px 8px;text-align:right;font-size:12px;color:#ef4444">₺${fmtN(sec.total_credit)}</td>
-                  </tr></tfoot>
-                </table>
-                <p style="text-align:right;margin-top:4px;font-size:12px;font-weight:700">Net: ₺${fmtN(Math.abs(sec.net_balance))} ${sec.net_balance >= 0 ? sec.col_debit : sec.col_credit}</p>
-              </div>`;
+
+            const rows = withMovements.map(contact => {
+              const bal = balances[contact.id] || 0;
+              // Müşteri: pozitif = alacak (düz), negatif = alınan (-)
+              // Tedarikçi: pozitif = verecek (-), negatif = verilen (düz)
+              const display = isCust ? bal : -bal;
+              const color = display >= 0 ? '#10b981' : '#ef4444';
+              return `<tr>
+                <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:13px">${contact.name}</td>
+                <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:13px">${contact.phone || '—'}</td>
+                <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:13px;text-align:right;font-weight:700;color:${color}">
+                  ${display < 0 ? '-' : ''}₺${fmtN(Math.abs(display))}
+                </td>
+              </tr>`;
             }).join('');
+
+            const totalNet = withMovements.reduce((s, c) => {
+              const bal = balances[c.id] || 0;
+              return s + (isCust ? bal : -bal);
+            }, 0);
+
             const w = window.open('', '_blank');
             w.document.write(`<html><head><title>Hesap Defteri - ${tab?.label}</title>
-              <style>body{font-family:system-ui,sans-serif;margin:24px;color:#1e293b}@media print{body{margin:12px}}</style></head>
-              <body><h2 style="margin:0 0 16px;font-size:18px">${tab?.label} Ekstre</h2>${html}
+              <style>body{font-family:system-ui,sans-serif;margin:24px;color:#1e293b}
+              @media print{body{margin:12px}}</style></head>
+              <body>
+              <h2 style="margin:0 0 4px;font-size:18px">${tab?.label}</h2>
+              <p style="font-size:11px;color:#64748b;margin:0 0 16px">${new Date().toLocaleDateString('tr-TR')} · ${withMovements.length} kayıt</p>
+              <table style="width:100%;border-collapse:collapse">
+                <thead><tr style="background:#f1f5f9">
+                  <th style="padding:8px 12px;text-align:left;font-size:12px;font-weight:700;border:1px solid #e2e8f0">Kişi Adı</th>
+                  <th style="padding:8px 12px;text-align:left;font-size:12px;font-weight:700;border:1px solid #e2e8f0">Telefon</th>
+                  <th style="padding:8px 12px;text-align:right;font-size:12px;font-weight:700;border:1px solid #e2e8f0">Net Bakiye</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+                <tfoot><tr style="background:#f8fafc;font-weight:700">
+                  <td colspan="2" style="padding:8px 12px;border:1px solid #e2e8f0;font-size:13px">TOPLAM</td>
+                  <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:13px;text-align:right;color:${totalNet >= 0 ? '#10b981' : '#ef4444'}">
+                    ${totalNet < 0 ? '-' : ''}₺${fmtN(Math.abs(totalNet))}
+                  </td>
+                </tr></tfoot>
+              </table>
               <script>setTimeout(()=>window.print(),500)<\/script></body></html>`);
             w.document.close();
           }}

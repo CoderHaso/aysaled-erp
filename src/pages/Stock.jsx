@@ -434,7 +434,7 @@ export default function Stock() {
       )}
 
       {/* ── ANA LİSTE (Hammadde / Mamül) ─────────────────────────────────── */}
-      {(activeTab === 'raw' || activeTab === 'product') && (
+      {(activeTab === 'all' || activeTab === 'raw' || activeTab === 'product') && (
         <>
           {/* İstatistik kartları */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
