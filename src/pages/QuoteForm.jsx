@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Image as ImageIcon, Printer, Save, X, Package,
-  Eye, ArrowLeft, Upload, UserPlus, Loader2, Check
+  Eye, ArrowLeft, Upload, UserPlus, Loader2, Check, Send
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
@@ -330,19 +330,34 @@ export function QuotePreview({ quote, onClose, colWidths = {}, rowHeight = 58 })
           <p className="font-bold text-gray-700">Teklif Önizleme · {quote.quote_no}</p>
           <div className="flex gap-2">
             <button onClick={async () => {
-              // Teklif PDF'ini oluştur ve WhatsApp ile paylaş
               const el = document.getElementById('quote-print');
               if (!el) return;
               try {
-                // html2canvas ile yakalama
                 const { default: html2canvas } = await import('html2canvas');
+                const { jsPDF } = await import('jspdf');
                 const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
                 
-                // Canvas'ı blob'a çevir
-                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png', 0.95));
-                const file = new File([blob], `${quote.quote_no || 'Teklif'}.png`, { type: 'image/png' });
+                // A4 PDF oluştur
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                const pageW = 210;
+                const pageH = 297;
+                const imgW = pageW;
+                const imgH = (canvas.height * imgW) / canvas.width;
+                const imgData = canvas.toDataURL('image/jpeg', 0.92);
                 
-                // Önce Web Share API dene (mobilde WhatsApp seçeneği çıkar)
+                // Sayfa taşması varsa birden fazla sayfa ekle
+                let yOffset = 0;
+                while (yOffset < imgH) {
+                  if (yOffset > 0) pdf.addPage();
+                  pdf.addImage(imgData, 'JPEG', 0, -yOffset, imgW, imgH);
+                  yOffset += pageH;
+                }
+                
+                const pdfBlob = pdf.output('blob');
+                const fileName = `${quote.quote_no || 'Teklif'}.pdf`;
+                const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
+                
+                // Web Share API (mobilde WhatsApp seçeneği çıkar)
                 if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
                   await navigator.share({
                     title: `Teklif - ${quote.quote_no}`,
@@ -350,7 +365,7 @@ export function QuotePreview({ quote, onClose, colWidths = {}, rowHeight = 58 })
                     files: [file],
                   });
                 } else {
-                  // Fallback: WhatsApp Web ile aç (dosya eklenmez ama mesaj gider)
+                  // Desktop: PDF indir + WhatsApp Web aç
                   const phone = (quote.phone || '').replace(/\D/g, '');
                   const msg = encodeURIComponent(
                     `Merhaba, ${quote.company_name || ''} adına hazırlanan ${quote.quote_no} numaralı teklifimiz ektedir. İyi günler.`
@@ -360,15 +375,15 @@ export function QuotePreview({ quote, onClose, colWidths = {}, rowHeight = 58 })
                     : `https://wa.me/?text=${msg}`;
                   window.open(waUrl, '_blank');
                   
-                  // Aynı anda dosyayı da indir (kullanıcı WP'ye eklesin)
+                  // PDF'i indir
                   const link = document.createElement('a');
-                  link.href = URL.createObjectURL(blob);
-                  link.download = `${quote.quote_no || 'Teklif'}.png`;
+                  link.href = URL.createObjectURL(pdfBlob);
+                  link.download = fileName;
                   link.click();
                   URL.revokeObjectURL(link.href);
                 }
               } catch (err) {
-                // Son fallback: sadece WP aç
+                console.error('WhatsApp paylaşım hatası:', err);
                 const phone = (quote.phone || '').replace(/\D/g, '');
                 const msg = encodeURIComponent(
                   `Merhaba, ${quote.company_name || ''} adına hazırlanan ${quote.quote_no} numaralı teklifimiz hakkında bilgi vermek istiyoruz.`

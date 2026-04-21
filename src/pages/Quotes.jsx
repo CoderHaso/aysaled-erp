@@ -288,7 +288,7 @@ export default function Quotes() {
                   <p className="text-sm font-bold" style={{ color: c.text }}>{fmt(q.grand_total)}</p>
                   <p className="text-[10px]" style={{ color: c.muted }}>{q.currency}</p>
                 </div>
-                <div className="col-span-3 flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="col-span-3 flex items-center justify-end gap-1">
                   {/* Hızlı İşlemler */}
                   {q.status === 'draft' && (
                     <button onClick={() => updateStatus(q.id, 'sent')} title="Gönderildi Olarak İşaretle"
