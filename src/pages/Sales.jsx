@@ -377,15 +377,15 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
           onChange={v => onChange({ unit_price: parseFloat(v) || 0 })} />
         <div>
           <p className="text-[10px] font-bold uppercase tracking-wider mb-1"
-            style={{ color: invoiceToggle ? '#94a3b8' : '#475569' }}>KDV %
-            {!invoiceToggle && <span className="ml-1 text-[9px] text-slate-600">(resmi fatura yok)</span>}
+            style={{ color: invoiceToggle ? (isDark ? '#94a3b8' : '#64748b') : (isDark ? '#475569' : '#94a3b8') }}>KDV %
+            {!invoiceToggle && <span className="ml-1 text-[9px]" style={{ color: isDark ? '#475569' : '#94a3b8' }}>(resmi fatura yok)</span>}
           </p>
           <select value={invoiceToggle ? (line.tax_rate ?? 20) : 0}
             onChange={e => onChange({ tax_rate: parseFloat(e.target.value) })}
             disabled={!invoiceToggle}
             className="w-full rounded-xl px-3 py-2 text-sm outline-none"
-            style={{ background: invoiceToggle ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)',
-              border: '1px solid rgba(148,163,184,0.15)', color: invoiceToggle ? '#f1f5f9' : '#475569',
+            style={{ background: isDark ? (invoiceToggle ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.02)') : (invoiceToggle ? '#f1f5f9' : '#f8fafc'),
+              border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`, color: isDark ? (invoiceToggle ? '#f1f5f9' : '#475569') : (invoiceToggle ? '#1e293b' : '#94a3b8'),
               cursor: invoiceToggle ? 'pointer' : 'not-allowed' }}>
             {TAX_RATES.map(r => <option key={r} value={r}>%{r}</option>)}
           </select>
@@ -2131,6 +2131,8 @@ export default function Sales() {
             onSaved={() => { 
               setPendingQuoteId(null);
               setPendingQuoteOriginal(null);
+              setShowForm(false);
+              setEditOrder(null);
               loadAll(); 
               showToast(editOrder?.id ? 'Sipariş güncellendi ✓' : 'Sipariş oluşturuldu ✓'); 
             }}

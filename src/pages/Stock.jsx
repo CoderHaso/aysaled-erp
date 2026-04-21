@@ -48,7 +48,7 @@ export default function Stock() {
     try { return s ? JSON.parse(s) : null; } catch (e) { return null; }
   });
   const [formType, setFormType] = useState(() => sessionStorage.getItem('aerp_formType') || 'raw');
-  const [activeTab, setActiveTab] = useState(() => sessionStorage.getItem('aerp_activeTab') || 'raw');
+  const [activeTab, setActiveTab] = useState(() => sessionStorage.getItem('aerp_activeTab') || 'all');
 
   useEffect(() => {
     sessionStorage.setItem('aerp_view', view);
@@ -81,6 +81,7 @@ export default function Stock() {
   const [quickEdits,    setQuickEdits]    = useState({});      // {itemId: {field: val}}
   const [quickSaving,   setQuickSaving]   = useState(false);
   const [bulkModal,     setBulkModal]     = useState(false);  // toplu güncelle
+  const { convert: fxConvert } = useFxRates();
 
   const c = {
     bg:       isDark ? '#0f172a' : '#f8fafc',
@@ -110,7 +111,7 @@ export default function Stock() {
     else { setSortKey(key); setSortDir('asc'); }
   };
 
-  const baseList = activeTab === 'raw' ? rawItems : productItems;
+  const baseList = activeTab === 'all' ? [...rawItems, ...productItems] : activeTab === 'raw' ? rawItems : productItems;
   const filtered = useMemo(() => {
     let list = [...baseList];
     if (search) {
@@ -266,13 +267,15 @@ export default function Stock() {
     ? sortDir === 'asc' ? <ChevronUp size={11} /> : <ChevronDown size={11} />
     : <ChevronUp size={11} style={{ opacity: 0.2 }} />;
 
-  const currentCritical = activeTab === 'raw' ? criticalRaw : criticalProd;
-  const currentItems    = activeTab === 'raw' ? rawItems    : productItems;
+  const allItems = [...rawItems, ...productItems];
+  const currentCritical = activeTab === 'all' ? [...criticalRaw, ...criticalProd] : activeTab === 'raw' ? criticalRaw : criticalProd;
+  const currentItems    = activeTab === 'all' ? allItems : activeTab === 'raw' ? rawItems : productItems;
   const currentValue    = currentItems.reduce((s, i) => s + (i.purchase_price || 0) * (i.stock_count || 0), 0);
 
   const TABS = [
-    { id: 'raw',     label: '🔩 Hammadde', count: rawItems.length,     critical: criticalRaw.length },
+    { id: 'all',     label: '📦 Genel',     count: allItems.length,       critical: criticalRaw.length + criticalProd.length },
     { id: 'product', label: '⚡ Mamül',     count: productItems.length, critical: criticalProd.length },
+    { id: 'raw',     label: '🔩 Hammadde', count: rawItems.length,     critical: criticalRaw.length },
     { id: 'summary', label: '📊 Özet' },
   ];
 
@@ -700,7 +703,13 @@ export default function Stock() {
                             </td>
                             <td className="px-3 py-3.5" onClick={e => e.stopPropagation()}>
                               <select value={ed.base_currency ?? item.base_currency ?? 'TRY'}
-                                onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), base_currency: e.target.value}}))}
+                                onChange={e => {
+                                  const newCur = e.target.value;
+                                  const oldCur = ed.base_currency ?? item.base_currency ?? 'TRY';
+                                  const oldPrice = parseFloat(ed.purchase_price ?? item.purchase_price) || 0;
+                                  const converted = oldPrice > 0 ? fxConvert(oldPrice, oldCur, newCur) : 0;
+                                  setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), base_currency: newCur, purchase_price: converted ? converted.toFixed(2) : '0'}}));
+                                }}
                                 className="w-full px-1 py-1 text-xs rounded-lg outline-none"
                                 style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
                                 {['TRY','USD','EUR','GBP'].map(cu => <option key={cu} value={cu}>{cu}</option>)}
@@ -708,7 +717,13 @@ export default function Stock() {
                             </td>
                             <td className="px-3 py-3.5" onClick={e => e.stopPropagation()}>
                               <select value={ed.sale_currency ?? item.sale_currency ?? 'TRY'}
-                                onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), sale_currency: e.target.value}}))}
+                                onChange={e => {
+                                  const newCur = e.target.value;
+                                  const oldCur = ed.sale_currency ?? item.sale_currency ?? 'TRY';
+                                  const oldPrice = parseFloat(ed.sale_price ?? item.sale_price) || 0;
+                                  const converted = oldPrice > 0 ? fxConvert(oldPrice, oldCur, newCur) : 0;
+                                  setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), sale_currency: newCur, sale_price: converted ? converted.toFixed(2) : '0'}}));
+                                }}
                                 className="w-full px-1 py-1 text-xs rounded-lg outline-none"
                                 style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
                                 {['TRY','USD','EUR','GBP'].map(cu => <option key={cu} value={cu}>{cu}</option>)}

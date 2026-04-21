@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { useTheme } from './contexts/ThemeContext';
 import Sidebar from './components/Sidebar';
-import { Menu, Bell, Search } from 'lucide-react';
+import { Menu, Bell } from 'lucide-react';
 import Dashboard      from './pages/Dashboard';
 import Stock          from './pages/Stock';
 import Suppliers      from './pages/Suppliers';
@@ -220,17 +220,9 @@ function AppShell() {
             </div>
           </div>
 
-          {/* Sağ: arama + bildirim */}
+          {/* Sağ: bildirim */}
           <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
-            <div className="hidden md:flex items-center gap-2 px-3 py-2 rounded-xl border"
-              style={{ background: c.searchBg, borderColor: c.border }}>
-              <Search size={14} style={{ color: c.muted }} />
-              <input type="text" placeholder="Ara..."
-                className="bg-transparent border-none outline-none text-sm w-36 lg:w-44"
-                style={{ color: c.text }} />
-            </div>
             <BellButton navigate={navigate} />
-
           </div>
         </header>
 
