@@ -720,8 +720,22 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
       // ── UYUMSOFT INVOICE DRAFT CREATION ──
       if (invoiceToggle && !isEdit) {
         try {
-          const amntWords = buildAmountWords(Math.round((subtotal + taxTotal) * 100) / 100, form.currency);
-          const finalNotes = form.notes ? `${amntWords} ${form.notes}`.trim() : amntWords;
+          // Fatura ayarlarını oku
+          let invSettings = { show_amount_words: true, custom_note: '' };
+          try {
+            const { data: isData } = await supabase.from('app_settings')
+              .select('value').eq('id', 'invoice_settings').maybeSingle();
+            if (isData?.value) invSettings = { ...invSettings, ...isData.value };
+          } catch(_) {}
+
+          // Note oluştur
+          const noteParts = [];
+          if (invSettings.show_amount_words) {
+            noteParts.push(buildAmountWords(Math.round((subtotal + taxTotal) * 100) / 100, form.currency));
+          }
+          if (form.notes) noteParts.push(form.notes);
+          if (invSettings.custom_note) noteParts.push(invSettings.custom_note);
+          const finalNotes = noteParts.filter(Boolean).join(' ');
           
           const invBody = {
             type: 'outbox',
@@ -1851,20 +1865,21 @@ export default function Sales() {
                         await supabase.from('quotes').update({ status: 'rejected' }).eq('id', order.quote_id);
                     }
 
-                    // 3. Taslak fatura varsa bul ve iptal et (Uyumsoft CancelDraft)
+                    // 3. Taslak fatura varsa bul ve iptal et
                     try {
                         const { data: inv } = await supabase
                             .from('invoices')
-                            .select('invoice_id')
+                            .select('invoice_id, document_id, status')
                             .ilike('cari_name', `%${order.customer_name}%`)
-                            .eq('status', 'Draft')
+                            .in('status', ['Draft', 'Queued'])
                             .limit(1)
-                            .maybeSingle(); // 0 satır gelince null döner, hata fırlatmaz
+                            .maybeSingle();
                         if (inv?.invoice_id) {
-                            await fetch('/api/invoices-api?action=cancelDraft', {
+                            // delete action: Uyumsoft iptal + Supabase silme
+                            await fetch('/api/invoices-api?action=delete', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ invoiceIds: [inv.invoice_id] })
+                                body: JSON.stringify({ invoiceId: inv.invoice_id })
                             });
                             try { sessionStorage.removeItem('page_cache_invoices_outbox'); } catch(e){}
                         }

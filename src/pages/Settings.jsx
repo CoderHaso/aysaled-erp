@@ -70,6 +70,7 @@ export default function Settings() {
 
   const TABS = [
     ...(profile?.role !== ROLES.ADMIN ? [{ id: 'uyumsoft',    label: '🔌 Uyumsoft' }] : []),
+    { id: 'invoice',     label: '🧾 Fatura' },
     { id: 'cat_raw',     label: '🔩 Ham. Kategoriler' },
     { id: 'cat_product', label: '⚡ Ürün Kategoriler' },
     { id: 'templates',   label: '🖨️ Şablonlar' },
@@ -153,6 +154,11 @@ export default function Settings() {
         </div>
       )}
 
+      {/* FATURA AYARLARI */}
+      {activeTab === 'invoice' && (
+        <InvoiceSettingsManager c={c} currentColor={currentColor} isDark={isDark} />
+      )}
+
       {/* KATEGORİ YÖNETİMİ */}
       {(activeTab === 'cat_raw' || activeTab === 'cat_product') && (
         <CategoryManager
@@ -176,6 +182,119 @@ export default function Settings() {
         <UsersManager c={c} currentColor={currentColor} isDark={isDark} profile={profile} ROLES={ROLES} />
       )}
     </motion.div>
+  );
+}
+
+// ═══════════════ FATURA AYARLARI ═══════════════
+const INVOICE_SETTINGS_KEY = 'invoice_settings';
+
+function InvoiceSettingsManager({ c, currentColor, isDark }) {
+  const [settings, setSettings] = useState({ show_amount_words: true, custom_note: '' });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    supabase.from('app_settings').select('value').eq('id', INVOICE_SETTINGS_KEY).maybeSingle()
+      .then(({ data }) => {
+        if (data?.value) setSettings(prev => ({ ...prev, ...data.value }));
+        setLoading(false);
+      });
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    await supabase.from('app_settings').upsert({
+      id: INVOICE_SETTINGS_KEY,
+      value: settings,
+      updated_at: new Date().toISOString(),
+    });
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <div className="rounded-3xl p-6 sm:p-8 space-y-6" style={{ background: c.card, border: `1px solid ${c.border}` }}>
+      <div>
+        <h2 className="text-lg font-bold" style={{ color: c.text }}>Fatura Açıklama Ayarları</h2>
+        <p className="text-sm mt-0.5" style={{ color: c.muted }}>
+          Uyumsoft'a gönderilen faturalardaki açıklama (Note) alanını özelleştirin.
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-8"><Loader2 size={20} className="animate-spin mx-auto" style={{ color: currentColor }} /></div>
+      ) : (
+        <>
+          {/* Toggle: Yazılı fiyat göster */}
+          <div className="flex items-center justify-between px-4 py-3.5 rounded-xl"
+            style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', border: `1px solid ${c.border}` }}>
+            <div>
+              <p className="text-sm font-semibold" style={{ color: c.text }}>Yazılı Fiyat Göster</p>
+              <p className="text-xs mt-0.5" style={{ color: c.muted }}>Fatura açıklamasına toplam tutarın yazıyla karşılığını ekler</p>
+            </div>
+            <button onClick={() => setSettings(s => ({ ...s, show_amount_words: !s.show_amount_words }))}
+              className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
+              style={{ background: settings.show_amount_words ? currentColor : (isDark ? 'rgba(255,255,255,0.1)' : '#cbd5e1') }}>
+              <div className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-transform"
+                style={{ left: settings.show_amount_words ? '22px' : '2px' }} />
+            </button>
+          </div>
+
+          {/* Özel Açıklama */}
+          <div className="space-y-2">
+            <div>
+              <label className="text-[10px] font-bold uppercase tracking-widest block mb-1.5" style={{ color: c.muted }}>
+                Sabit Açıklama (IBAN, Banka Bilgisi vb.)
+              </label>
+              <p className="text-xs mb-3" style={{ color: c.muted }}>
+                Her faturaya eklenecek sabit metin. Satır satır yazabilirsiniz (her satır ayrı not satırı olarak geçer).
+              </p>
+              <textarea
+                value={settings.custom_note || ''}
+                onChange={e => setSettings(s => ({ ...s, custom_note: e.target.value }))}
+                rows={4}
+                className="w-full px-4 py-3 rounded-xl outline-none border text-sm resize-y"
+                style={{ background: c.inputBg, borderColor: c.border, color: c.text, minHeight: '100px' }}
+                placeholder={"DENİZBANK\nIBAN: TR00 0001 3400 0000 0043 ...\nALICI: AYS LED LTD. ŞTİ."}
+              />
+            </div>
+          </div>
+
+          {/* Önizleme */}
+          {(settings.show_amount_words || settings.custom_note) && (
+            <div className="rounded-xl p-4 space-y-1" style={{ background: isDark ? 'rgba(255,255,255,0.02)' : '#f1f5f9', border: `1px solid ${c.border}` }}>
+              <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: c.muted }}>Önizleme (Açıklama alanı)</p>
+              {settings.show_amount_words && (
+                <p className="text-xs font-medium" style={{ color: c.text }}>
+                  <span style={{ color: currentColor }}>₺</span> BEŞBİNDOKUZYÜZ TÜRK LİRASI
+                </p>
+              )}
+              {settings.custom_note && settings.custom_note.split('\n').map((line, i) => (
+                <p key={i} className="text-xs" style={{ color: c.text }}>{line}</p>
+              ))}
+            </div>
+          )}
+
+          {/* Kaydet */}
+          <div className="flex items-center gap-3 pt-2">
+            <button onClick={handleSave} disabled={saving}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all"
+              style={{ background: saving ? '#64748b' : currentColor }}>
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              {saving ? 'Kaydediliyor...' : 'Kaydet'}
+            </button>
+            {saved && (
+              <motion.span initial={{ opacity: 0, x: -5 }} animate={{ opacity: 1, x: 0 }}
+                className="text-xs font-bold text-emerald-500 flex items-center gap-1">
+                <CheckCircle2 size={14} /> Kaydedildi!
+              </motion.span>
+            )}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 

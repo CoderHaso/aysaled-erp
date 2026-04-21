@@ -440,6 +440,10 @@ async function handleFormalize(body, res) {
           <cac:PartyLegalEntity>
             <cbc:RegistrationName>${custName}</cbc:RegistrationName>
           </cac:PartyLegalEntity>
+          ${custVkn.length === 11 ? `<cac:Person>
+            <cbc:FirstName>${encodeXml(custNameRaw.split(' ').slice(0, -1).join(' ') || custNameRaw)}</cbc:FirstName>
+            <cbc:FamilyName>${encodeXml(custNameRaw.split(' ').slice(-1)[0] || custNameRaw)}</cbc:FamilyName>
+          </cac:Person>` : ''}
         </cac:Party>
       </cac:AccountingCustomerParty>
       ${currency !== 'TRY' ? `
