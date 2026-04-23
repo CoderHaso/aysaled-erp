@@ -1112,7 +1112,7 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
     // Reçeteleri her zaman yükle (geçmişte de lazım)
     if (isProduct && recipes.length === 0) {
       supabase.from('product_recipes')
-        .select('id, name, tags, recipe_items(id, item_id, item_name, quantity, unit, item:item_id(base_currency, purchase_price))')
+        .select('id, name, tags, other_costs, recipe_items(id, item_id, item_name, quantity, unit, item:item_id(base_currency, purchase_price))')
         .eq('product_id', item.id).order('name')
         .then(({ data }) => setRecipes(data || []));
     }

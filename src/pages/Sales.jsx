@@ -1726,7 +1726,7 @@ export default function Sales() {
       supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }),
       supabase.from('customers').select('id, name, vkntckn, tax_office, phone, email, address, city, district, country').order('name'),
       supabase.from('items').select('id, name, item_type, unit, sale_price, purchase_price, stock_count, sku, base_currency, vat_rate, category').order('name'),
-      supabase.from('product_recipes').select('id, product_id, name, tags, recipe_items(id, item_id, item_name, quantity, unit)').order('name'),
+      supabase.from('product_recipes').select('id, product_id, name, tags, other_costs, recipe_items(id, item_id, item_name, quantity, unit)').order('name'),
       supabase.from('work_orders').select('id, order_id, status, production_note, recipe_id, recipe_change_note').order('created_at', { ascending: false }),
     ]);
     const allWOs = woRes.data || [];

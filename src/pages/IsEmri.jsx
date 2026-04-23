@@ -234,7 +234,7 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
       if (isCustom) {
         rawMaterials = customItems.filter(ri => ri.item_id);
       } else {
-        const recipeQuery = supabase.from('product_recipes').select('id, recipe_items(item_id, quantity)').eq('product_id', wo.item_id);
+        const recipeQuery = supabase.from('product_recipes').select('id, other_costs, recipe_items(item_id, quantity)').eq('product_id', wo.item_id);
         if (recipeId) recipeQuery.eq('id', recipeId); else recipeQuery.limit(1);
         try {
           const res = await recipeQuery.maybeSingle();
@@ -547,7 +547,7 @@ export default function IsEmri() {
       supabase.from('work_orders').select('*').order('created_at', { ascending:false }),
       supabase.from('items').select('id, name, unit, item_type, stock_count, category').eq('is_active', true),
       supabase.from('orders').select('id, order_number, customer_name, status').order('created_at', { ascending:false }).limit(200),
-      supabase.from('product_recipes').select('id, product_id, name, tags, recipe_items(id, item_id, item_name, quantity, unit)').order('name'),
+      supabase.from('product_recipes').select('id, product_id, name, tags, other_costs, recipe_items(id, item_id, item_name, quantity, unit)').order('name'),
     ]);
     setWorkOrders(woRes.data || []);
     setItems(itemRes.data || []);
