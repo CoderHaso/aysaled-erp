@@ -7,24 +7,11 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
-
-/**
- * RecipePickerModal
- * 
- * Sol : Etiket filtresi + Reçete listesi
- * Sağ : Seçili reçetenin malzemeleri (tam CRUD, fiyat dahil)
- *       Swap/Ekle → ItemPickerModal (ayrı modal, scrollable tam liste)
- *
- * Props:
- *  productId, productName
- *  allRecipes  : [{id, product_id, name, tags[], recipe_items:[{id,item_id,item_name,quantity,unit}]}]
- *  allItems    : [{id, name, unit, purchase_price, item_type}]
- *  onSelect    : ({recipe_id, recipe_key, recipe_note, components}) => void
- *  onClose     : () => void
- *  currentColor
- */
+import { useFxRates } from '../hooks/useFxRates';
 
 const UNITS = ['Adet','Metre','cm','mm','Kg','g','Litre','ml','m²','Rulo','Paket','Kutu','Set','Takım'];
+const CURRENCIES = ['TRY', 'USD', 'EUR', 'GBP'];
+const CURRENCY_SYM = { TRY: '₺', USD: '$', EUR: '€', GBP: '£' };
 
 export default function RecipePickerModal({
   productId, productName, allRecipes, allItems = [],
@@ -35,14 +22,15 @@ export default function RecipePickerModal({
   hideCosts = false,
 }) {
   const { effectiveMode } = useTheme();
+  const { convert: fxConvert } = useFxRates();
   const isDark = effectiveMode === 'dark';
 
   const [costTypes, setCostTypes] = useState([]);
   const [expenseDrop, setExpenseDrop] = useState(false);
   const expenseDropRef = React.useRef(null);
   React.useEffect(() => {
-    supabase.from('app_settings').select('setting_value').eq('setting_key', 'recipe_costs').maybeSingle()
-      .then(res => setCostTypes(res.data?.setting_value || []));
+    supabase.from('app_settings').select('value').eq('id', 'recipe_costs').maybeSingle()
+      .then(res => setCostTypes(res.data?.value || []));
   }, []);
 
   React.useEffect(() => {
@@ -168,9 +156,11 @@ export default function RecipePickerModal({
   /* ── Maliyet ───────────────────────────────────────────────── */
   const totalCost = useMemo(() => localItems.reduce((sum, it) => {
     const item  = (allItems || []).find(i => i.id === it.item_id) || {};
-    const price = it.purchase_price ?? item.purchase_price ?? 0;
-    return sum + Number(price) * Number(it.quantity || 1);
-  }, 0), [localItems, allItems]);
+    const price = Number(it.purchase_price ?? item.purchase_price ?? 0);
+    const curr  = it.base_currency || item.base_currency || 'TRY';
+    const tryPrice = fxConvert(price, curr, 'TRY');
+    return sum + tryPrice * Number(it.quantity || 1);
+  }, 0), [localItems, allItems, fxConvert]);
 
   const addOtherCost = (type) => {
     setLocalItems(prev => [...prev, {
@@ -180,6 +170,7 @@ export default function RecipePickerModal({
       unit: 'Adet',
       quantity: 1,
       purchase_price: 0,
+      base_currency: 'TRY',
       _isOtherCost: true
     }]);
     setExpenseDrop(false);
@@ -254,6 +245,7 @@ export default function RecipePickerModal({
         quantity:       Number(it.quantity) || 1,
         unit:           it.unit || 'Adet',
         purchase_price: it.purchase_price ?? null,
+        base_currency:  it.base_currency || 'TRY',
         _isOtherCost:   !!it._isOtherCost,
       }));
     onSelect({
@@ -615,7 +607,11 @@ export default function RecipePickerModal({
                           {/* Birim Fiyat */}
                           {!hideCosts && (
                             <div className="flex items-center justify-end gap-0.5">
-                              <span className="text-[10px] text-slate-600">₺</span>
+                              <select value={it.base_currency || 'TRY'}
+                                onChange={e => updateItem(idx, 'base_currency', e.target.value)}
+                                className="bg-transparent text-[10px] text-amber-600 outline-none p-0 pr-1 border-none cursor-pointer">
+                                {CURRENCIES.map(c => <option key={c} value={c} className="text-black">{CURRENCY_SYM[c] || c}</option>)}
+                              </select>
                               <input type="number" min="0" step="0.01"
                                 value={it.purchase_price ?? ''}
                                 onChange={e => updateItem(idx, 'purchase_price', e.target.value === '' ? null : Number(e.target.value))}
@@ -888,6 +884,7 @@ function cloneRecipeData(recipe) {
     quantity: 1,
     unit: 'Adet',
     purchase_price: oc.amount,
+    base_currency: oc.currency || 'TRY',
     _isOtherCost: true,
   }));
   return [...items, ...costs];

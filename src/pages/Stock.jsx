@@ -1547,7 +1547,12 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
                         <p className="text-[9px] font-bold uppercase tracking-widest pt-1" style={{ color: '#f59e0b' }}>Diğer Giderler</p>
                         {r.other_costs.map((oc, j) => (
                           <div key={'oc'+j} className="flex items-center justify-between text-[10px] py-0.5" style={{ color: '#f59e0b' }}>
-                            <span className="flex-1 truncate pr-2">• {oc.type || oc.item_name}</span>
+                            <span className="flex-1 truncate pr-2">
+                              • {oc.type || oc.item_name}
+                              <span className="opacity-60 ml-1">
+                                ({CURRENCY_SYM[oc.currency || 'TRY'] || '₺'}{oc.amount || 0})
+                              </span>
+                            </span>
                             <span className="font-bold flex-shrink-0">{oc.quantity || 1} {oc.unit || 'Adet'}</span>
                           </div>
                         ))}
@@ -1659,8 +1664,13 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
                             if (ri._isOtherCost) return null;
                             return (
                               <div key={j} className="flex items-center justify-between text-[10px] py-0.5" style={{ color: c.muted }}>
-                                <span>• {ri.item_name}</span>
-                                <span className="font-bold">{ri.quantity} {ri.unit}</span>
+                                <span className="flex-1 truncate pr-2">
+                                  • {ri.item_name}
+                                  <span className="opacity-50 ml-1">
+                                    ({CURRENCY_SYM[ri.base_currency || 'TRY'] || '₺'}{ri.purchase_price || 0})
+                                  </span>
+                                </span>
+                                <span className="font-bold flex-shrink-0">{ri.quantity} {ri.unit}</span>
                               </div>
                             );
                           })}
@@ -1672,8 +1682,13 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
                               </div>
                               {(cs.items || []).filter(ri => ri._isOtherCost).map((oc, j) => (
                                 <div key={'occ'+j} className="flex items-center justify-between text-[10px] py-0.5" style={{ color: '#f59e0b' }}>
-                                  <span className="font-bold">• {oc.item_name}</span>
-                                  <span className="font-bold">{oc.quantity || 1} {oc.unit || 'Adet'}</span>
+                                  <span className="flex-1 truncate pr-2 font-bold">
+                                    • {oc.item_name}
+                                    <span className="opacity-60 ml-1">
+                                      ({CURRENCY_SYM[oc.base_currency || 'TRY'] || '₺'}{oc.purchase_price || 0})
+                                    </span>
+                                  </span>
+                                  <span className="font-bold flex-shrink-0">{oc.quantity || 1} {oc.unit || 'Adet'}</span>
                                 </div>
                               ))}
                             </>
