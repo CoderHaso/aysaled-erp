@@ -179,6 +179,17 @@ export default function App() {
         loadCatalogs();
     }, []);
 
+    // YENİ EK: Otomatik Kayıt (İlk kayıttan sonra)
+    useEffect(() => {
+        if (!selectedCatalogId) return;
+        const timer = setTimeout(() => {
+            const titleToSave = settings.catalogTitle || 'İsimsiz Katalog';
+            const dataToSave = { settings, companyInfo, categories, products };
+            supabase.from('catalogs').update({ title: titleToSave, data: dataToSave, updated_at: new Date().toISOString() }).eq('id', selectedCatalogId).then();
+        }, 1500);
+        return () => clearTimeout(timer);
+    }, [settings, companyInfo, categories, products, selectedCatalogId]);
+
     const loadCatalogs = async () => {
         try {
             const { data, error } = await supabase.from('catalogs').select('id, title, updated_at').order('created_at', { ascending: false });
@@ -381,7 +392,7 @@ export default function App() {
             name: `${product.name} (Kopya)`,
             code: product.code ? `${product.code}-${timestamp}` : ''
         };
-        setProducts(prev => [newProduct, ...prev]);
+        setProducts(prev => [...prev, newProduct]);
     };
 
     const exportPDF = async () => {
@@ -1257,13 +1268,13 @@ export default function App() {
                                                                         })}
                                                                     </div>
 
-                                                                    {/* Teknik Çizim (Özelliklerin Altında Sağa Dayalı) */}
+                                                                    {/* Teknik Çizim (Özelliklerin Altında Sola Dayalı, Sol Üste Doğru Büyütülmüş) */}
                                                                     {product.techImage ? (
-                                                                        <div className="mt-auto pt-[8px] flex justify-end items-end h-[80px] w-full" style={{ borderTop: '1px solid #e2e8f0' }}>
-                                                                            <img src={product.techImage} className="max-h-[100%] max-w-[80%] border-none object-contain opacity-90 mix-blend-multiply" alt={`${product.name} Teknik`} />
+                                                                        <div className="mt-auto pt-[8px] w-full relative h-[80px]" style={{ borderTop: '1px solid #e2e8f0' }}>
+                                                                            <img src={product.techImage} className="border-none" style={{ position: 'absolute', top: '12px', left: 0, height: '140%', maxWidth: '100%', objectFit: 'contain', mixBlendMode: 'multiply', transformOrigin: 'top left', transform: 'scale(1.25)', opacity: 0.9 }} alt={`${product.name} Teknik`} />
                                                                         </div>
                                                                     ) : (
-                                                                        <div className="mt-auto pt-[8px] flex justify-end items-end h-[80px] w-full" style={{ borderTop: '1px solid #e2e8f0' }}></div>
+                                                                        <div className="mt-auto pt-[8px] w-full h-[80px]" style={{ borderTop: '1px solid #e2e8f0' }}></div>
                                                                     )}
                                                                 </div>
                                                             </div>
