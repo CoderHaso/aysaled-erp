@@ -27,6 +27,7 @@ export default function RecipeEditor({ productId, productName, productCurrency, 
   const [rawItems, setRawItems] = useState([]);   // hammadde listesi (item seçici için)
   const [copyModal, setCopyModal] = useState(false); // recete kopyala modal
   const [allProducts, setAllProducts] = useState([]);
+  const [costTypes, setCostTypes] = useState(['İşçilik', 'Boya', 'Genel gider', 'Kaynak', 'Ekstra']);
 
   // ── Veri çek ──────────────────────────────────────────────────────────────
   const loadRecipes = useCallback(async () => {
@@ -50,6 +51,9 @@ export default function RecipeEditor({ productId, productName, productCurrency, 
     // Kopyalama için tüm ürünler
     supabase.from('items').select('id,name').eq('item_type','product').neq('id', productId || 'none').order('name')
       .then(({ data }) => setAllProducts(data || []));
+    // Ayarlardan gider tipleri
+    supabase.from('app_settings').select('value').eq('id', 'recipe_costs').maybeSingle()
+      .then(({ data }) => { if (data?.value && Array.isArray(data.value)) setCostTypes(data.value); });
   }, [productId]);
 
   // ── Yeni boş recete ───────────────────────────────────────────────────
@@ -219,6 +223,7 @@ export default function RecipeEditor({ productId, productName, productCurrency, 
           onToggleTag={toggleTag}
           onCopyThisRecipe={(r) => copyRecipe(r.id, r.name, productId)}
           rawItems={rawItems}
+          costTypes={costTypes}
           convert={convert}
           fxRates={fxRates}
           productCurrency={productCurrency}
@@ -242,7 +247,7 @@ export default function RecipeEditor({ productId, productName, productCurrency, 
 // ═══════════════════════ RECIPE CARD ═══════════════════════
 function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
   onAddItem, onUpdateItem, onSaveItem, onDeleteItem, onToggleTag, onCopyThisRecipe,
-  rawItems, convert, fxRates, productCurrency, c, currentColor, isDark }) {
+  rawItems, costTypes, convert, fxRates, productCurrency, c, currentColor, isDark }) {
 
   const [tagInput, setTagInput] = useState('');
   const [editingName, setEditingName] = useState(false);
@@ -261,6 +266,22 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
   };
 
   const totalItems = (recipe.recipe_items || []).length;
+  const otherCosts = recipe.other_costs || [];
+
+  const addOtherCost = (type) => {
+    const newCost = { id: Math.random().toString(36).substr(2, 9), type, amount: 0, currency: 'TRY' };
+    onUpdateMeta(recipe.id, { other_costs: [...otherCosts, newCost] });
+  };
+
+  const updateOtherCost = (id, patch) => {
+    const next = otherCosts.map(x => x.id === id ? { ...x, ...patch } : x);
+    onUpdateMeta(recipe.id, { other_costs: next });
+  };
+
+  const deleteOtherCost = (id) => {
+    const next = otherCosts.filter(x => x.id !== id);
+    onUpdateMeta(recipe.id, { other_costs: next });
+  };
 
   return (
     <div className="rounded-2xl" style={{ border: `1px solid ${expanded ? currentColor + '60' : c.border}`, transition: 'border-color 0.2s', overflow: 'visible' }}>
@@ -382,24 +403,78 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
             </div>
           </div>
 
+          {/* Diğer Giderler */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: c.muted }}>Diğer Giderler</p>
+              <div className="relative group">
+                <button className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg"
+                  style={{ background: `${currentColor}15`, color: currentColor }}>
+                  <Plus size={11} /> Gider Ekle
+                </button>
+                <div className="absolute right-0 top-full mt-1 w-40 rounded-xl shadow-lg border opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity z-10 overflow-hidden"
+                  style={{ background: c.card, borderColor: c.border }}>
+                  {costTypes.map(ct => (
+                    <button key={ct} onClick={() => addOtherCost(ct)}
+                      className="w-full text-left px-3 py-2 text-xs font-semibold hover:bg-black/5 dark:hover:bg-white/5"
+                      style={{ color: c.text, borderBottom: `1px solid ${c.border}` }}>
+                      + {ct}
+                    </button>
+                  ))}
+                  {costTypes.length === 0 && <span className="block px-3 py-2 text-[10px] text-center" style={{ color: c.muted }}>Ayarlardan tip ekleyin</span>}
+                </div>
+              </div>
+            </div>
+            {otherCosts.length > 0 && (
+              <div className="space-y-1.5 mb-4">
+                {otherCosts.map((oc, i) => (
+                  <div key={oc.id} className="grid gap-1.5 rounded-xl p-2 items-center"
+                    style={{ background: isDark ? 'rgba(255,255,255,0.02)' : '#f8fafc', border: `1px solid ${c.border}`, gridTemplateColumns: 'minmax(80px,1fr) 90px 60px 28px' }}>
+                    <span className="text-xs font-bold pl-1" style={{ color: c.text }}>{oc.type}</span>
+                    <input type="number" min="0" step="0.01" value={oc.amount || ''} placeholder="Tutar"
+                      onChange={e => updateOtherCost(oc.id, { amount: parseFloat(e.target.value) || 0 })}
+                      className="px-2 py-1 text-xs rounded-lg border outline-none text-right"
+                      style={{ background: 'transparent', borderColor: c.border, color: c.text }} />
+                    <select value={oc.currency || 'TRY'}
+                      onChange={e => updateOtherCost(oc.id, { currency: e.target.value })}
+                      className="px-1 py-1 text-xs font-bold rounded-lg border outline-none"
+                      style={{ background: c.card, borderColor: c.border, color: currentColor }}>
+                      {['TRY','USD','EUR','GBP'].map(cu => <option key={cu}>{cu}</option>)}
+                    </select>
+                    <button onClick={() => deleteOtherCost(oc.id)}
+                      className="p-1 rounded-lg flex items-center justify-center hover:bg-red-500/10 transition-colors"
+                      style={{ color: '#ef4444' }}><Trash2 size={12} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Toplam */}
-          {(recipe.recipe_items || []).length > 0 && (() => {
-            const totalCost = (recipe.recipe_items || []).reduce((acc, ri) => {
+          {(recipe.recipe_items?.length > 0 || otherCosts.length > 0) && (() => {
+            let totalCost = (recipe.recipe_items || []).reduce((acc, ri) => {
                const cost = (Number(ri.item?.purchase_price) || 0) * Number(ri.quantity || 1);
                const cur = ri.item?.base_currency || 'TRY';
                return acc + convert(cost, cur, productCurrency || 'TRY');
             }, 0);
+            
+            // Diğer giderleri de ekle
+            otherCosts.forEach(oc => {
+              totalCost += convert(Number(oc.amount) || 0, oc.currency || 'TRY', productCurrency || 'TRY');
+            });
             
             const isForeign = productCurrency && productCurrency !== 'TRY';
             const tryEq = totalCost > 0 ? convert(totalCost, productCurrency, 'TRY').toFixed(2) : '0.00';
             const kur = fxRates && fxRates[productCurrency] ? fxRates[productCurrency].toFixed(2) : '1.00';
             
             return (
-              <div className="rounded-xl px-3 py-2 flex items-center justify-between"
+              <div className="rounded-xl px-3 py-2 flex items-center justify-between mt-2"
                 style={{ background: `${currentColor}08`, border: `1px solid ${currentColor}25` }}>
                 <span className="text-xs font-semibold" style={{ color: c.muted }}>Maliyet Toplamı ({CURRENCY_SYM[productCurrency || 'TRY'] || '₺'})</span>
                 <div className="text-right">
-                  <span className="text-[10px] mr-3" style={{ color: c.muted }}>{totalItems} kalem</span>
+                  <span className="text-[10px] mr-3" style={{ color: c.muted }}>
+                    {totalItems} kalem{otherCosts.length > 0 ? ` + ${otherCosts.length} gider` : ''}
+                  </span>
                   <span className="text-sm font-black" style={{ color: currentColor }}>
                     {CURRENCY_SYM[productCurrency || 'TRY'] || '₺'}{totalCost.toFixed(2)}
                   </span>

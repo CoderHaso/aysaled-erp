@@ -75,6 +75,7 @@ export default function Settings() {
     { id: 'cat_product', label: '⚡ Ürün Kategoriler' },
     { id: 'templates',   label: '🖨️ Şablonlar' },
     { id: 'fx_rates',    label: '💱 Döviz Kurları' },
+    { id: 'recipe_costs',label: '💸 Reçete Gider Tipleri' },
     ...((profile?.role === ROLES.DEV || profile?.role === ROLES.ADMIN) ? [{ id: 'users', label: '👥 Kullanıcılar' }] : [])
   ];
 
@@ -175,6 +176,11 @@ export default function Settings() {
       {/* DÖVİZ KURLARI */}
       {activeTab === 'fx_rates' && (
         <FxRatesManager c={c} currentColor={currentColor} isDark={isDark} />
+      )}
+
+      {/* REÇETE GİDER TİPLERİ */}
+      {activeTab === 'recipe_costs' && (
+        <RecipeCostsManager c={c} currentColor={currentColor} isDark={isDark} />
       )}
 
       {/* KULLANICI YÖNETİMİ */}
@@ -1099,6 +1105,108 @@ function FxRatesManager({ c, currentColor, isDark }) {
             )}
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════ REÇETE GİDER TİPLERİ YÖNETİCİSİ ═══════════════
+function RecipeCostsManager({ c, currentColor, isDark }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [newVal, setNewVal] = useState('');
+
+  useEffect(() => {
+    supabase.from('app_settings').select('value').eq('id', 'recipe_costs').maybeSingle()
+      .then(({ data }) => {
+        if (data?.value && Array.isArray(data.value)) {
+          setItems(data.value);
+        } else {
+          setItems(['İşçilik', 'Boya', 'Genel gider', 'Kaynak', 'Ekstra']);
+        }
+        setLoading(false);
+      });
+  }, []);
+
+  const handleSave = async (newItems = items) => {
+    setSaving(true);
+    await supabase.from('app_settings').upsert({
+      id: 'recipe_costs',
+      value: newItems,
+      updated_at: new Date().toISOString(),
+    });
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  const add = () => {
+    const v = newVal.trim();
+    if (!v || items.includes(v)) return;
+    const next = [...items, v];
+    setItems(next);
+    setNewVal('');
+    handleSave(next);
+  };
+
+  const remove = (val) => {
+    const next = items.filter(x => x !== val);
+    setItems(next);
+    handleSave(next);
+  };
+
+  return (
+    <div className="rounded-3xl p-6 sm:p-8 space-y-5" style={{ background: c.card, border: `1px solid ${c.border}` }}>
+      <div>
+        <h2 className="text-lg font-bold" style={{ color: c.text }}>Reçete Diğer Gider Tipleri</h2>
+        <p className="text-sm mt-0.5" style={{ color: c.muted }}>
+          Ürün reçetelerine eklenebilecek ek maliyet kalemlerini (İşçilik, Boya vb.) buradan belirleyebilirsiniz. Bu kalemler doğrudan maliyeti etkiler.
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-8"><Loader2 size={20} className="animate-spin mx-auto" style={{ color: currentColor }} /></div>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex gap-2">
+            <input value={newVal} onChange={e => setNewVal(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && add()}
+              className="flex-1 px-4 py-2 text-sm rounded-xl outline-none"
+              style={{ background: isDark ? 'rgba(255,255,255,0.06)' : '#f8fafc', border: `1px solid ${c.border}`, color: c.text }}
+              placeholder="Yeni gider tipi ekle... (Örn: İşçilik, Kutu, Nakliye)" />
+            <button onClick={add} disabled={!newVal.trim() || saving}
+              className="px-4 py-2 rounded-xl text-sm font-bold text-white transition-all flex items-center gap-1"
+              style={{ background: (!newVal.trim() || saving) ? '#64748b' : currentColor }}>
+              <Plus size={16} /> Ekle
+            </button>
+          </div>
+          
+          <div className="space-y-2">
+            {items.map(item => (
+              <div key={item} className="flex items-center justify-between px-4 py-3 rounded-xl"
+                style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', border: `1px solid ${c.border}` }}>
+                <span className="text-sm font-bold" style={{ color: c.text }}>{item}</span>
+                <button onClick={() => remove(item)} disabled={saving}
+                  className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors"
+                  style={{ color: '#ef4444' }}>
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))}
+            {items.length === 0 && (
+              <p className="text-sm text-center py-4" style={{ color: c.muted }}>Gider tipi tanımlanmamış. Yukarıdan ekleyebilirsiniz.</p>
+            )}
+          </div>
+          
+          {saved && (
+            <motion.span initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}
+              className="text-xs font-bold text-emerald-500 flex items-center gap-1 justify-end pt-2">
+              <CheckCircle2 size={14} /> Otomatik kaydedildi
+            </motion.span>
+          )}
+        </div>
       )}
     </div>
   );

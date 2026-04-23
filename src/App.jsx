@@ -108,6 +108,19 @@ function AppShell() {
   const location  = useLocation();
   const navigate  = useNavigate();
 
+  // Global mouse wheel engelleme: number inputlar (mouse scroll yapınca sayı değişmesin)
+  useEffect(() => {
+    const handleWheel = (e) => {
+      // preventDefault çalışmayabilir (passive: false gerekir ama document seviyesinde sorun olabilir).
+      // focus silmek daha güvenlidir.
+      if (document.activeElement && document.activeElement.type === 'number') {
+        document.activeElement.blur();
+      }
+    };
+    window.addEventListener('wheel', handleWheel, { passive: false });
+    return () => window.removeEventListener('wheel', handleWheel);
+  }, []);
+
   // Route security
   if (!session) {
     return <Login />;
