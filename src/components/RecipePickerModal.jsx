@@ -52,7 +52,7 @@ export default function RecipePickerModal({
   const [localItems, setLocalItems] = useState(() =>
     hasCustomInit
       ? cloneItems(customRecipeItems)
-      : cloneItems(initialRecipe?.recipe_items || [])
+      : cloneRecipeData(initialRecipe)
   );
   // ItemPickerModal: 'add' | idx (swap) | null
   const [pickerTarget, setPickerTarget] = useState(null);
@@ -154,7 +154,7 @@ export default function RecipePickerModal({
   /* ── Değişti mi? (localItems vs base recipe items) ──────────── */
   const changed = useMemo(() =>
     JSON.stringify(localItems.map(i => ({ n: i.item_name, q: String(i.quantity), u: i.unit }))) !==
-    JSON.stringify((activeRecipe?.recipe_items || []).map(i => ({ n: i.item_name, q: String(i.quantity), u: i.unit }))),
+    JSON.stringify(cloneRecipeData(activeRecipe).map(i => ({ n: i.item_name, q: String(i.quantity), u: i.unit }))),
     [localItems, activeRecipe]
   );
 
@@ -173,7 +173,7 @@ export default function RecipePickerModal({
     if (hasCustomInit && recipe.id === initialRecipe?.id) {
       setLocalItems(cloneItems(customRecipeItems));
     } else {
-      setLocalItems(cloneItems(recipe.recipe_items || []));
+      setLocalItems(cloneRecipeData(recipe));
     }
     setSkipWorkOrder(false);
   }, [hasCustomInit, initialRecipe, customRecipeItems]);
@@ -733,4 +733,19 @@ function ItemPickerModal({ allItems, onPick, onClose, currentColor, isSwap }) {
 
 function cloneItems(items) {
   return (items || []).map(it => ({ ...it }));
+}
+
+function cloneRecipeData(recipe) {
+  if (!recipe) return [];
+  const items = cloneItems(recipe.recipe_items || []);
+  const costs = (recipe.other_costs || []).map(oc => ({
+    _new: true,
+    item_id: null,
+    item_name: oc.type,
+    quantity: 1,
+    unit: 'Adet',
+    purchase_price: oc.amount,
+    _isOtherCost: true,
+  }));
+  return [...items, ...costs];
 }

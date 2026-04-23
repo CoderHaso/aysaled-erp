@@ -1572,6 +1572,20 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
                             currency_sym: baseSym,
                           };
                         });
+                        
+                        // Diğer Giderler varsa reçete yazdırmaya dahil et
+                        (r.other_costs || []).forEach(oc => {
+                           const costConverted = convert(Number(oc.amount) || 0, oc.currency || 'TRY', baseCur);
+                           convertedIngredients.push({
+                             item_name: oc.type,
+                             quantity: 1,
+                             unit: 'Adet',
+                             unit_cost: costConverted,
+                             total_cost: costConverted,
+                             currency_sym: baseSym,
+                           });
+                        });
+                        
                         const totalCost = convertedIngredients.reduce((s, ci) => s + ci.total_cost, 0);
                         printDocument('recipe', {
                           product_name: item.name,

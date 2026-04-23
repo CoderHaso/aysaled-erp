@@ -125,16 +125,22 @@ export default function RecipeEditor({ productId, productName, productCurrency, 
   const copyRecipe = async (sourceRecipeId, sourceName, fromProductId) => {
     if (!productId) return;
     setSaving(true);
+    const { data: srcRecipe } = await supabase
+      .from('product_recipes').select('other_costs, tags').eq('id', sourceRecipeId).maybeSingle();
+      
     const { data: srcItems } = await supabase
       .from('recipe_items').select('*').eq('recipe_id', sourceRecipeId);
+
     // Kopyalanmış reçetenin adı: ProductName - Reçete N
     const nextNum = (recipes.length || 0) + 1;
     const autoName = `${productName || 'Ürün'} - Reçete ${nextNum}`;
     const { data: newRecipe } = await supabase.from('product_recipes').insert({
       product_id: productId,
       name: autoName,
-      tags: [],
+      tags: srcRecipe?.tags || [],
+      other_costs: srcRecipe?.other_costs || [],
     }).select().single();
+
     if (srcItems?.length > 0 && newRecipe) {
       await supabase.from('recipe_items').insert(
         srcItems.map(({ id: _, recipe_id: __, created_at: ___, ...rest }) => ({
@@ -253,6 +259,8 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
   const [editingName, setEditingName] = useState(false);
   const [nameVal, setNameVal] = useState(recipe.name);
 
+  const [expenseDrop, setExpenseDrop] = useState(false);
+
   const handleNameBlur = () => {
     setEditingName(false);
     if (nameVal !== recipe.name) onUpdateMeta(recipe.id, { name: nameVal });
@@ -267,6 +275,20 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
 
   const totalItems = (recipe.recipe_items || []).length;
   const otherCosts = recipe.other_costs || [];
+
+  // Maliyet hesapla
+  let totalCost = (recipe.recipe_items || []).reduce((acc, ri) => {
+    const cost = (Number(ri.item?.purchase_price) || 0) * Number(ri.quantity || 1);
+    const cur = ri.item?.base_currency || 'TRY';
+    return acc + convert(cost, cur, productCurrency || 'TRY');
+  }, 0);
+  otherCosts.forEach(oc => {
+    totalCost += convert(Number(oc.amount) || 0, oc.currency || 'TRY', productCurrency || 'TRY');
+  });
+
+  const isForeign = productCurrency && productCurrency !== 'TRY';
+  const tryEq = totalCost > 0 ? convert(totalCost, productCurrency, 'TRY').toFixed(2) : '0.00';
+  const kur = fxRates && fxRates[productCurrency] ? fxRates[productCurrency].toFixed(2) : '1.00';
 
   const addOtherCost = (type) => {
     const newCost = { id: Math.random().toString(36).substr(2, 9), type, amount: 0, currency: 'TRY' };
@@ -321,7 +343,14 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
                 {tag}
               </span>
             ))}
-            <span className="text-[10px]" style={{ color: c.muted }}>{totalItems} kalem</span>
+            <span className="text-[10px]" style={{ color: c.muted }}>
+              {totalItems} kalem{otherCosts.length > 0 ? ` + ${otherCosts.length} gider` : ''}
+            </span>
+            {totalCost > 0 && (
+              <span className="text-[10px] font-bold ml-2" style={{ color: currentColor }}>
+                {CURRENCY_SYM[productCurrency || 'TRY'] || '₺'}{totalCost.toFixed(2)}
+              </span>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
@@ -407,22 +436,28 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
           <div>
             <div className="flex items-center justify-between mb-2">
               <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: c.muted }}>Diğer Giderler</p>
-              <div className="relative group">
-                <button className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg"
+              <div className="relative">
+                <button 
+                  onClick={() => setExpenseDrop(!expenseDrop)}
+                  className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg"
                   style={{ background: `${currentColor}15`, color: currentColor }}>
                   <Plus size={11} /> Gider Ekle
                 </button>
-                <div className="absolute right-0 top-full mt-1 w-40 rounded-xl shadow-lg border opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity z-10 overflow-hidden"
-                  style={{ background: c.card, borderColor: c.border }}>
-                  {costTypes.map(ct => (
-                    <button key={ct} onClick={() => addOtherCost(ct)}
-                      className="w-full text-left px-3 py-2 text-xs font-semibold hover:bg-black/5 dark:hover:bg-white/5"
-                      style={{ color: c.text, borderBottom: `1px solid ${c.border}` }}>
-                      + {ct}
-                    </button>
-                  ))}
-                  {costTypes.length === 0 && <span className="block px-3 py-2 text-[10px] text-center" style={{ color: c.muted }}>Ayarlardan tip ekleyin</span>}
-                </div>
+                {expenseDrop && (
+                  <div className="absolute right-0 top-full mt-1 w-40 rounded-xl shadow-lg border z-10 overflow-hidden"
+                    style={{ background: c.card, borderColor: c.border }}>
+                    <div className="py-1">
+                      {costTypes.map(ct => (
+                        <button key={ct} onClick={() => { addOtherCost(ct); setExpenseDrop(false); }}
+                          className="w-full text-left px-3 py-2 text-xs font-semibold hover:bg-black/5 dark:hover:bg-white/5"
+                          style={{ color: c.text, borderBottom: `1px solid ${c.border}` }}>
+                          + {ct}
+                        </button>
+                      ))}
+                      {costTypes.length === 0 && <span className="block px-3 py-2 text-[10px] text-center" style={{ color: c.muted }}>Ayarlardan tip ekleyin</span>}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
             {otherCosts.length > 0 && (
@@ -451,42 +486,25 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
           </div>
 
           {/* Toplam */}
-          {(recipe.recipe_items?.length > 0 || otherCosts.length > 0) && (() => {
-            let totalCost = (recipe.recipe_items || []).reduce((acc, ri) => {
-               const cost = (Number(ri.item?.purchase_price) || 0) * Number(ri.quantity || 1);
-               const cur = ri.item?.base_currency || 'TRY';
-               return acc + convert(cost, cur, productCurrency || 'TRY');
-            }, 0);
-            
-            // Diğer giderleri de ekle
-            otherCosts.forEach(oc => {
-              totalCost += convert(Number(oc.amount) || 0, oc.currency || 'TRY', productCurrency || 'TRY');
-            });
-            
-            const isForeign = productCurrency && productCurrency !== 'TRY';
-            const tryEq = totalCost > 0 ? convert(totalCost, productCurrency, 'TRY').toFixed(2) : '0.00';
-            const kur = fxRates && fxRates[productCurrency] ? fxRates[productCurrency].toFixed(2) : '1.00';
-            
-            return (
-              <div className="rounded-xl px-3 py-2 flex items-center justify-between mt-2"
-                style={{ background: `${currentColor}08`, border: `1px solid ${currentColor}25` }}>
-                <span className="text-xs font-semibold" style={{ color: c.muted }}>Maliyet Toplamı ({CURRENCY_SYM[productCurrency || 'TRY'] || '₺'})</span>
-                <div className="text-right">
-                  <span className="text-[10px] mr-3" style={{ color: c.muted }}>
-                    {totalItems} kalem{otherCosts.length > 0 ? ` + ${otherCosts.length} gider` : ''}
-                  </span>
-                  <span className="text-sm font-black" style={{ color: currentColor }}>
-                    {CURRENCY_SYM[productCurrency || 'TRY'] || '₺'}{totalCost.toFixed(2)}
-                  </span>
-                  {isForeign && totalCost > 0 && (
-                    <div className="text-[9px] font-bold mt-0.5" style={{ color: c.muted }}>
-                      ≈ ₺{tryEq} (Kur: {kur})
-                    </div>
-                  )}
-                </div>
+          {(recipe.recipe_items?.length > 0 || otherCosts.length > 0) && (
+            <div className="rounded-xl px-3 py-2 flex items-center justify-between mt-2"
+              style={{ background: `${currentColor}08`, border: `1px solid ${currentColor}25` }}>
+              <span className="text-xs font-semibold" style={{ color: c.muted }}>Maliyet Toplamı ({CURRENCY_SYM[productCurrency || 'TRY'] || '₺'})</span>
+              <div className="text-right">
+                <span className="text-[10px] mr-3" style={{ color: c.muted }}>
+                  {totalItems} kalem{otherCosts.length > 0 ? ` + ${otherCosts.length} gider` : ''}
+                </span>
+                <span className="text-sm font-black" style={{ color: currentColor }}>
+                  {CURRENCY_SYM[productCurrency || 'TRY'] || '₺'}{totalCost.toFixed(2)}
+                </span>
+                {isForeign && totalCost > 0 && (
+                  <div className="text-[9px] font-bold mt-0.5" style={{ color: c.muted }}>
+                    ≈ ₺{tryEq} (Kur: {kur})
+                  </div>
+                )}
               </div>
-            );
-          })()}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -647,7 +665,7 @@ function CopyFromProductModal({ allProducts, onCopy, onClose, c, currentColor, i
     setSelProd(prod);
     setLoading(true);
     const { data } = await supabase.from('product_recipes')
-      .select('id,name,tags,recipe_items(id)').eq('product_id', prod.id);
+      .select('id,name,tags,other_costs,recipe_items(id)').eq('product_id', prod.id);
     setRecipes(data || []);
     setLoading(false);
   };
@@ -708,7 +726,7 @@ function CopyFromProductModal({ allProducts, onCopy, onClose, c, currentColor, i
                               style={{ background: `${currentColor}20`, color: currentColor }}>{t}</span>
                           ))}
                           <span className="text-[10px]" style={{ color: c.muted }}>
-                            {(r.recipe_items || []).length} kalem
+                            {(r.recipe_items || []).length} kalem{(r.other_costs || []).length > 0 ? ` + ${(r.other_costs || []).length} gider` : ''}
                           </span>
                         </div>
                       </div>
