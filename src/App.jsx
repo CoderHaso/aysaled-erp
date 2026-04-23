@@ -111,10 +111,9 @@ function AppShell() {
   // Global mouse wheel engelleme: number inputlar (mouse scroll yapınca sayı değişmesin)
   useEffect(() => {
     const handleWheel = (e) => {
-      // preventDefault çalışmayabilir (passive: false gerekir ama document seviyesinde sorun olabilir).
-      // focus silmek daha güvenlidir.
-      if (document.activeElement && document.activeElement.type === 'number') {
-        document.activeElement.blur();
+      if (e.target && e.target.type === 'number') {
+        e.preventDefault();
+        e.target.blur();
       }
     };
     window.addEventListener('wheel', handleWheel, { passive: false });

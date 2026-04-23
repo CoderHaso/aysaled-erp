@@ -12,6 +12,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { useTheme } from '../../contexts/ThemeContext';
 import { Save, Loader2, Trash2, ArrowLeft, AlertCircle } from 'lucide-react';
 import RecipeEditor from './RecipeEditor';
+import { useFxRates } from '../../hooks/useFxRates';
 
 const UNITS       = ['Adet','Metre','cm','mm','Kg','g','Litre','ml','m²','m³','Rulo','Paket','Kutu','Set','Takım','Saat','Gün'];
 const CURRENCIES  = ['TRY','USD','EUR'];
@@ -23,6 +24,7 @@ const SUPA_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, onDelete, saving }) {
   const { effectiveMode, currentColor } = useTheme();
+  const { convert: fxConvert } = useFxRates();
   const isDark = effectiveMode === 'dark';
   const isEdit    = !!item?.id;
   const isProduct = defaultType === 'product' || item?.item_type === 'product';
@@ -452,7 +454,12 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
               <FField label="Alış Para Birimi">
                 <div className="flex gap-1.5 mt-1">
                   {CURRENCIES.map(cur => (
-                    <button key={cur} onClick={() => set('base_currency', cur)}
+                    <button key={cur} onClick={() => {
+                        if (form.base_currency === cur) return;
+                        const oldPrice = parseFloat(form.purchase_price) || 0;
+                        const converted = oldPrice > 0 ? fxConvert(oldPrice, form.base_currency, cur) : 0;
+                        setForm(f => ({ ...f, base_currency: cur, purchase_price: converted ? converted.toFixed(2) : '0' }));
+                      }}
                       className="flex-1 py-2 rounded-lg text-xs font-bold border transition-all"
                       style={{
                         background:  form.base_currency === cur ? currentColor : 'transparent',
@@ -467,7 +474,12 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
               <FField label="Satış Para Birimi">
                 <div className="flex gap-1.5 mt-1">
                   {CURRENCIES.map(cur => (
-                    <button key={cur} onClick={() => set('sale_currency', cur)}
+                    <button key={cur} onClick={() => {
+                        if (form.sale_currency === cur) return;
+                        const oldPrice = parseFloat(form.sale_price) || 0;
+                        const converted = oldPrice > 0 ? fxConvert(oldPrice, form.sale_currency, cur) : 0;
+                        setForm(f => ({ ...f, sale_currency: cur, sale_price: converted ? converted.toFixed(2) : '0' }));
+                      }}
                       className="flex-1 py-2 rounded-lg text-xs font-bold border transition-all"
                       style={{
                         background:  form.sale_currency === cur ? currentColor : 'transparent',

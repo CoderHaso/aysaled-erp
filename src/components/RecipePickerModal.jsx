@@ -32,9 +32,30 @@ export default function RecipePickerModal({
   selectedRecipeId = null,
   customRecipeItems = null,
   hideSkipWorkOrder = false,
+  hideCosts = false,
 }) {
   const { effectiveMode } = useTheme();
   const isDark = effectiveMode === 'dark';
+
+  const [costTypes, setCostTypes] = useState([]);
+  const [expenseDrop, setExpenseDrop] = useState(false);
+  const expenseDropRef = React.useRef(null);
+  React.useEffect(() => {
+    supabase.from('app_settings').select('setting_value').eq('setting_key', 'recipe_costs').maybeSingle()
+      .then(res => setCostTypes(res.data?.setting_value || []));
+  }, []);
+
+  React.useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (expenseDropRef.current && !expenseDropRef.current.contains(e.target)) {
+        setExpenseDrop(false);
+      }
+    };
+    if (expenseDrop) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [expenseDrop]);
 
   const productRecipes = useMemo(
     () => (allRecipes || []).filter(r => r.product_id === productId),
@@ -151,6 +172,19 @@ export default function RecipePickerModal({
     return sum + Number(price) * Number(it.quantity || 1);
   }, 0), [localItems, allItems]);
 
+  const addOtherCost = (type) => {
+    setLocalItems(prev => [...prev, {
+      _new: true,
+      item_id: null,
+      item_name: type,
+      unit: 'Adet',
+      quantity: 1,
+      purchase_price: 0,
+      _isOtherCost: true
+    }]);
+    setExpenseDrop(false);
+  };
+
   /* ── Değişti mi? (localItems vs base recipe items) ──────────── */
   const changed = useMemo(() =>
     JSON.stringify(localItems.map(i => ({ n: i.item_name, q: String(i.quantity), u: i.unit }))) !==
@@ -220,6 +254,7 @@ export default function RecipePickerModal({
         quantity:       Number(it.quantity) || 1,
         unit:           it.unit || 'Adet',
         purchase_price: it.purchase_price ?? null,
+        _isOtherCost:   !!it._isOtherCost,
       }));
     onSelect({
       // Sanal özel reçete ise base recipe_id'yi kullan
@@ -341,7 +376,7 @@ export default function RecipePickerModal({
                             {isCustom && '🔧 '}{r.name}
                           </p>
                           <p className="text-[10px] mt-0.5 flex items-center gap-1" style={{ color: isDark ? '#475569' : '#94a3b8'}}>
-                            <Package size={8}/> {(r.recipe_items || []).length} malzeme
+                            <Package size={8}/> {(r.recipe_items || []).length} kalem{(r.other_costs || []).length > 0 ? ` + ${(r.other_costs || []).length} gider` : ''}
                           </p>
                         </div>
                         <div className="flex flex-col items-end gap-1 flex-shrink-0">
@@ -397,17 +432,17 @@ export default function RecipePickerModal({
 
               {/* Tablo başlığı */}
               <div className="px-4 py-1.5 flex-shrink-0 grid text-[10px] font-bold uppercase tracking-widest text-slate-600"
-                style={{ gridTemplateColumns: '1fr 64px 68px 80px 56px', borderBottom: '1px solid rgba(148,163,184,0.05)' }}>
+                style={{ gridTemplateColumns: hideCosts ? '1fr 64px 68px 56px' : '1fr 64px 68px 80px 56px', borderBottom: '1px solid rgba(148,163,184,0.05)' }}>
                 <span>Malzeme</span>
                 <span className="text-center">Miktar</span>
                 <span className="text-center">Birim</span>
-                <span className="text-right">Birim Fiyat</span>
+                {!hideCosts && <span className="text-right">Birim Fiyat</span>}
                 <span/>
               </div>
 
               {/* Malzeme satırları */}
               <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1">
-                {localItems.length === 0 && (
+                {localItems.filter(i => !i._isOtherCost).length === 0 && (
                   <div className="flex flex-col items-center justify-center py-10 text-slate-600">
                     <Package size={26} className="mb-2 opacity-30"/>
                     <p className="text-xs">Malzeme yok — Ekle ile başlayın</p>
@@ -415,6 +450,7 @@ export default function RecipePickerModal({
                 )}
                 <AnimatePresence initial={false}>
                   {localItems.map((it, idx) => {
+                    if (it._isOtherCost) return null;
                     const stockItem = (allItems || []).find(i => i.id === it.item_id);
                     const linePrice = Number(it.purchase_price ?? stockItem?.purchase_price ?? 0);
                     const lineTotal = linePrice * Number(it.quantity || 1);
@@ -425,7 +461,7 @@ export default function RecipePickerModal({
                         className="group">
                         <div className="grid items-center gap-2 px-3 py-2.5 rounded-2xl transition-colors"
                           style={{
-                            gridTemplateColumns: '1fr 64px 68px 80px 56px',
+                            gridTemplateColumns: hideCosts ? '1fr 64px 68px 56px' : '1fr 64px 68px 80px 56px',
                             background: 'rgba(255,255,255,0.025)',
                             border: '1px solid rgba(148,163,184,0.07)',
                           }}>
@@ -468,14 +504,16 @@ export default function RecipePickerModal({
                           </select>
 
                           {/* Birim Fiyat */}
-                          <div className="flex items-center justify-end gap-0.5">
-                            <span className="text-[10px] text-slate-600">₺</span>
-                            <input type="number" min="0" step="0.01"
-                              value={it.purchase_price ?? (stockItem?.purchase_price ?? '')}
-                              onChange={e => updateItem(idx, 'purchase_price', e.target.value === '' ? null : Number(e.target.value))}
-                              placeholder={stockItem?.purchase_price ? String(stockItem.purchase_price) : '0'}
-                              className="w-14 bg-transparent outline-none text-xs text-right font-bold text-emerald-400 placeholder-slate-700"/>
-                          </div>
+                          {!hideCosts && (
+                            <div className="flex items-center justify-end gap-0.5">
+                              <span className="text-[10px] text-slate-600">₺</span>
+                              <input type="number" min="0" step="0.01"
+                                value={it.purchase_price ?? (stockItem?.purchase_price ?? '')}
+                                onChange={e => updateItem(idx, 'purchase_price', e.target.value === '' ? null : Number(e.target.value))}
+                                placeholder={stockItem?.purchase_price ? String(stockItem.purchase_price) : '0'}
+                                className="w-14 bg-transparent outline-none text-xs text-right font-bold text-emerald-400 placeholder-slate-700"/>
+                            </div>
+                          )}
 
                           {/* Aksiyonlar */}
                           <div className="flex items-center justify-end gap-1">
@@ -491,9 +529,114 @@ export default function RecipePickerModal({
                         </div>
 
                         {/* Satır toplam */}
-                        {linePrice > 0 && (
+                        {!hideCosts && linePrice > 0 && (
                           <p className="text-right text-[10px] text-slate-600 pr-3 -mt-0.5 pb-0.5">
                             {Number(it.quantity || 1).toFixed(2)} × ₺{linePrice.toFixed(2)} = <span className="text-slate-400 font-semibold">₺{lineTotal.toFixed(2)}</span>
+                          </p>
+                        )}
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
+
+                {/* DİĞER GİDERLER */}
+                <div className="pt-3 pb-1 flex items-center justify-between" style={{ borderTop: '1px solid rgba(148,163,184,0.1)' }}>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Diğer Giderler</p>
+                  <div className="relative" ref={expenseDropRef}>
+                    <button onClick={() => setExpenseDrop(!expenseDrop)}
+                      className="flex items-center gap-1 text-[11px] font-bold transition-all px-2 py-1 rounded-lg"
+                      style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.2)' }}>
+                      <Plus size={10}/> Gider Ekle
+                    </button>
+                    {expenseDrop && (
+                      <div className="absolute right-0 bottom-full mb-1 w-40 rounded-xl shadow-lg border z-10 overflow-hidden"
+                        style={{ background: isDark ? '#1e293b' : '#ffffff', borderColor: isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0' }}>
+                        <div className="py-1">
+                          {costTypes.map(ct => (
+                            <button key={ct} onClick={() => addOtherCost(ct)}
+                              className="w-full text-left px-3 py-2 text-xs font-semibold hover:bg-black/5 dark:hover:bg-white/5"
+                              style={{ color: isDark ? '#cbd5e1' : '#334155', borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.08)' : '#f1f5f9'}` }}>
+                              + {ct}
+                            </button>
+                          ))}
+                          {costTypes.length === 0 && <span className="block px-3 py-2 text-[10px] text-center" style={{ color: '#94a3b8' }}>Ayarlardan tip ekleyin</span>}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <AnimatePresence initial={false}>
+                  {localItems.map((it, idx) => {
+                    if (!it._isOtherCost) return null;
+                    const linePrice = Number(it.purchase_price ?? 0);
+                    const lineTotal = linePrice * Number(it.quantity || 1);
+                    return (
+                      <motion.div key={idx}
+                        initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="group">
+                        <div className="grid items-center gap-2 px-3 py-2.5 rounded-2xl transition-colors"
+                          style={{
+                            gridTemplateColumns: hideCosts ? '1fr 64px 68px 56px' : '1fr 64px 68px 80px 56px',
+                            background: 'rgba(245,158,11,0.04)',
+                            border: '1px solid rgba(245,158,11,0.15)',
+                          }}>
+                          
+                          {/* İsim */}
+                          <div className="min-w-0 flex items-center gap-2">
+                             <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
+                              style={{ background: 'rgba(245,158,11,0.1)' }}>
+                              <DollarSign size={10} style={{ color: '#f59e0b' }}/>
+                            </div>
+                            <input
+                              value={it.item_name || ''}
+                              onChange={e => updateItem(idx, 'item_name', e.target.value)}
+                              placeholder="Gider adı..."
+                              className="w-full bg-transparent outline-none text-xs font-bold"
+                              style={{ color: '#f59e0b' }}/>
+                          </div>
+
+                          {/* Miktar */}
+                          <input type="number" min="0" step="0.01"
+                            value={it.quantity}
+                            onChange={e => updateItem(idx, 'quantity', e.target.value)}
+                            className="w-full bg-transparent outline-none text-xs text-center font-bold rounded-lg px-1 py-1"
+                            style={{ color: isDark ? '#e2e8f0' : '#1e293b', border: `1px solid ${isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0'}` }}/>
+
+                          {/* Birim */}
+                          <select value={it.unit || 'Adet'}
+                            onChange={e => updateItem(idx, 'unit', e.target.value)}
+                            className="bg-transparent outline-none text-[11px] text-center rounded-lg px-1 py-1 w-full"
+                            style={{ color: '#94a3b8', border: `1px solid ${isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0'}`, background: isDark ? 'rgba(15,23,42,0.5)' : '#f8fafc' }}>
+                            {UNITS.map(u => <option key={u} value={u} style={{ background: isDark ? '#0d1b2e' : '#ffffff' }}>{u}</option>)}
+                          </select>
+
+                          {/* Birim Fiyat */}
+                          {!hideCosts && (
+                            <div className="flex items-center justify-end gap-0.5">
+                              <span className="text-[10px] text-slate-600">₺</span>
+                              <input type="number" min="0" step="0.01"
+                                value={it.purchase_price ?? ''}
+                                onChange={e => updateItem(idx, 'purchase_price', e.target.value === '' ? null : Number(e.target.value))}
+                                placeholder="0"
+                                className="w-14 bg-transparent outline-none text-xs text-right font-bold text-amber-500 placeholder-slate-700"/>
+                            </div>
+                          )}
+
+                          {/* Aksiyonlar */}
+                          <div className="flex items-center justify-end gap-1">
+                             <div className="w-7"/> {/* Placeholder for swap */}
+                             <button onClick={() => removeItem(idx)}
+                              className="p-1.5 rounded-lg transition-colors hover:bg-red-500/10">
+                              <Trash2 size={10} className="text-red-400"/>
+                             </button>
+                          </div>
+                        </div>
+
+                        {!hideCosts && linePrice > 0 && (
+                          <p className="text-right text-[10px] text-amber-600/70 pr-3 -mt-0.5 pb-0.5">
+                            {Number(it.quantity || 1).toFixed(2)} × ₺{linePrice.toFixed(2)} = <span className="text-amber-500 font-bold">₺{lineTotal.toFixed(2)}</span>
                           </p>
                         )}
                       </motion.div>
@@ -526,7 +669,7 @@ export default function RecipePickerModal({
                   <Package size={12} className="text-slate-600"/>
                   <span className="text-xs text-slate-500">{localItems.filter(i => i.item_name?.trim()).length} malzeme</span>
                 </div>
-                {totalCost > 0 && (
+                {totalCost > 0 && !hideCosts && (
                   <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg"
                     style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)' }}>
                     <DollarSign size={11} className="text-emerald-400"/>

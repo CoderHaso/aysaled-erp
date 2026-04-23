@@ -166,7 +166,7 @@ function WorkOrderForm({ items, orders, allRecipes, onClose, onSaved, currentCol
           allRecipes={allRecipes} allItems={items} currentColor={currentColor}
           selectedRecipeId={form.recipe_id || null}
           customRecipeItems={form.custom_recipe_items || null}
-          hideSkipWorkOrder={true}
+          hideSkipWorkOrder={true} hideCosts={true}
           onClose={() => setShowRecipePicker(false)}
           onSelect={(rec) => {
             const customItems = rec.changed ? rec.components?.map(c => ({
@@ -279,6 +279,7 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
       item_name: c.item_name || '',
       quantity: Number(c.quantity) || 1,
       unit: c.unit || 'Adet',
+      _isOtherCost: !!c._isOtherCost,
     })) : null;
 
     console.log('[RECIPE UPDATE] saving to work_order:', { recipe_id: rec.recipe_id, customItems });
@@ -363,7 +364,9 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
             </button>
             {recipeOpen && (
               <div className="px-3 py-2 space-y-1" style={{ background: isDark?'rgba(139,92,246,0.03)':'rgba(139,92,246,0.02)' }}>
+                {/* Malzemeler */}
                 {displayRecipeItems.map((ri,i) => {
+                  if (ri._isOtherCost) return null;
                   const stockItem = items?.find(it => it.id === ri.item_id);
                   const stockDisplay = stockItem ? `(Stok: ${stockItem.stock_count} ${stockItem.unit})` : '';
                   return (
@@ -375,6 +378,34 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
                     </div>
                   );
                 })}
+
+                {/* Giderler */}
+                {recipe?.other_costs && !hasCustomRecipe && (
+                  <>
+                    <div className="pt-2 pb-1 mt-2 border-t" style={{ borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }}>
+                       <p className="text-[9px] font-bold uppercase tracking-widest text-amber-500">Diğer Giderler</p>
+                    </div>
+                    {recipe.other_costs.map((oc,i) => (
+                      <div key={'oc'+i} className="flex flex-col sm:flex-row sm:items-center justify-between text-[10px] gap-1" style={{ color:'#f59e0b' }}>
+                        <span className="flex-1 min-w-0 font-bold">{oc.type || oc.item_name}</span>
+                        <span className="font-bold whitespace-nowrap">{oc.quantity || 1} {oc.unit || 'Adet'}</span>
+                      </div>
+                    ))}
+                  </>
+                )}
+                {hasCustomRecipe && displayRecipeItems.some(ri => ri._isOtherCost) && (
+                  <>
+                    <div className="pt-2 pb-1 mt-2 border-t border-amber-500/20">
+                       <p className="text-[9px] font-bold uppercase tracking-widest text-amber-500">Diğer Giderler</p>
+                    </div>
+                    {displayRecipeItems.filter(ri => ri._isOtherCost).map((oc,i) => (
+                      <div key={'occ'+i} className="flex flex-col sm:flex-row sm:items-center justify-between text-[10px] gap-1" style={{ color:'#f59e0b' }}>
+                        <span className="flex-1 min-w-0 font-bold">{oc.item_name}</span>
+                        <span className="font-bold whitespace-nowrap">{oc.quantity || 1} {oc.unit || 'Adet'}</span>
+                      </div>
+                    ))}
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -453,7 +484,7 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
           allRecipes={allRecipes||[]} allItems={items||[]} currentColor={currentColor}
           selectedRecipeId={wo.recipe_id}
           customRecipeItems={wo.custom_recipe_items}
-          hideSkipWorkOrder={true}
+          hideSkipWorkOrder={true} hideCosts={true}
           onClose={() => setShowRecipePicker(false)} onSelect={handleRecipeUpdate}/>
       )}
     </motion.div>

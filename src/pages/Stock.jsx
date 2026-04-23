@@ -1541,15 +1541,33 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
                         );
                       })}
                     </div>
+                    {/* Giderler */}
+                    {r.other_costs && r.other_costs.length > 0 && (
+                      <div className="px-3 pb-2.5 space-y-0.5" style={{ borderTop: '1px solid rgba(245,158,11,0.1)' }}>
+                        <p className="text-[9px] font-bold uppercase tracking-widest pt-1" style={{ color: '#f59e0b' }}>Diğer Giderler</p>
+                        {r.other_costs.map((oc, j) => (
+                          <div key={'oc'+j} className="flex items-center justify-between text-[10px] py-0.5" style={{ color: '#f59e0b' }}>
+                            <span className="flex-1 truncate pr-2">• {oc.type || oc.item_name}</span>
+                            <span className="font-bold flex-shrink-0">{oc.quantity || 1} {oc.unit || 'Adet'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {(() => {
-                      const costInBase = (r.recipe_items || []).reduce((s, ri) => {
+                      let costInBase = (r.recipe_items || []).reduce((s, ri) => {
                         const itemVal = Number(ri.item?.purchase_price || 0) * Number(ri.quantity || 1);
                         return s + convert(itemVal, ri.item?.base_currency || 'TRY', item.base_currency || 'TRY');
+                      }, 0);
+                      costInBase += (r.other_costs || []).reduce((s, oc) => {
+                        return s + convert(Number(oc.amount) || 0, oc.currency || 'TRY', item.base_currency || 'TRY');
                       }, 0);
                       return costInBase > 0 ? (
                         <div className="px-3 pb-2 flex items-center justify-between" style={{ borderTop: '1px solid rgba(139,92,246,0.06)' }}>
                           <span className="text-[9px] font-bold" style={{ color: '#94a3b8' }}>Birim Maliyet ({sym})</span>
-                          <span className="text-[10px] font-black" style={{ color: '#a78bfa' }}>{sym}{costInBase.toFixed(2)}</span>
+                          <span className="text-[10px] font-black flex items-center gap-1" style={{ color: '#a78bfa' }}>
+                            {sym}{costInBase.toFixed(2)}
+                            {r.other_costs?.length > 0 && <span className="text-[8px] opacity-70">(giderler dahil)</span>}
+                          </span>
                         </div>
                       ) : null;
                     })()}
@@ -1636,12 +1654,30 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
                           </div>
                         </div>
                         <div className="px-3 pb-2.5 space-y-0.5" style={{ borderTop: '1px solid rgba(245,158,11,0.15)' }}>
-                          {(cs.items || []).map((ri, j) => (
-                            <div key={j} className="flex items-center justify-between text-[10px] py-0.5" style={{ color: c.muted }}>
-                              <span>• {ri.item_name}</span>
-                              <span className="font-bold">{ri.quantity} {ri.unit}</span>
-                            </div>
-                          ))}
+                          {/* Malzemeler */}
+                          {(cs.items || []).map((ri, j) => {
+                            if (ri._isOtherCost) return null;
+                            return (
+                              <div key={j} className="flex items-center justify-between text-[10px] py-0.5" style={{ color: c.muted }}>
+                                <span>• {ri.item_name}</span>
+                                <span className="font-bold">{ri.quantity} {ri.unit}</span>
+                              </div>
+                            );
+                          })}
+                          {/* Giderler */}
+                          {(cs.items || []).some(ri => ri._isOtherCost) && (
+                            <>
+                              <div className="pt-2 pb-1 mt-2 border-t border-amber-500/20">
+                                <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#f59e0b' }}>Diğer Giderler</p>
+                              </div>
+                              {(cs.items || []).filter(ri => ri._isOtherCost).map((oc, j) => (
+                                <div key={'occ'+j} className="flex items-center justify-between text-[10px] py-0.5" style={{ color: '#f59e0b' }}>
+                                  <span className="font-bold">• {oc.item_name}</span>
+                                  <span className="font-bold">{oc.quantity || 1} {oc.unit || 'Adet'}</span>
+                                </div>
+                              ))}
+                            </>
+                          )}
                         </div>
                       </div>
                     );

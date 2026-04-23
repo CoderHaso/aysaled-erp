@@ -260,6 +260,16 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
   const [nameVal, setNameVal] = useState(recipe.name);
 
   const [expenseDrop, setExpenseDrop] = useState(false);
+  const expenseDropRef = React.useRef(null);
+  React.useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (expenseDropRef.current && !expenseDropRef.current.contains(e.target)) {
+        setExpenseDrop(false);
+      }
+    };
+    if (expenseDrop) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [expenseDrop]);
 
   const handleNameBlur = () => {
     setEditingName(false);
@@ -436,7 +446,7 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
           <div>
             <div className="flex items-center justify-between mb-2">
               <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: c.muted }}>Diğer Giderler</p>
-              <div className="relative">
+              <div className="relative" ref={expenseDropRef}>
                 <button 
                   onClick={() => setExpenseDrop(!expenseDrop)}
                   className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg"

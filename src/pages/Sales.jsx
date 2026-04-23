@@ -1393,12 +1393,42 @@ function OrderDetailDrawer({ order, onClose, onEdit, onSendToWorkOrders, onStatu
                       <p className="text-[9px] font-bold uppercase" style={{ color: hasCustom ? '#f59e0b' : '#a78bfa' }}>
                         {hasCustom ? '🔧 Özel Reçete İçeriği' : 'Reçete İçeriği'}
                       </p>
-                      {displayItems.map((ri, j) => (
-                        <div key={j} className="flex items-center justify-between text-[10px]" style={{ color: c.muted }}>
-                          <span>• {ri.item_name}</span>
-                          <span className="font-bold">{ri.quantity} {ri.unit}</span>
-                        </div>
-                      ))}
+                      {displayItems.map((ri, j) => {
+                        if (ri._isOtherCost) return null;
+                        return (
+                          <div key={j} className="flex items-center justify-between text-[10px]" style={{ color: c.muted }}>
+                            <span>• {ri.item_name}</span>
+                            <span className="font-bold">{ri.quantity} {ri.unit}</span>
+                          </div>
+                        );
+                      })}
+                      {/* Giderler */}
+                      {recipeObj?.other_costs && !hasCustom && (
+                        <>
+                          <div className="pt-2 pb-1 mt-2 border-t" style={{ borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }}>
+                            <p className="text-[9px] font-bold uppercase tracking-widest text-amber-500">Diğer Giderler</p>
+                          </div>
+                          {recipeObj.other_costs.map((oc, i) => (
+                            <div key={'oc'+i} className="flex items-center justify-between text-[10px]" style={{ color:'#f59e0b' }}>
+                              <span>• {oc.type || oc.item_name}</span>
+                              <span className="font-bold">{oc.quantity || 1} {oc.unit || 'Adet'}</span>
+                            </div>
+                          ))}
+                        </>
+                      )}
+                      {hasCustom && displayItems.some(ri => ri._isOtherCost) && (
+                        <>
+                          <div className="pt-2 pb-1 mt-2 border-t border-amber-500/20">
+                            <p className="text-[9px] font-bold uppercase tracking-widest text-amber-500">Diğer Giderler</p>
+                          </div>
+                          {displayItems.filter(ri => ri._isOtherCost).map((oc, i) => (
+                            <div key={'occ'+i} className="flex items-center justify-between text-[10px]" style={{ color:'#f59e0b' }}>
+                              <span>• {oc.item_name}</span>
+                              <span className="font-bold">{oc.quantity || 1} {oc.unit || 'Adet'}</span>
+                            </div>
+                          ))}
+                        </>
+                      )}
                     </div>
                   );
                 })()}
