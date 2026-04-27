@@ -799,7 +799,7 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
       }
       // Fatura listesini yenilemek için cache temizle
       if (invoiceToggle) {
-        try { sessionStorage.removeItem('page_cache_invoices_outbox'); } catch(e){}
+        try { pageCache.invalidate('invoices_outbox'); } catch(e){}
       }
     } catch (e) { 
         setDialog({ open: true, title: 'Hata', message: e.message, type: 'alert' }); 

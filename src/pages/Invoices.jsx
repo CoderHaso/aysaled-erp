@@ -745,7 +745,7 @@ function DR({ label, value, mono, small }) {
 }
 
 // Modül-seviyesi in-memory cache (sekme boyunca)
-const invoiceCache = new Map();
+// invoiceCache removed
 
 // ─── Ana Sayfa ────────────────────────────────────────────────────────────────
 export default function Invoices({ type = 'inbox' }) {
@@ -753,8 +753,8 @@ export default function Invoices({ type = 'inbox' }) {
   const isDark = effectiveMode === 'dark';
 
   const cacheKey = `invoices_${type}`;
-  const [invoices, setInvoices]   = useState(() => invoiceCache.get(type) || pageCache.get(`invoices_${type}`) || []);
-  const [loading, setLoading]     = useState(!invoiceCache.has(type) && !pageCache.get(`invoices_${type}`));
+  const [invoices, setInvoices]   = useState(() => pageCache.get(`invoices_${type}`) || []);
+  const [loading, setLoading]     = useState(!pageCache.get(`invoices_${type}`));
   const [syncing, setSyncing]     = useState(false);
   const [error, setError]         = useState(null);
   const [search, setSearch]       = useState('');
@@ -853,17 +853,9 @@ export default function Invoices({ type = 'inbox' }) {
 
   const fetchInvoices = useCallback(async (force = false) => {
     const ck = `invoices_${type}`;
-    // 1) Memory cache (sekme boyunca en hızlı)
-    if (!force && invoiceCache.has(type)) {
-      setInvoices(invoiceCache.get(type));
-      setLoading(false);
-      return;
-    }
-    // 2) sessionStorage cache (sayfa yenilemede hızlı)
     if (!force) {
       const cached = pageCache.get(ck);
       if (cached) {
-        invoiceCache.set(type, cached);
         setInvoices(cached);
         setLoading(false);
         return;
@@ -881,7 +873,7 @@ export default function Invoices({ type = 'inbox' }) {
         .limit(500);
       if (dbErr) throw dbErr;
       const rows = data || [];
-      invoiceCache.set(type, rows);
+      
       pageCache.set(ck, rows); // sessionStorage'a da kaydet
       setInvoices(rows);
     } catch (err) {
@@ -896,7 +888,7 @@ export default function Invoices({ type = 'inbox' }) {
       const updated = prev.map(inv =>
         inv.invoice_id === invoiceId ? { ...inv, line_items: items, ...(rawDetail ? { raw_detail: rawDetail } : {}) } : inv
       );
-      invoiceCache.set(type, updated);
+      
       setSelected(s => s?.invoice_id === invoiceId ? { ...s, line_items: items, ...(rawDetail ? { raw_detail: rawDetail } : {}) } : s);
       return updated;
     });
@@ -951,7 +943,7 @@ export default function Invoices({ type = 'inbox' }) {
         remaining      = data.remaining     ?? 0;
       }
 
-      invoiceCache.delete(type);
+      
       pageCache.invalidate(`invoices_${type}`);
       await fetchInvoices(true);
       setDialog({
@@ -1257,7 +1249,7 @@ export default function Invoices({ type = 'inbox' }) {
 
       // Sadece Supabase listesini yenile — Uyumsoft'a gitmiyor
       // Kullanıcı listeden "Taslak Gönder" ile Uyumsoft'a gönderecek
-      invoiceCache.delete(createType);
+      
       pageCache.invalidate(`invoices_${createType}`);
       await fetchInvoices(true);
       showToast(`Taslak kaydedildi ✓ — Listeden "Taslak Gönder" ile Uyumsoft'a iletebilirsiniz.`, 'success');
@@ -1273,7 +1265,7 @@ export default function Invoices({ type = 'inbox' }) {
       const r = await fetch('/api/invoices-api?action=formalize', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invoiceId }) });
       const data = await r.json();
       if (!data.success) throw new Error(data.error + (data.debug ? `\n\n[Sistem Mesajı: ${data.debug}]` : ''));
-      invoiceCache.delete(type);
+      
       pageCache.invalidate(`invoices_${type}`);
       await fetchInvoices(true);
       alert(data.message);
@@ -1289,7 +1281,7 @@ export default function Invoices({ type = 'inbox' }) {
       const r = await fetch('/api/invoices-api?action=sendDraft', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invoiceId }) });
       const data = await r.json();
       if (!data.success) throw new Error(data.error);
-      invoiceCache.delete(type);
+      
       pageCache.invalidate(`invoices_${type}`);
       await fetchInvoices(true);
       setDialog({ open: true, title: 'Başarılı', message: data.message, type: 'alert' });
@@ -1315,7 +1307,7 @@ export default function Invoices({ type = 'inbox' }) {
                 const d = await r.json();
                 if (!d.success) throw new Error(d.error);
                 
-                invoiceCache.delete(type);
+                
                 pageCache.invalidate(`invoices_${type}`);
                 await fetchInvoices(true);
                 showToast('Fatura taslağı silindi');
