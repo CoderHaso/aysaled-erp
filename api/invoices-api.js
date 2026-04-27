@@ -191,14 +191,7 @@ async function handleView(body, res) {
   const uyumsoftId = documentId || invoiceId;
   if (!uyumsoftId) return res.status(400).json({ error: 'invoiceId veya documentId gerekli' });
 
-  if (format === 'html' && invoiceId) {
-    const { data: cached } = await supabase.from('invoices').select('html_view, status')
-      .eq('invoice_id', invoiceId).eq('type', type).single();
-    const finalStatuses = ['Sent', 'Approved', 'Cancelled', 'Canceled'];
-    if (cached?.html_view && finalStatuses.includes(cached?.status)) {
-      return res.json({ success: true, html: cached.html_view, source: 'cache' });
-    }
-  }
+
 
   const client = await createUyumsoftClient();
   if (format === 'pdf') {
@@ -220,10 +213,6 @@ async function handleView(body, res) {
     if (!ok) return res.status(400).json({ success: false, error: r?.attributes?.Message || 'HTML görünümü alınamadı' });
     const html = r?.Value?.Html || '';
     if (!html) return res.status(404).json({ success: false, error: 'HTML içeriği boş geldi' });
-    if (invoiceId) {
-      await supabase.from('invoices').update({ html_view: html, updated_at: new Date().toISOString() })
-        .eq('invoice_id', invoiceId).eq('type', type);
-    }
     return res.json({ success: true, html, source: 'api' });
   }
 }
