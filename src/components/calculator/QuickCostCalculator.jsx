@@ -8,11 +8,11 @@ const CURRENCY_SYM = { TRY: '₺', USD: '$', EUR: '€', GBP: '£' };
 
 export default function QuickCostCalculator({ isDark, currentColor, onClose }) {
   const { rawItems, productItems, loading } = useStock();
-  const { rates, convert } = useFxRates();
+  const { fxRates, convert } = useFxRates();
   
   const [search, setSearch] = useState('');
   const [lines, setLines] = useState([]);
-  const [otherCostsTRY, setOtherCostsTRY] = useState('');
+  const [extraCosts, setExtraCosts] = useState([{ id: 1, name: '', amount: '' }]);
   const [baseQty, setBaseQty] = useState('1');
 
   const c = {
@@ -57,9 +57,14 @@ export default function QuickCostCalculator({ isDark, currentColor, onClose }) {
 
   const removeLine = (id) => setLines(p => p.filter(l => l.id !== id));
 
+  // Extra Costs
+  const updateExtraCost = (id, field, value) => setExtraCosts(p => p.map(e => e.id === id ? { ...e, [field]: value } : e));
+  const removeExtraCost = (id) => setExtraCosts(p => p.filter(e => e.id !== id));
+  const addExtraCost = () => setExtraCosts(p => [...p, { id: Math.random(), name: '', amount: '' }]);
+
   // Compute Cost
   const parsedBaseQty = parseFloat(baseQty) || 1;
-  const parsedOther = parseFloat(otherCostsTRY) || 0;
+  const parsedOther = extraCosts.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
 
   const totalCostTRY = useMemo(() => {
     let sum = 0;
@@ -81,7 +86,7 @@ export default function QuickCostCalculator({ isDark, currentColor, onClose }) {
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       
       <motion.div initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="relative w-full max-w-4xl flex flex-col shadow-2xl rounded-2xl overflow-hidden"
+        className="relative w-full max-w-5xl flex flex-col shadow-2xl rounded-2xl overflow-hidden"
         style={{ background: c.card, border: `1px solid ${c.border}`, maxHeight: '90vh' }}>
         
         {/* Header */}
@@ -92,7 +97,7 @@ export default function QuickCostCalculator({ isDark, currentColor, onClose }) {
             </div>
             <div>
               <h2 className="text-lg font-bold" style={{ color: c.text }}>Hızlı Maliyet Hesaplayıcı</h2>
-              <p className="text-xs" style={{ color: c.muted }}>Stoktaki hammeddeleri ekleyip dolar/try riskini görün</p>
+              <p className="text-xs" style={{ color: c.muted }}>Stoktaki hammaddeleri ve giderleri ekleyip net maliyetinizi bulun</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 rounded-xl transition-all hover:bg-black/5" style={{ color: c.muted }}>
@@ -192,8 +197,8 @@ export default function QuickCostCalculator({ isDark, currentColor, onClose }) {
           </div>
 
           {/* Sağ: Toplamlar & Kontroller */}
-          <div className="w-full md:w-72 bg-black/5 flex flex-col p-5">
-            <h3 className="text-sm font-bold mb-4 uppercase tracking-wider" style={{ color: c.muted }}>Hesaplama</h3>
+          <div className="w-full md:w-[360px] bg-black/5 flex flex-col p-5 overflow-y-auto">
+            <h3 className="text-sm font-bold mb-4 uppercase tracking-wider" style={{ color: c.muted }}>Hesaplama & Ek Gider</h3>
             
             <div className="space-y-4">
               <div>
@@ -205,12 +210,30 @@ export default function QuickCostCalculator({ isDark, currentColor, onClose }) {
                   style={{ background: c.card, border: `1px solid ${c.border}`, color: c.text }} />
               </div>
 
+              {/* Multiple Extra Costs */}
               <div>
-                <label className="text-[10px] font-bold uppercase mb-1 block" style={{ color: c.muted }}>Ek Gider / İşçilik (₺)</label>
-                <input type="number" value={otherCostsTRY} onChange={e => setOtherCostsTRY(e.target.value)}
-                  placeholder="Örn: 250"
-                  className="w-full px-3 py-2 text-sm font-bold rounded-xl outline-none"
-                  style={{ background: c.card, border: `1px solid ${c.border}`, color: c.text }} />
+                <label className="text-[10px] font-bold uppercase mb-2 block" style={{ color: c.muted }}>Ek Giderler / İşçilik (₺)</label>
+                <div className="space-y-2">
+                  {extraCosts.map((ex, i) => (
+                    <div key={ex.id} className="flex gap-2">
+                      <input type="text" value={ex.name} onChange={e => updateExtraCost(ex.id, 'name', e.target.value)}
+                        placeholder="Gider adı"
+                        className="flex-1 px-2.5 py-1.5 text-[10px] sm:text-xs rounded-lg outline-none min-w-[70px]"
+                        style={{ background: c.card, border: `1px solid ${c.border}`, color: c.text }} />
+                      <input type="number" value={ex.amount} onChange={e => updateExtraCost(ex.id, 'amount', e.target.value)}
+                        placeholder="Tutar ₺"
+                        className="w-[80px] sm:w-[100px] px-2.5 py-1.5 text-xs font-bold rounded-lg outline-none text-right"
+                        style={{ background: c.card, border: `1px solid ${c.border}`, color: c.text }} />
+                      <button onClick={() => removeExtraCost(ex.id)} className="p-1.5 text-red-400 hover:text-red-500 rounded-lg">
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  ))}
+                  <button onClick={addExtraCost} className="text-[10px] font-bold px-2 py-1.5 rounded flex items-center gap-1 mt-1"
+                    style={{ color: currentColor, background: `${currentColor}15` }}>
+                    <Plus size={10} /> Başka Ekle
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -231,12 +254,12 @@ export default function QuickCostCalculator({ isDark, currentColor, onClose }) {
                 <div className="rounded-xl p-3 border" style={{ background: c.card, borderColor: c.border }}>
                   <p className="text-xs font-bold mb-0.5" style={{ color: c.muted }}>USD Karşılığı</p>
                   <p className="text-base font-black text-green-500">$ {unitCostUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                  <p className="text-[9px] mt-1 opacity-50" style={{ color: c.muted }}>Kur: {rates?.USD}</p>
+                  <p className="text-[9px] mt-1 opacity-50" style={{ color: c.muted }}>Kur: {fxRates?.USD}</p>
                 </div>
                 <div className="rounded-xl p-3 border" style={{ background: c.card, borderColor: c.border }}>
                   <p className="text-xs font-bold mb-0.5" style={{ color: c.muted }}>EUR Karşılığı</p>
                   <p className="text-base font-black text-blue-500">€ {unitCostEUR.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                  <p className="text-[9px] mt-1 opacity-50" style={{ color: c.muted }}>Kur: {rates?.EUR}</p>
+                  <p className="text-[9px] mt-1 opacity-50" style={{ color: c.muted }}>Kur: {fxRates?.EUR}</p>
                 </div>
               </div>
             </div>
