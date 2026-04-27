@@ -933,7 +933,8 @@ export default function Stock() {
             currentColor={currentColor}
             isDark={isDark}
             onClose={() => setDetailItem(null)}
-            onEdit={(it) => { if (!it) { setDetailItem(null); pageCache.invalidate('stock_items'); return; } setDetailItem(null); openForm(it, it.item_type); }}
+            onEdit={(it) => { setDetailItem(null); openForm(it, it.item_type); }}
+            onRefresh={(updated) => { setDetailItem(updated); pageCache.invalidate('stock_items'); refetch(); }}
           />
         )}
       </AnimatePresence>
@@ -977,7 +978,7 @@ function ABtn({ icon: Icon, color, onClick }) {
 }
 
 // ─── Detay Yan Paneli ─────────────────────────────────────────────────────────
-function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose, onEdit }) {
+function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose, onEdit, onRefresh }) {
   const { convert } = useFxRates();
   const clr = stockColor(item.stock_count, item.critical_limit);
   const sym = CURRENCY_SYM[item.base_currency] || '₺';
@@ -1048,6 +1049,8 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
       sku: qeForm.sku?.trim() || null,
       location: qeForm.location?.trim() || null,
       supplier_name: qeForm.supplier_name?.trim() || null,
+      base_currency: qeForm.base_currency || 'TRY',
+      sale_currency: qeForm.sale_currency || 'TRY',
     };
     // Reçeteli ürünlerde alış fiyatı değiştirilemez
     if (!isProduct || recipes.length === 0) {
@@ -1077,9 +1080,8 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
       });
     }
 
-    pageCache.invalidate('stock_items');
     setQe(false); setQeSaving(false);
-    onEdit(null);
+    onRefresh?.({ ...item, ...patch, stock_count: newStock });
   };
 
   // ── Reçete stok düzenleme (sadece azaltma) ──
