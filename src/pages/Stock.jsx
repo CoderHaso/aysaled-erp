@@ -1812,8 +1812,9 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
 
         {imgModalOpen && (
           <MediaPickerModal
+            isOpen={true}
             onClose={() => setImgModalOpen(false)}
-            onSelect={(url) => { setQeForm(f => ({ ...f, image_url: url })); setImgModalOpen(false); }}
+            onSelect={(mediaItem) => { setQeForm(f => ({ ...f, image_url: mediaItem.url || mediaItem.file_url })); setImgModalOpen(false); }}
             multiple={false}
           />
         )}

@@ -10,7 +10,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { supabase } from '../../lib/supabaseClient';
 import { useTheme } from '../../contexts/ThemeContext';
-import { Save, Loader2, Trash2, ArrowLeft, AlertCircle } from 'lucide-react';
+import { Save, Loader2, Trash2, ArrowLeft, AlertCircle, X } from 'lucide-react';
 import RecipeEditor from './RecipeEditor';
 import { useFxRates } from '../../hooks/useFxRates';
 import MediaPickerModal from '../MediaPickerModal';
@@ -624,8 +624,9 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
 
       {imgModalOpen && (
         <MediaPickerModal
+          isOpen={true}
           onClose={() => setImgModalOpen(false)}
-          onSelect={(url) => { set('image_url', url); setImgModalOpen(false); }}
+          onSelect={(mediaItem) => { set('image_url', mediaItem.url || mediaItem.file_url); setImgModalOpen(false); }}
           multiple={false}
         />
       )}
