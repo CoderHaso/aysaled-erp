@@ -192,9 +192,12 @@ async function handleView(body, res) {
   if (!uyumsoftId) return res.status(400).json({ error: 'invoiceId veya documentId gerekli' });
 
   if (format === 'html' && invoiceId) {
-    const { data: cached } = await supabase.from('invoices').select('html_view')
+    const { data: cached } = await supabase.from('invoices').select('html_view, status')
       .eq('invoice_id', invoiceId).eq('type', type).single();
-    if (cached?.html_view) return res.json({ success: true, html: cached.html_view, source: 'cache' });
+    const finalStatuses = ['Sent', 'Approved', 'Cancelled', 'Canceled'];
+    if (cached?.html_view && finalStatuses.includes(cached?.status)) {
+      return res.json({ success: true, html: cached.html_view, source: 'cache' });
+    }
   }
 
   const client = await createUyumsoftClient();
