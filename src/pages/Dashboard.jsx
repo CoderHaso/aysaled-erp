@@ -13,6 +13,7 @@ import { supabase } from '../lib/supabaseClient';
 import { useNavigate } from 'react-router-dom';
 import { printDocument } from '../lib/printService';
 import { useFxRates } from '../hooks/useFxRates';
+import QuickCostCalculator from '../components/calculator/QuickCostCalculator';
 
 const CUR_SYM = { TRY: '₺', USD: '$', EUR: '€', GBP: '£' };
 
@@ -141,6 +142,8 @@ export default function Dashboard() {
   const isDark = effectiveMode === 'dark';
   const navigate = useNavigate();
   const { convert } = useFxRates();
+  
+  const [calcOpen, setCalcOpen] = useState(false);
 
   // State
   const [month, setMonth] = useState(currentMonth);
@@ -649,6 +652,13 @@ export default function Dashboard() {
               <act.icon size={14} /> {act.n}
             </button>
           ))}
+          <button onClick={() => setCalcOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all border"
+            style={{ borderColor: c.border, color: '#ec4899', background: '#ec489910' }}
+            onMouseEnter={e => e.currentTarget.style.background = '#ec489920'}
+            onMouseLeave={e => e.currentTarget.style.background = '#ec489910'}>
+            <Calculator size={14} /> Maliyet Hesapla
+          </button>
           <button onClick={() => {
             const grouped = {};
             filteredOrderItems.forEach(oi => {
@@ -798,6 +808,16 @@ export default function Dashboard() {
           {renderContent()}
         </motion.div>
       )}
+
+      <AnimatePresence>
+        {calcOpen && (
+          <QuickCostCalculator
+            isDark={isDark}
+            currentColor={currentColor}
+            onClose={() => setCalcOpen(false)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
