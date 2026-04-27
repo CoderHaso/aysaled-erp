@@ -349,7 +349,11 @@ async function handleFormalize(body, res) {
   const issueDate = (inv.issue_date || new Date().toISOString()).slice(0, 10);
 
   // UBL birim kodu eşleme
-  const unitMap = { 'Adet': 'C62', 'Kg': 'KGM', 'Ton': 'TNE', 'm²': 'MTK', 'm³': 'MTQ', 'Litre': 'LTR', 'Paket': 'PA', 'Kutu': 'BX', 'Takım': 'SET' };
+  const unitMap = { 
+    'Adet': 'C62', 'Kg': 'KGM', 'Ton': 'TNE', 'm²': 'MTK', 'm2': 'MTK', 'm³': 'MTQ', 'm3': 'MTQ', 
+    'm': 'MTR', 'Metre': 'MTR', 'metre': 'MTR', 'Litre': 'LTR', 'Paket': 'PA', 'PKG': 'PA', 
+    'Kutu': 'BX', 'Takım': 'SET', 'Takim': 'SET', 'Set': 'SET', 'Rulo': 'RL', 'Saat': 'HUR', 'Gun': 'DAY', 'Gün': 'DAY'
+  };
 
   const encodeXml = str => String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 

@@ -370,9 +370,17 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
       )}
 
       {/* Sayısal alanlar */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
         <Field label="Miktar" type="number" value={line.quantity}
-          onChange={v => onChange({ quantity: parseFloat(v) || 0 })} suffix={line.unit} />
+          onChange={v => onChange({ quantity: parseFloat(v) || 0 })} />
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>Birim</p>
+          <select value={line.unit || 'Adet'} onChange={e => onChange({ unit: e.target.value })}
+            className="w-full rounded-xl px-3 py-2 text-sm outline-none"
+            style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`, color: isDark ? '#f1f5f9' : '#1e293b' }}>
+            {['Adet', 'Metre', 'Kg', 'Ton', 'm²', 'm³', 'Litre', 'Paket', 'Kutu', 'Takım'].map(u => <option key={u} value={u}>{u}</option>)}
+          </select>
+        </div>
         <Field label="Birim Fiyat" type="number" value={line.unit_price}
           onChange={v => onChange({ unit_price: parseFloat(v) || 0 })} />
         <div>
