@@ -73,6 +73,7 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
   const [suppOpen,    setSuppOpen]    = useState(false);
   const [draftReady,  setDraftReady]  = useState(isEdit); // true = draft/item ID var
   const [imgModalOpen,setImgModalOpen] = useState(false);
+  const [fullImg,     setFullImg]     = useState(null);
 
   // ── Draft refs (closure-safe) ────────────────────────────────────────────
   // draftId: taslak veya mevcut item ID'si
@@ -363,8 +364,9 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
             <FField label="Görsel">
               <div className="flex items-center gap-4">
                 <div 
-                  onClick={() => setImgModalOpen(true)}
+                  onClick={() => form.image_url ? setFullImg(form.image_url) : setImgModalOpen(true)}
                   className="w-16 h-16 rounded-xl flex items-center justify-center cursor-pointer border-2 border-dashed transition-colors"
+                  title={form.image_url ? "Tam boyutu gör" : "Resim ekle"}
                   style={{ borderColor: c.border, background: c.inputBg }}>
                   {form.image_url ? (
                     <img src={form.image_url} alt="Görsel" className="w-full h-full object-cover rounded-xl" />
@@ -373,7 +375,7 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
                   )}
                 </div>
                 <button type="button" onClick={() => setImgModalOpen(true)}
-                  className="px-3 py-1.5 text-xs font-semibold rounded-lg border"
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg border hover:bg-gray-50 transition-colors"
                   style={{ borderColor: c.border, color: c.text, background: c.inputBg }}>
                   {form.image_url ? 'Görseli Değiştir' : 'Galeriden Seç'}
                 </button>
@@ -623,9 +625,18 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
       {imgModalOpen && (
         <MediaPickerModal
           onClose={() => setImgModalOpen(false)}
-          onSelect={(url) => set('image_url', url)}
+          onSelect={(url) => { set('image_url', url); setImgModalOpen(false); }}
           multiple={false}
         />
+      )}
+
+      {fullImg && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/80" onClick={() => setFullImg(null)}>
+          <img src={fullImg} alt="Original" className="max-w-full max-h-full rounded-lg object-contain shadow-2xl" />
+          <button className="absolute top-6 right-6 p-2 bg-black/50 text-white rounded-full hover:bg-black/70">
+            <X size={24}/>
+          </button>
+        </div>
       )}
     </motion.div>
   );

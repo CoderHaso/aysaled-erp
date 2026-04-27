@@ -1000,6 +1000,7 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
   const [qeSaving, setQeSaving] = React.useState(false);
   const [qeError, setQeError] = React.useState('');
   const [imgModalOpen, setImgModalOpen] = React.useState(false);
+  const [fullImg, setFullImg] = React.useState(null);
 
   // Fiyat geçmişi
   const [priceHistory, setPriceHistory] = React.useState([]);
@@ -1277,8 +1278,9 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
         <div className="px-5 py-4 flex-shrink-0" style={{ borderBottom: `1px solid ${c.border}` }}>
           <div className="flex items-end gap-3">
             <div 
-              onClick={() => qe && setImgModalOpen(true)}
-              className={`w-12 h-12 rounded-2xl flex items-center justify-center overflow-hidden ${qe ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+              onClick={() => qe ? setImgModalOpen(true) : (item.image_url ? setFullImg(item.image_url) : null)}
+              className={`w-12 h-12 rounded-2xl flex items-center justify-center overflow-hidden ${(qe || item.image_url) ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+              title={qe ? 'Görsel ekle/değiştir' : (item.image_url ? 'Tam boyutu gör' : '')}
               style={{ background: `${clr}15`, border: qe ? `2px dashed ${clr}` : 'none' }}>
               {(qe ? qeForm.image_url : item.image_url) ? (
                 <img src={qe ? qeForm.image_url : item.image_url} alt="Ürün" className="w-full h-full object-cover" />
@@ -1807,6 +1809,23 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
             </button>
           )}
         </div>
+
+        {imgModalOpen && (
+          <MediaPickerModal
+            onClose={() => setImgModalOpen(false)}
+            onSelect={(url) => { setQeForm(f => ({ ...f, image_url: url })); setImgModalOpen(false); }}
+            multiple={false}
+          />
+        )}
+
+        {fullImg && (
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/80" onClick={() => setFullImg(null)}>
+            <img src={fullImg} alt="Original" className="max-w-full max-h-full rounded-lg object-contain shadow-2xl" />
+            <button className="absolute top-6 right-6 p-2 bg-black/50 text-white rounded-full hover:bg-black/70">
+              <X size={24}/>
+            </button>
+          </div>
+        )}
       </motion.div>
     </div>
   );
