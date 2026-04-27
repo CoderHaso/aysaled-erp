@@ -19,7 +19,9 @@ import { supabase } from '../lib/supabaseClient';
 import { pageCache } from '../lib/pageCache';
 import ItemDrawer from '../components/stock/ItemDrawer';
 import QuickAddModal from '../components/stock/QuickAddModal';
+import MediaPickerModal from '../components/MediaPickerModal';
 import { printDocument } from '../lib/printService';
+import { Image as ImageIcon } from 'lucide-react';
 
 const CURRENCY_SYM = { TRY: '₺', USD: '$', EUR: '€' };
 
@@ -993,11 +995,11 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
   const [rcpLoading, setRcpLoading] = React.useState(false);
   const isProduct = item.item_type === 'product';
 
-  // ── Hızlı Düzenleme ──
   const [qe, setQe] = React.useState(false);
   const [qeForm, setQeForm] = React.useState({});
   const [qeSaving, setQeSaving] = React.useState(false);
   const [qeError, setQeError] = React.useState('');
+  const [imgModalOpen, setImgModalOpen] = React.useState(false);
 
   // Fiyat geçmişi
   const [priceHistory, setPriceHistory] = React.useState([]);
@@ -1014,6 +1016,7 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
       sku: item.sku || '',
       location: item.location || '',
       supplier_name: item.supplier_name || '',
+      image_url: item.image_url || '',
     });
     setQe(true); setQeError('');
   };
@@ -1051,6 +1054,7 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
       supplier_name: qeForm.supplier_name?.trim() || null,
       base_currency: qeForm.base_currency || 'TRY',
       sale_currency: qeForm.sale_currency || 'TRY',
+      image_url: qeForm.image_url || null,
     };
     // Reçeteli ürünlerde alış fiyatı değiştirilemez
     if (!isProduct || recipes.length === 0) {
@@ -1272,9 +1276,15 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
         {/* Stok durumu büyük gösterge */}
         <div className="px-5 py-4 flex-shrink-0" style={{ borderBottom: `1px solid ${c.border}` }}>
           <div className="flex items-end gap-3">
-            <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
-              style={{ background: `${clr}15` }}>
-              <Package size={22} style={{ color: clr }}/>
+            <div 
+              onClick={() => qe && setImgModalOpen(true)}
+              className={`w-12 h-12 rounded-2xl flex items-center justify-center overflow-hidden ${qe ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+              style={{ background: `${clr}15`, border: qe ? `2px dashed ${clr}` : 'none' }}>
+              {(qe ? qeForm.image_url : item.image_url) ? (
+                <img src={qe ? qeForm.image_url : item.image_url} alt="Ürün" className="w-full h-full object-cover" />
+              ) : (
+                <Package size={22} style={{ color: clr }}/>
+              )}
             </div>
             <div>
               {qe ? (

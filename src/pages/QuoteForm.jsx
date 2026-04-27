@@ -9,6 +9,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import CustomDialog from '../components/CustomDialog';
 import MediaPickerModal from '../components/MediaPickerModal';
+import { useFxRates } from '../hooks/useFxRates';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt     = (n, d = 2) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -31,7 +32,7 @@ function emptyLine() {
 }
 
 // ── Ürün satırı ────────────────────────────────────────────────────────────────
-function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, onAddNewItem, rowHeight = 58, imgWidth = 68, sym = '₺' }) {
+function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, onAddNewItem, quoteCurrency, convert, rowHeight = 58, imgWidth = 68, sym = '₺' }) {
   const [showSugg, setShowSugg] = useState(false);
   const [q, setQ]               = useState(line.name || '');
   const [dropPos, setDropPos]   = useState({ top: 0, left: 0, width: 280 });
@@ -82,12 +83,17 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, onAddN
   };
 
   const doSelectItem = (item, keepImage = false) => {
-    const total = Number(item.sale_price || item.purchase_price || 0) * Number(line.quantity || 1);
+    let rawPrice = Number(item.sale_price || item.purchase_price || 0);
+    let cur = item.item_type === 'product' ? (item.sale_currency || 'TRY') : (item.base_currency || 'TRY');
+    let unit_price = convert ? convert(rawPrice, cur, quoteCurrency || 'TRY') : rawPrice;
+    
+    const total = unit_price * Number(line.quantity || 1);
     onUpdate(line.id, {
+      item_id:     item.id,
       item_code:   item.item_code || item.sku || '',
       name:        item.name || '',
       description: item.description || '',
-      unit_price:  item.sale_price || item.purchase_price || 0,
+      unit_price:  unit_price,
       unit:        item.unit || 'Adet',
       image_url:   keepImage ? (line.image_url || item.image_url || '') : (item.image_url || ''),
       power_w:     item.power_w || '',
@@ -603,6 +609,7 @@ export function QuotePreview({ quote, onClose, colWidths = {}, rowHeight = 58 })
 // ── Ana Form ──────────────────────────────────────────────────────────────────
 export default function QuoteForm({ quoteId, onBack, onSaved }) {
   const { currentColor } = useTheme();
+  const { convert } = useFxRates();
 
   const [allItems,   setAllItems]   = useState([]);
   const [allCustomers, setAllCustomers] = useState([]);
@@ -801,9 +808,13 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
   const openImageModal = (lineId) => {
     setImageModal(lineId);
   };
-  const selectMedia = (url, lineId) => {
+  const selectMedia = async (url, lineId) => {
+    const line = form.line_items.find(l => l.id === lineId);
     updateLine(lineId, { image_url: url });
     setImageModal(null);
+    if (line && line.item_id) {
+       await supabase.from('items').update({ image_url: url }).eq('id', line.item_id);
+    }
   };
 
   // Kaydet
@@ -1070,6 +1081,8 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
                   <QuoteLine key={line.id} line={line} idx={i} allItems={allItems}
                     onUpdate={updateLine} onDelete={deleteLine} onAddImage={openImageModal}
                     onAddNewItem={(name) => setQuickItemForm({ lineId: line.id, name, type: 'product', code: '', price: '', unit: 'Adet' })}
+                    quoteCurrency={form.currency}
+                    convert={convert}
                     rowHeight={rowHeight} imgWidth={colWidths.img}
                     sym={currSymbol(form.currency)}
                   />

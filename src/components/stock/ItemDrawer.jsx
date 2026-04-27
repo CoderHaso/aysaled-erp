@@ -13,6 +13,8 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { Save, Loader2, Trash2, ArrowLeft, AlertCircle } from 'lucide-react';
 import RecipeEditor from './RecipeEditor';
 import { useFxRates } from '../../hooks/useFxRates';
+import MediaPickerModal from '../MediaPickerModal';
+import { Image as ImageIcon } from 'lucide-react';
 
 const UNITS       = ['Adet','Metre','cm','mm','Kg','g','Litre','ml','m²','m³','Rulo','Paket','Kutu','Set','Takım','Saat','Gün'];
 const CURRENCIES  = ['TRY','USD','EUR'];
@@ -59,6 +61,7 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
     is_active:      item?.is_active      ?? true,
     item_type:      isProduct ? 'product' : 'raw',
     technical_specs: item?.technical_specs || {},
+    image_url:      item?.image_url      || '',
   });
 
   const [section,     setSection]     = useState('info');
@@ -69,6 +72,7 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
   const [suppSearch,  setSuppSearch]  = useState('');
   const [suppOpen,    setSuppOpen]    = useState(false);
   const [draftReady,  setDraftReady]  = useState(isEdit); // true = draft/item ID var
+  const [imgModalOpen,setImgModalOpen] = useState(false);
 
   // ── Draft refs (closure-safe) ────────────────────────────────────────────
   // draftId: taslak veya mevcut item ID'si
@@ -190,6 +194,7 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
       category_id:     form.category_id || null,
       supplier_id:     form.supplier_id || null,
       is_active:       form.is_active ?? true,
+      image_url:       form.image_url || null,
     };
 
     setIsSaving(true);
@@ -353,6 +358,26 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
                 <option value="">— Kategori Seç —</option>
                 {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
               </select>
+            </FField>
+
+            <FField label="Görsel">
+              <div className="flex items-center gap-4">
+                <div 
+                  onClick={() => setImgModalOpen(true)}
+                  className="w-16 h-16 rounded-xl flex items-center justify-center cursor-pointer border-2 border-dashed transition-colors"
+                  style={{ borderColor: c.border, background: c.inputBg }}>
+                  {form.image_url ? (
+                    <img src={form.image_url} alt="Görsel" className="w-full h-full object-cover rounded-xl" />
+                  ) : (
+                    <ImageIcon size={24} style={{ color: c.muted }} />
+                  )}
+                </div>
+                <button type="button" onClick={() => setImgModalOpen(true)}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg border"
+                  style={{ borderColor: c.border, color: c.text, background: c.inputBg }}>
+                  {form.image_url ? 'Görseli Değiştir' : 'Galeriden Seç'}
+                </button>
+              </div>
             </FField>
 
             {/* Tedarikçi autocomplete */}
@@ -594,6 +619,14 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
         )}
 
       </div>{/* /content */}
+
+      {imgModalOpen && (
+        <MediaPickerModal
+          onClose={() => setImgModalOpen(false)}
+          onSelect={(url) => set('image_url', url)}
+          multiple={false}
+        />
+      )}
     </motion.div>
   );
 }
