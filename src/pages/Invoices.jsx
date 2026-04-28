@@ -277,12 +277,16 @@ function IsleWizard({ inv, allItems, supabase, onClose, onDone }) {
           {ekle && (
             <div className="grid grid-cols-2 gap-3 pl-1">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider mb-1 text-emerald-400">Alacak (Alacağımız)</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-1 text-emerald-400">
+                  {isOutbox ? 'Alacak (Fatura Tutarı)' : 'Verilen (Ödeme)'}
+                </p>
                 <input type="number" className={inp} style={inpStyle} step="0.01" min="0"
                   value={borc} onChange={e => setBorc(e.target.value)} placeholder="0.00"/>
               </div>
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider mb-1 text-red-400">Verecek (Ödeyeceğimiz)</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-1 text-red-400">
+                  {isOutbox ? 'Alınan (Tahsilat)' : 'Verecek (Fatura Tutarı)'}
+                </p>
                 <input type="number" className={inp} style={inpStyle} step="0.01" min="0"
                   value={alacak} onChange={e => setAlacak(e.target.value)} placeholder="0.00"/>
               </div>

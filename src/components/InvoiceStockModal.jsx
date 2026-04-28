@@ -219,7 +219,7 @@ export default function InvoiceStockModal({
 
                   {/* Fatura kalemi */}
                   <div className="min-w-0">
-                    <p className="text-xs font-semibold truncate" style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}>{m.invoiceLine.name}</p>
+                    <p className="text-xs font-semibold truncate" style={{ color: isDark ? '#e2e8f0' : '#1e293b' }} title={m.invoiceLine.name}>{m.invoiceLine.name}</p>
                     <p className="text-[10px] text-slate-600">
                       {fmt(m.invoiceLine.quantity)} {m.invoiceLine.unit} · {fmt(m.invoiceLine.unit_price)} {currency}
                     </p>
@@ -243,7 +243,7 @@ export default function InvoiceStockModal({
                       style={{
                         background: selItem ? `${currentColor}15` : 'rgba(255,255,255,0.04)',
                         border: `1px solid ${selItem ? currentColor + '40' : 'rgba(148,163,184,0.12)'}`,
-                        color: selItem ? '#e2e8f0' : '#475569',
+                        color: selItem ? (isDark ? '#e2e8f0' : '#1e293b') : '#475569',
                       }}>
                       <Package size={10} style={{ color: selItem ? currentColor : '#475569', flexShrink: 0 }}/>
                       <span className="truncate flex-1">
