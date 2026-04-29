@@ -811,6 +811,23 @@ export default function Invoices({ type = 'inbox' }) {
   const [toast, setToast]       = useState(null);
   const [dialog, setDialog]     = useState({ open: false, title: '', message: '', type: 'confirm', onConfirm: null, loading: false });
 
+  // ── Görüntülenmiş (seen) fatura takibi ──
+  const seenKey = `invoices_seen_${type}`;
+  const [seenIds, setSeenIds] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(seenKey) || '[]')); } catch { return new Set(); }
+  });
+  const markSeen = useCallback((invoiceId) => {
+    setSeenIds(prev => {
+      if (prev.has(invoiceId)) return prev;
+      const next = new Set(prev);
+      next.add(invoiceId);
+      try { localStorage.setItem(seenKey, JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  }, [seenKey]);
+  // Yeni senkrondan gelen faturaları belirle
+  const isNew = useCallback((inv) => !seenIds.has(inv.invoice_id), [seenIds]);
+
   const showToast = (msg, type = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
@@ -880,12 +897,60 @@ export default function Invoices({ type = 'inbox' }) {
       
       pageCache.set(ck, rows); // sessionStorage'a da kaydet
       setInvoices(rows);
+      // İlk yükleme: seen listesi boşsa tüm mevcut faturaları seen olarak işaretle
+      // Böylece sadece yeni senkrondan gelenler "yeni" olarak görünür
+      setSeenIds(prev => {
+        if (prev.size > 0) return prev; // zaten var, dokunma
+        const allIds = new Set(rows.map(r => r.invoice_id));
+        try { localStorage.setItem(seenKey, JSON.stringify([...allIds])); } catch {}
+        return allIds;
+      });
     } catch (err) {
       setError(err.message);
     } finally { setLoading(false); }
   }, [type]);
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
+
+  // ── Otomatik senkronizasyon — sayfa açıldığında son sync 1 saati geçtiyse ──
+  useEffect(() => {
+    const lastSyncKey = `invoices_last_sync_${type}`;
+    const lastSync = localStorage.getItem(lastSyncKey);
+    const oneHour = 60 * 60 * 1000;
+    if (!lastSync || (Date.now() - Number(lastSync)) > oneHour) {
+      // Auto sync after initial render
+      const timer = setTimeout(() => {
+        // Only if not already syncing
+        setSyncing(prev => {
+          if (prev) return prev;
+          (async () => {
+            try {
+              let remaining = 1;
+              while (remaining > 0) {
+                const res = await fetch('/api/sync-invoices', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ type, detailLimit: 50 }),
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) break;
+                remaining = data.remaining ?? 0;
+              }
+              localStorage.setItem(lastSyncKey, String(Date.now()));
+              pageCache.invalidate(`invoices_${type}`);
+              fetchInvoices(true);
+            } catch (e) {
+              console.warn('[auto-sync]', e.message);
+            } finally {
+              setSyncing(false);
+            }
+          })();
+          return true;
+        });
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [type]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleLineItemsLoaded = useCallback((invoiceId, items, rawDetail) => {
     setInvoices(prev => {
@@ -960,6 +1025,8 @@ export default function Invoices({ type = 'inbox' }) {
       setDialog({ open: true, title: 'Hata', message: 'Eşitleme başarısız: ' + err.message, type: 'alert' });
     } finally {
       setSyncing(false);
+      // Son senkronizasyon zamanını kaydet
+      try { localStorage.setItem(`invoices_last_sync_${type}`, String(Date.now())); } catch {}
     }
   };
 
@@ -1383,6 +1450,26 @@ export default function Invoices({ type = 'inbox' }) {
               {syncing ? 'Eşitleniyor...' : 'Senkronize Et'}
             </button>
           </div>
+          {/* Son senkronizasyon zamanı */}
+          {(() => {
+            const ls = localStorage.getItem(`invoices_last_sync_${type}`);
+            const newCount = invoices.filter(inv => isNew(inv)).length;
+            return (
+              <div className="flex items-center gap-3 mt-1">
+                {ls && (
+                  <p className="text-[10px]" style={{ color: c.muted }}>
+                    Son senkronizasyon: {new Date(Number(ls)).toLocaleString('tr-TR')}
+                  </p>
+                )}
+                {newCount > 0 && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse"
+                    style={{ background: 'rgba(59,130,246,0.15)', color: '#3b82f6' }}>
+                    {newCount} yeni fatura
+                  </span>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         {error && (
@@ -1427,10 +1514,10 @@ export default function Invoices({ type = 'inbox' }) {
                       initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                       transition={{ delay: Math.min(idx * 0.02, 0.25) }}
                       className="border-b last:border-0 cursor-pointer transition-colors"
-                      style={{ borderColor: c.border }}
-                      onMouseEnter={e => e.currentTarget.style.background = c.hover}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                      onClick={() => setSelected(inv)}>
+                      style={{ borderColor: c.border, background: isNew(inv) ? (isDark ? 'rgba(59,130,246,0.06)' : 'rgba(59,130,246,0.04)') : 'transparent' }}
+                      onMouseEnter={e => e.currentTarget.style.background = isNew(inv) ? (isDark ? 'rgba(59,130,246,0.1)' : 'rgba(59,130,246,0.08)') : c.hover}
+                      onMouseLeave={e => e.currentTarget.style.background = isNew(inv) ? (isDark ? 'rgba(59,130,246,0.06)' : 'rgba(59,130,246,0.04)') : 'transparent'}
+                      onClick={() => { markSeen(inv.invoice_id); setSelected(inv); }}>
                       <td className="px-4 py-3.5 whitespace-nowrap text-sm" style={{ color: c.muted }}>
                         {inv.issue_date ? new Date(inv.issue_date).toLocaleDateString('tr-TR') : '-'}
                       </td>
@@ -1439,6 +1526,9 @@ export default function Invoices({ type = 'inbox' }) {
                           style={{ background:`${currentColor}15`, color:currentColor }}>
                           {inv.invoice_id}
                         </span>
+                        {isNew(inv) && (
+                          <span className="inline-block w-2 h-2 rounded-full ml-1.5 animate-pulse" style={{ background: '#3b82f6' }}/>
+                        )}
                       </td>
                       <td className="px-4 py-3.5 text-sm font-medium" style={{ color: c.text }}>
                         <p className="truncate max-w-[200px]">{inv.cari_name || '-'}</p>
@@ -1454,7 +1544,7 @@ export default function Invoices({ type = 'inbox' }) {
                       <td className="px-4 py-3.5 whitespace-nowrap" style={{ width:'160px' }}>
                         <div className="flex items-center justify-center gap-1.5">
                           <button
-                            onClick={e => { e.stopPropagation(); setSelected(inv); }}
+                            onClick={e => { e.stopPropagation(); markSeen(inv.invoice_id); setSelected(inv); }}
                             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap"
                             style={{ background:`${currentColor}15`, color:currentColor }}
                             title="Kalemleri Görüntüle">
@@ -1465,7 +1555,7 @@ export default function Invoices({ type = 'inbox' }) {
                           </button>
                           {inv.document_id && (
                             <button
-                              onClick={e => { e.stopPropagation(); setPreviewInv({ invoiceId: inv.invoice_id, documentId: inv.document_id, type: inv.type }); }}
+                              onClick={e => { e.stopPropagation(); markSeen(inv.invoice_id); setPreviewInv({ invoiceId: inv.invoice_id, documentId: inv.document_id, type: inv.type }); }}
                               className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap"
                               style={{ background:'rgba(139,92,246,0.12)', color:'#a78bfa' }}
                               title="Fatura Belgesi Önizle">

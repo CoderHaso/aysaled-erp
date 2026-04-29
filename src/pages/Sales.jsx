@@ -1192,11 +1192,23 @@ function SumRow({ label, value, bold, accent, color, isDark = false }) {
 function OrderSummaryModal({ order, onConfirm, onCancel, c, currentColor, isDark, confirming }) {
   const items = order.items || [];
   const subtotal = items.reduce((s, l) => s + (Number(l.quantity||1) * Number(l.unit_price||0)), 0);
+  const total = order.grand_total || subtotal;
+  const [hesapEkle, setHesapEkle] = useState(true);
+  const [borc, setBorc]     = useState(String(total || 0));
+  const [alacak, setAlacak] = useState('0');
+
+  const inpStyle = {
+    background: isDark ? 'rgba(255,255,255,0.06)' : '#f1f5f9',
+    border: `1px solid ${isDark ? 'rgba(148,163,184,0.18)' : '#e2e8f0'}`,
+    color: isDark ? '#f1f5f9' : '#1e293b'
+  };
+  const inp = 'w-full px-3 py-2 text-sm rounded-xl outline-none';
+
   return (
     <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onCancel}/>
       <motion.div initial={{ scale: 0.92, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.92, opacity: 0 }}
-        className="relative w-full max-w-md rounded-2xl overflow-hidden shadow-2xl"
+        className="relative w-full max-w-md rounded-2xl overflow-hidden shadow-2xl max-h-[90vh] overflow-y-auto"
         style={{ background: isDark ? '#0f1e36' : '#ffffff', border: `1px solid ${currentColor}30` }}>
         {/* Header */}
         <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: `1px solid ${c.border}`, background: `${currentColor}08` }}>
@@ -1231,7 +1243,7 @@ function OrderSummaryModal({ order, onConfirm, onCancel, c, currentColor, isDark
           {/* Toplam */}
           <div className="flex items-center justify-between px-1">
             <span className="text-xs font-bold" style={{ color: c.muted }}>GENEL TOPLAM</span>
-            <span className="text-lg font-black" style={{ color: '#10b981' }}>{fmt(order.grand_total || subtotal, order.currency)}</span>
+            <span className="text-lg font-black" style={{ color: '#10b981' }}>{fmt(total, order.currency)}</span>
           </div>
           {/* Üretim notları */}
           {order.woNotes && (
@@ -1254,6 +1266,46 @@ function OrderSummaryModal({ order, onConfirm, onCancel, c, currentColor, isDark
               </div>
             </div>
           )}
+
+          {/* ── Hesap Defterine İşle ── */}
+          <label className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all"
+            style={{ background: hesapEkle ? 'rgba(59,130,246,0.08)' : (isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc'),
+                     border: `1px solid ${hesapEkle ? 'rgba(59,130,246,0.3)' : (isDark ? 'rgba(148,163,184,0.1)' : '#e2e8f0')}` }}
+            onClick={() => setHesapEkle(v => !v)}>
+            <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0"
+              style={{ background: hesapEkle ? '#3b82f6' : (isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0'),
+                       border: `1px solid ${hesapEkle ? '#3b82f6' : (isDark ? 'rgba(148,163,184,0.2)' : '#cbd5e1')}` }}>
+              {hesapEkle && <Check size={11} color="white"/>}
+            </div>
+            <div>
+              <p className="text-xs font-bold" style={{ color: hesapEkle ? '#3b82f6' : (isDark ? '#94a3b8' : '#64748b') }}>
+                Hesap Defteri'ne İşle
+              </p>
+              <p className="text-[10px]" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>
+                {order.customer_name} için Alacak olarak ekle
+              </p>
+            </div>
+          </label>
+
+          {hesapEkle && (
+            <div className="grid grid-cols-2 gap-3 pl-1">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-1 text-emerald-400">
+                  Alacak (Fatura Tutarı)
+                </p>
+                <input type="number" className={inp} style={inpStyle} step="0.01" min="0"
+                  value={borc} onChange={e => setBorc(e.target.value)} placeholder="0.00"/>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-1 text-blue-400">
+                  Alınan (Tahsilat)
+                </p>
+                <input type="number" className={inp} style={inpStyle} step="0.01" min="0"
+                  value={alacak} onChange={e => setAlacak(e.target.value)} placeholder="0.00"/>
+              </div>
+            </div>
+          )}
+
           <p className="text-[10px] text-center" style={{ color: c.muted }}>Onaylandıktan sonra stoklar güncellenecektir.</p>
         </div>
         {/* Footer */}
@@ -1263,7 +1315,7 @@ function OrderSummaryModal({ order, onConfirm, onCancel, c, currentColor, isDark
             style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', color: c.muted }}>
             İptal
           </button>
-          <button onClick={onConfirm} disabled={confirming}
+          <button onClick={() => onConfirm({ hesapEkle, borc: parseFloat(borc) || 0, alacak: parseFloat(alacak) || 0 })} disabled={confirming}
             className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 transition-all"
             style={{ background: '#10b981', opacity: confirming ? 0.7 : 1 }}>
             {confirming ? <Loader2 size={14} className="animate-spin"/> : <CheckCircle2 size={14}/>}
@@ -2002,9 +2054,29 @@ export default function Sales() {
   const historyCount = orders.filter(o => o.status === 'completed' || o.status === 'cancelled' || o.status === 'refunded').length;
 
   // Sipariş tamamlama onayı
-  const confirmComplete = async (order) => {
+  const confirmComplete = async (order, ledgerOpts) => {
     setConfirming(true);
     await updateStatus(order.id, 'completed');
+
+    // Hesap defterine işle
+    if (ledgerOpts?.hesapEkle && order.customer_id) {
+      try {
+        const payload = {
+          tarih:        new Date().toISOString().slice(0, 10),
+          baslik:       `Sipariş #${order.order_number}`,
+          aciklama:     `${order.customer_name} — ${order.is_invoiced ? 'Faturalı' : 'Faturasız'} satış tamamlandı`,
+          borc:         ledgerOpts.borc || 0,
+          alacak:       ledgerOpts.alacak || 0,
+          currency:     order.currency || 'TRY',
+          musteri_id:   order.customer_id,
+          kaynak:       'sale',
+        };
+        await supabase.from('cari_hareketler').insert(payload);
+      } catch (e) {
+        console.warn('[confirmComplete] Hesap defteri hatası:', e.message);
+      }
+    }
+
     setConfirmOrder(null);
     setDetailOrder(null);
     setConfirming(false);
@@ -2242,7 +2314,7 @@ export default function Sales() {
             isDark={isDark}
             currentColor={currentColor}
             confirming={confirming}
-            onConfirm={() => confirmComplete(confirmOrder)}
+            onConfirm={(ledgerOpts) => confirmComplete(confirmOrder, ledgerOpts)}
             onCancel={() => setConfirmOrder(null)}
           />
         )}

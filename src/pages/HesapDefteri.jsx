@@ -204,7 +204,7 @@ function BalanceChip({ value, compact = false }) {
 }
 
 // ── Tekil kişi satırı (accordion) ─────────────────────────────────────────────
-function ContactRow({ contact, contactType, color, preloadedBalance, externalOpen, externalPrefill, externalAutoModal, onExternalHandled }) {
+function ContactRow({ contact, contactType, color, preloadedBalance, externalOpen, externalPrefill, externalAutoModal, onExternalHandled, onBalanceChange }) {
   const { effectiveMode } = useTheme();
   const isDark = effectiveMode === 'dark';
   const { convert } = useFxRates();
@@ -256,6 +256,7 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
     await supabase.from('cari_hareketler').delete().eq('id', id);
     setHar(h => h.filter(x => x.id !== id));
     setDel(null);
+    onBalanceChange?.();
   };
 
   // Anlık bakiye — tüm dövizleri TRY'ye çevirerek hesapla
@@ -481,6 +482,7 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
             loaded.current = false;
             await loadHareketler();
             loaded.current = true;
+            onBalanceChange?.();
           }}/>
       )}
     </div>
@@ -818,6 +820,7 @@ export default function HesapDefteri() {
                   externalPrefill={isSel ? selectedContact?.prefill : null}
                   externalAutoModal={isSel && !!selectedContact?.autoOpenModal}
                   onExternalHandled={() => setSelectedContact(null)}
+                  onBalanceChange={loadContacts}
                 />
               </motion.div>
             );

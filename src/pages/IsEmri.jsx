@@ -451,11 +451,11 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
             <Edit3 size={10}/> Reçete Güncelle
           </button>
         )}
-        {wo.status==='cancelled' && (
+        {(wo.status==='cancelled' || wo.status==='completed') && (
           <button onClick={() => onDelete(wo.id)}
             className="px-3 py-2 rounded-xl text-[11px] font-semibold"
             style={{ background:'rgba(239,68,68,0.08)', color:'#ef4444', border:'1px solid rgba(239,68,68,0.2)' }}>
-            Sil
+            🗑 Kalıcı Sil
           </button>
         )}
         <button onClick={() => {
