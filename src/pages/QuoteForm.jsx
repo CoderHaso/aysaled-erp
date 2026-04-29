@@ -758,6 +758,7 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
          address: quickEntityForm.address || null,
          email: quickEntityForm.email || null,
          phone: quickEntityForm.phone || null,
+         is_faturasiz: !!quickEntityForm.is_faturasiz,
          source: 'manual'
       }).select().single();
       if (error) throw error;
@@ -1204,6 +1205,20 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
               <button onClick={() => setQuickEntityForm(null)} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
             </div>
             <div className="space-y-3">
+              {/* Faturasız Toggle */}
+              <label className="flex items-center gap-3 cursor-pointer p-3 rounded-xl transition-all"
+                style={{ background: quickEntityForm.is_faturasiz ? 'rgba(245,158,11,0.10)' : 'rgba(0,0,0,0.02)', border: `1px solid ${quickEntityForm.is_faturasiz ? 'rgba(245,158,11,0.4)' : '#e5e7eb'}` }}
+                onClick={() => setQuickEntityForm(p => ({...p, is_faturasiz: !p.is_faturasiz}))}>
+                <div className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 transition-all"
+                  style={{ background: quickEntityForm.is_faturasiz ? '#f59e0b' : '#e5e7eb', border: `1px solid ${quickEntityForm.is_faturasiz ? '#f59e0b' : '#cbd5e1'}` }}>
+                  {quickEntityForm.is_faturasiz && <Check size={11} color="white"/>}
+                </div>
+                <div className="flex-1">
+                  <p className="text-xs font-bold" style={{ color: quickEntityForm.is_faturasiz ? '#f59e0b' : '#64748b' }}>Faturasız Müşteri</p>
+                  <p className="text-[10px] text-gray-400">{quickEntityForm.is_faturasiz ? 'Sadece temel bilgiler gerekli' : 'E-fatura için tam adres bilgisi gerekli'}</p>
+                </div>
+              </label>
+
               <div>
                 <label className="text-xs font-semibold text-gray-500 mb-1 block">Müşteri / Firma Adı *</label>
                 <input value={quickEntityForm.name || ''} onChange={e => setQuickEntityForm(p => ({...p, name: e.target.value}))} className={fieldCls} autoFocus />

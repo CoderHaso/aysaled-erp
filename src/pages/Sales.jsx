@@ -495,6 +495,9 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
   const [saving, setSaving] = useState(false);
   const [custOpen, setCustOpen] = useState(false);
   const [custQ, setCustQ]       = useState('');
+  // Hızlı müşteri oluşturma modalı
+  const [quickCustForm, setQuickCustForm] = useState(null);
+  const [quickCustSaving, setQuickCustSaving] = useState(false);
   // Fatura toggle
   const [invoiceToggle, setInvoiceToggle] = useState(false);
   const [draftLoading,  setDraftLoading]  = useState(false);
@@ -932,17 +935,14 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
                         </div>
                         {/* Yeni kayıt oluştur */}
                         <div className="px-4 py-2.5 cursor-pointer transition-colors"
-                          onClick={async () => {
-                            const num = await generateOrderNumber(custQ);
-                            setForm(f => ({ ...f, customer_name: custQ, customer_id: null, order_number: isEdit ? f.order_number : num }));
+                          onClick={() => {
                             setCustOpen(false);
-                            // Cariler sayfasına yönlendirme yerine bilgi ver
-                            window.open('#/contacts', '_blank');
+                            setQuickCustForm({ name: custQ.trim(), vkntckn: '', phone: '', email: '', address: '', city: '', is_faturasiz: false });
                           }}
                           onMouseEnter={e => e.currentTarget.style.background = 'rgba(16,185,129,0.08)'}
                           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                           <p className="text-sm text-emerald-400">➕ <strong>&quot;{custQ}&quot;</strong> — Yeni kayıt oluştur</p>
-                          <p className="text-[10px] text-slate-600">Cariler sayfası açılır (sipariş devam eder)</p>
+                          <p className="text-[10px] text-slate-600">Müşteri bilgilerini gir ve sisteme kaydet</p>
                         </div>
                       </>
                     )}
@@ -1153,6 +1153,93 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
       onClose={() => setDialog(d => ({ ...d, open: false }))}
       onConfirm={dialog.onConfirm ? dialog.onConfirm : () => setDialog(d => ({ ...d, open: false }))}
     />
+
+    {/* ── Hızlı Müşteri Oluştur Modalı ── */}
+    {quickCustForm && (
+      <div className="fixed inset-0 z-[600] flex items-center justify-center p-4">
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setQuickCustForm(null)}/>
+        <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+          className="relative w-full max-w-md rounded-2xl p-5 space-y-4"
+          style={{ background: isDark ? '#0f1f38' : '#ffffff', border: `1px solid ${isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0'}` }}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>Yeni Müşteri Kaydı</p>
+              <h3 className="text-sm font-bold mt-0.5" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{quickCustForm.name || 'Müşteri'}</h3>
+            </div>
+            <button onClick={() => setQuickCustForm(null)} style={{ color: '#94a3b8' }}><X size={16}/></button>
+          </div>
+
+          {/* Faturasız Toggle */}
+          <label className="flex items-center gap-3 cursor-pointer p-3 rounded-xl transition-all"
+            style={{ background: quickCustForm.is_faturasiz ? 'rgba(245,158,11,0.10)' : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
+                     border: `1px solid ${quickCustForm.is_faturasiz ? 'rgba(245,158,11,0.4)' : (isDark ? 'rgba(148,163,184,0.12)' : '#e5e7eb')}` }}
+            onClick={() => setQuickCustForm(p => ({...p, is_faturasiz: !p.is_faturasiz}))}>
+            <div className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 transition-all"
+              style={{ background: quickCustForm.is_faturasiz ? '#f59e0b' : (isDark ? 'rgba(255,255,255,0.08)' : '#e5e7eb'),
+                       border: `1px solid ${quickCustForm.is_faturasiz ? '#f59e0b' : (isDark ? 'rgba(148,163,184,0.2)' : '#cbd5e1')}` }}>
+              {quickCustForm.is_faturasiz && <CheckCircle2 size={11} color="white"/>}
+            </div>
+            <div className="flex-1">
+              <p className="text-xs font-bold" style={{ color: quickCustForm.is_faturasiz ? '#f59e0b' : (isDark ? '#94a3b8' : '#64748b') }}>Faturasız Müşteri</p>
+              <p className="text-[10px]" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>
+                {quickCustForm.is_faturasiz ? 'Sadece temel bilgiler gerekli' : 'E-fatura için tam adres bilgisi gerekli'}
+              </p>
+            </div>
+          </label>
+
+          {[{k:'name', l:'Müşteri / Firma Adı *', ph:'Firma adı'},
+            {k:'vkntckn', l:'VKN / TCKN', ph:'1234567890'},
+            {k:'phone', l:'Telefon', ph:'0212 000 00 00'},
+            {k:'email', l:'E-Posta', ph:'info@firma.com'},
+            {k:'address', l:'Adres / Şehir', ph:'Mahalle, sokak, no, şehir...'},
+          ].map(({k, l, ph}) => (
+            <div key={k}>
+              <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>{l}</p>
+              <input className="w-full px-3 py-2 rounded-xl text-sm outline-none"
+                style={{ background: isDark ? 'rgba(255,255,255,0.06)' : '#f1f5f9', border: `1px solid ${isDark ? 'rgba(148,163,184,0.18)' : '#e2e8f0'}`, color: isDark ? '#f1f5f9' : '#1e293b' }}
+                placeholder={ph} value={quickCustForm[k] || ''} autoFocus={k==='name'}
+                onChange={e => setQuickCustForm(p => ({ ...p, [k]: e.target.value }))} />
+            </div>
+          ))}
+
+          <div className="flex gap-2 pt-1">
+            <button onClick={() => setQuickCustForm(null)}
+              className="flex-1 py-2 rounded-xl text-sm font-semibold"
+              style={{ color: isDark ? '#94a3b8' : '#64748b', background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', border: `1px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}` }}>
+              İptal
+            </button>
+            <button disabled={quickCustSaving || !quickCustForm.name?.trim()}
+              onClick={async () => {
+                setQuickCustSaving(true);
+                try {
+                  const { data, error } = await supabase.from('customers').insert({
+                    name: quickCustForm.name.trim(),
+                    vkntckn: quickCustForm.vkntckn || null,
+                    phone: quickCustForm.phone || null,
+                    email: quickCustForm.email || null,
+                    address: quickCustForm.address || null,
+                    city: quickCustForm.city || null,
+                    is_faturasiz: !!quickCustForm.is_faturasiz,
+                    source: 'manual',
+                  }).select().single();
+                  if (error) throw error;
+                  // Müşteriyi seç
+                  await selectCustomer(data);
+                  setQuickCustForm(null);
+                  pageCache.invalidate('customers');
+                } catch (e) {
+                  setDialog({ open: true, title: 'Hata', message: 'Müşteri kaydedilemedi: ' + e.message, type: 'alert' });
+                } finally { setQuickCustSaving(false); }
+              }}
+              className="flex-1 py-2 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
+              style={{ background: currentColor, opacity: (quickCustSaving || !quickCustForm.name?.trim()) ? 0.6 : 1 }}>
+              {quickCustSaving ? <Loader2 size={14} className="animate-spin"/> : <CheckCircle2 size={14}/>}
+              Kaydet ve Seç
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    )}
   </>
   );
 }
