@@ -510,6 +510,7 @@ export default function Stock() {
                       try {
                         for (const [itemId, changes] of Object.entries(quickEdits)) {
                           const patch = {};
+                          if (changes.name !== undefined) patch.name = changes.name.trim();
                           if (changes.unit !== undefined) patch.unit = changes.unit;
                           if (changes.stock_count !== undefined) patch.stock_count = Number(changes.stock_count);
                           if (changes.purchase_price !== undefined) patch.purchase_price = Number(changes.purchase_price);
@@ -648,9 +649,19 @@ export default function Stock() {
                             : <span style={{ color: c.muted }}>—</span>
                           }
                         </td>
-                        <td className="px-2 py-2">
-                          <p className="font-semibold text-sm" style={{ color: c.text }}>{item.name}</p>
-                          {item.location && <p className="text-[10px] mt-0.5" style={{ color: c.muted }}>📍 {item.location}</p>}
+                        <td className="px-2 py-2" onClick={e => quickEditMode && e.stopPropagation()}>
+                          {quickEditMode ? (
+                            <input type="text"
+                              value={ed.name ?? item.name}
+                              onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), name: e.target.value}}))}
+                              className="w-full px-1.5 py-1 text-[12px] font-semibold rounded-lg outline-none"
+                              style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}/>
+                          ) : (
+                            <>
+                              <p className="font-semibold text-sm" style={{ color: c.text }}>{item.name}</p>
+                              {item.location && <p className="text-[10px] mt-0.5" style={{ color: c.muted }}>📍 {item.location}</p>}
+                            </>
+                          )}
                         </td>
                         {/* Kategori */}
                         <td className="px-2 py-2" onClick={e => quickEditMode && e.stopPropagation()}>
