@@ -84,6 +84,11 @@ export default function Stock() {
   const [quickSaving,   setQuickSaving]   = useState(false);
   const [bulkModal,     setBulkModal]     = useState(false);  // toplu güncelle
   const { convert: fxConvert } = useFxRates();
+  // Kategoriler
+  const [categories, setCategories] = useState([]);
+  useEffect(() => {
+    supabase.from('item_categories').select('id,name,item_scope').order('name').then(({ data }) => setCategories(data || []));
+  }, []);
 
   const c = {
     bg:       isDark ? '#0f172a' : '#f8fafc',
@@ -512,6 +517,7 @@ export default function Stock() {
                           if (changes.critical_limit !== undefined) patch.critical_limit = Number(changes.critical_limit);
                           if (changes.base_currency !== undefined) patch.base_currency = changes.base_currency;
                           if (changes.sale_currency !== undefined) patch.sale_currency = changes.sale_currency;
+                          if (changes.category_id !== undefined) patch.category_id = changes.category_id || null;
                           if (Object.keys(patch).length > 0) {
                             await supabase.from('items').update(patch).eq('id', itemId);
                           }
@@ -553,19 +559,21 @@ export default function Stock() {
                 <thead>
                   <tr style={{ borderBottom: `1px solid ${c.border}` }}>
                     {[
-                      { key: null,             label: '',         w: '32px'  },
-                      { key: 'sku',            label: 'SKU',      w: '90px' },
-                      { key: 'name',           label: activeTab === 'raw' ? 'Hammadde' : 'Mamül' },
-                      { key: 'unit',           label: 'Birim',    w: quickEditMode ? '85px' : '60px'  },
-                      { key: 'stock_count',    label: 'Stok',     w: quickEditMode ? '100px' : '140px' },
-                      { key: 'purchase_price', label: 'Alış',    w: quickEditMode ? '100px' : '85px'  },
-                      { key: 'sale_price',     label: 'Satış',   w: quickEditMode ? '100px' : '85px' },
+                      { key: null,             label: '',         w: '28px'  },
+                      ...(activeTab === 'all' ? [{ key: 'item_type', label: 'Tip', w: '50px' }] : []),
+                      { key: 'sku',            label: 'SKU',      w: '80px' },
+                      { key: 'name',           label: activeTab === 'raw' ? 'Hammadde' : activeTab === 'product' ? 'Mamül' : 'Ürün / Hammadde' },
+                      { key: 'category_id',    label: 'Kategori', w: quickEditMode ? '120px' : '100px' },
+                      { key: 'unit',           label: 'Birim',    w: quickEditMode ? '80px' : '55px'  },
+                      { key: 'stock_count',    label: 'Stok',     w: quickEditMode ? '90px' : '90px' },
+                      { key: 'purchase_price', label: 'Alış',    w: quickEditMode ? '90px' : '80px'  },
+                      { key: 'sale_price',     label: 'Satış',   w: quickEditMode ? '90px' : '80px' },
                       ...(quickEditMode ? [
-                        { key: 'critical_limit', label: 'Kritik', w: '80px' },
-                        { key: 'base_currency', label: 'A.Döviz', w: '70px' },
-                        { key: 'sale_currency', label: 'S.Döviz', w: '70px' },
+                        { key: 'critical_limit', label: 'Kritik', w: '70px' },
+                        { key: 'base_currency', label: 'A.Döv', w: '60px' },
+                        { key: 'sale_currency', label: 'S.Döv', w: '60px' },
                       ] : []),
-                      { key: null,             label: '',         w: '72px'  },
+                      { key: null,             label: '',         w: '60px'  },
                     ].map((col, i) => (
                       <th key={i}
                         className="px-3 py-3 text-left font-bold text-[10px] uppercase tracking-widest"
@@ -609,6 +617,8 @@ export default function Stock() {
                     const saleSym = CURRENCY_SYM[item.sale_currency] || '₺';
                     const ed = quickEdits[item.id] || {};
                     const UNITS = ['Adet','Metre','cm','mm','Kg','g','Litre','ml','m²','Rulo','Paket','Kutu','Set','Takım'];
+                    const itemCats = categories.filter(ct => ct.item_scope === (item.item_type === 'product' ? 'product' : 'rawmaterial'));
+                    const catName = categories.find(ct => ct.id === item.category_id)?.name;
                     return (
                       <motion.tr key={item.id}
                         initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: idx * 0.01 }}
@@ -616,78 +626,102 @@ export default function Stock() {
                         onClick={() => !quickEditMode && setDetailItem(item)}
                         onMouseEnter={e => e.currentTarget.style.background = c.rowHover}
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                        <td className="px-3 py-3.5">
-                          <div className="w-2.5 h-2.5 rounded-full" style={{ background: clr }} />
+                        <td className="px-2 py-2">
+                          <div className="w-2 h-2 rounded-full" style={{ background: clr }} />
                         </td>
-                        <td className="px-3 py-3.5" onClick={e => e.stopPropagation()}>
+                        {/* Tip badge — sadece Genel sekmede */}
+                        {activeTab === 'all' && (
+                          <td className="px-2 py-2">
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md"
+                              style={{ background: item.item_type === 'product' ? 'rgba(59,130,246,0.12)' : 'rgba(245,158,11,0.12)',
+                                       color: item.item_type === 'product' ? '#3b82f6' : '#f59e0b' }}>
+                              {item.item_type === 'product' ? '⚡M' : '🔩H'}
+                            </span>
+                          </td>
+                        )}
+                        <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
                           {item.sku
-                            ? <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg"
+                            ? <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-lg"
                                 style={{ background: `${currentColor}18`, color: currentColor }}>
                                 {item.sku}
                               </span>
                             : <span style={{ color: c.muted }}>—</span>
                           }
                         </td>
-                        <td className="px-3 py-3.5">
+                        <td className="px-2 py-2">
                           <p className="font-semibold text-sm" style={{ color: c.text }}>{item.name}</p>
                           {item.location && <p className="text-[10px] mt-0.5" style={{ color: c.muted }}>📍 {item.location}</p>}
                         </td>
+                        {/* Kategori */}
+                        <td className="px-2 py-2" onClick={e => quickEditMode && e.stopPropagation()}>
+                          {quickEditMode ? (
+                            <select value={ed.category_id ?? item.category_id ?? ''}
+                              onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), category_id: e.target.value}}))}
+                              className="w-full px-1 py-1 text-[11px] rounded-lg outline-none"
+                              style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
+                              <option value="">—</option>
+                              {itemCats.map(ct => <option key={ct.id} value={ct.id}>{ct.name}</option>)}
+                            </select>
+                          ) : (
+                            catName
+                              ? <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md" style={{ background: `${currentColor}10`, color: currentColor }}>{catName}</span>
+                              : <span className="text-[10px]" style={{ color: c.muted }}>—</span>
+                          )}
+                        </td>
                         {/* Birim */}
-                        <td className="px-3 py-3.5" onClick={e => quickEditMode && e.stopPropagation()}>
+                        <td className="px-2 py-2" onClick={e => quickEditMode && e.stopPropagation()}>
                           {quickEditMode ? (
                             <select value={ed.unit ?? item.unit} onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), unit: e.target.value}}))}
-                              className="w-full px-1.5 py-1 text-xs rounded-lg outline-none"
+                              className="w-full px-1 py-1 text-[11px] rounded-lg outline-none"
                               style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
                               {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                             </select>
                           ) : (
-                            <span className="text-xs font-bold" style={{ color: c.text }}>{item.unit}</span>
+                            <span className="text-[11px] font-bold" style={{ color: c.text }}>{item.unit}</span>
                           )}
                         </td>
-                        {/* Stok */}
-                        <td className="px-3 py-3.5" onClick={e => quickEditMode && e.stopPropagation()}>
+                        {/* Stok — soldan hizalı */}
+                        <td className="px-2 py-2" onClick={e => quickEditMode && e.stopPropagation()}>
                           {quickEditMode ? (
                             <input type="number" step="0.01"
                               value={ed.stock_count ?? item.stock_count}
                               onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), stock_count: e.target.value}}))}
-                              className="w-full px-1.5 py-1 text-xs font-bold rounded-lg outline-none"
+                              className="w-full px-1 py-1 text-[11px] font-bold rounded-lg outline-none"
                               style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: clr }}/>
                           ) : (
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-bold w-7 text-right" style={{ color: clr }}>{item.stock_count}</span>
-                              <div className="flex-1 h-1.5 rounded-full overflow-hidden min-w-[40px]" style={{ background: c.border }}>
-                                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: clr }} />
-                              </div>
-                              {item.critical_limit > 0 && <span className="text-[10px]" style={{ color: c.muted }}>/{item.critical_limit}</span>}
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm font-bold" style={{ color: clr }}>{item.stock_count}</span>
+                              <span className="text-[10px]" style={{ color: c.muted }}>{item.unit}</span>
+                              {item.critical_limit > 0 && <span className="text-[9px]" style={{ color: c.muted }}>/{item.critical_limit}</span>}
                             </div>
                           )}
                         </td>
                         {/* Alış Fiyatı */}
-                        <td className="px-3 py-3.5" onClick={e => quickEditMode && e.stopPropagation()}>
+                        <td className="px-2 py-2" onClick={e => quickEditMode && e.stopPropagation()}>
                           {quickEditMode ? (
                             <input type="number" step="0.01"
                               value={ed.purchase_price ?? item.purchase_price ?? ''}
                               onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), purchase_price: e.target.value}}))}
                               placeholder="0.00"
-                              className="w-full px-1.5 py-1 text-xs font-bold rounded-lg outline-none"
+                              className="w-full px-1 py-1 text-[11px] font-bold rounded-lg outline-none"
                               style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: '#10b981' }}/>
                           ) : (
-                            <span className="text-sm font-semibold" style={{ color: c.text }}>
+                            <span className="text-[12px] font-semibold" style={{ color: c.text }}>
                               {item.purchase_price > 0 ? `${sym}${item.purchase_price}` : '—'}
                             </span>
                           )}
                         </td>
                         {/* Satış Fiyatı */}
-                        <td className="px-3 py-3.5" onClick={e => quickEditMode && e.stopPropagation()}>
+                        <td className="px-2 py-2" onClick={e => quickEditMode && e.stopPropagation()}>
                           {quickEditMode ? (
                             <input type="number" step="0.01"
                               value={ed.sale_price ?? item.sale_price ?? ''}
                               onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), sale_price: e.target.value}}))}
                               placeholder="0.00"
-                              className="w-full px-1.5 py-1 text-xs font-bold rounded-lg outline-none"
+                              className="w-full px-1 py-1 text-[11px] font-bold rounded-lg outline-none"
                               style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: '#3b82f6' }}/>
                           ) : (
-                            <span className="text-sm font-semibold" style={{ color: c.text }}>
+                            <span className="text-[12px] font-semibold" style={{ color: c.text }}>
                               {item.sale_price > 0 ? `${saleSym}${item.sale_price}` : '—'}
                             </span>
                           )}
@@ -695,15 +729,15 @@ export default function Stock() {
                         {/* Döviz + Kritik Limit (sadece quick edit) */}
                         {quickEditMode && (
                           <>
-                            <td className="px-3 py-3.5" onClick={e => e.stopPropagation()}>
+                            <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
                               <input type="number" step="1" min="0"
                                 value={ed.critical_limit ?? item.critical_limit ?? ''}
                                 onChange={e => setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), critical_limit: e.target.value}}))}
                                 placeholder="0"
-                                className="w-full px-1.5 py-1 text-xs font-bold rounded-lg outline-none"
+                                className="w-full px-1 py-1 text-[11px] font-bold rounded-lg outline-none"
                                 style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: '#f59e0b' }}/>
                             </td>
-                            <td className="px-3 py-3.5" onClick={e => e.stopPropagation()}>
+                            <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
                               <select value={ed.base_currency ?? item.base_currency ?? 'TRY'}
                                 onChange={e => {
                                   const newCur = e.target.value;
@@ -712,12 +746,12 @@ export default function Stock() {
                                   const converted = oldPrice > 0 ? fxConvert(oldPrice, oldCur, newCur) : 0;
                                   setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), base_currency: newCur, purchase_price: converted ? converted.toFixed(2) : '0'}}));
                                 }}
-                                className="w-full px-1 py-1 text-xs rounded-lg outline-none"
+                                className="w-full px-1 py-1 text-[11px] rounded-lg outline-none"
                                 style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
                                 {['TRY','USD','EUR','GBP'].map(cu => <option key={cu} value={cu}>{cu}</option>)}
                               </select>
                             </td>
-                            <td className="px-3 py-3.5" onClick={e => e.stopPropagation()}>
+                            <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
                               <select value={ed.sale_currency ?? item.sale_currency ?? 'TRY'}
                                 onChange={e => {
                                   const newCur = e.target.value;
@@ -726,15 +760,15 @@ export default function Stock() {
                                   const converted = oldPrice > 0 ? fxConvert(oldPrice, oldCur, newCur) : 0;
                                   setQuickEdits(p => ({...p, [item.id]: {...(p[item.id]||{}), sale_currency: newCur, sale_price: converted ? converted.toFixed(2) : '0'}}));
                                 }}
-                                className="w-full px-1 py-1 text-xs rounded-lg outline-none"
+                                className="w-full px-1 py-1 text-[11px] rounded-lg outline-none"
                                 style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
                                 {['TRY','USD','EUR','GBP'].map(cu => <option key={cu} value={cu}>{cu}</option>)}
                               </select>
                             </td>
                           </>
                         )}
-                        <td className="px-3 py-3.5" onClick={e => e.stopPropagation()}>
-                          <div className="flex items-center gap-1">
+                        <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
+                          <div className="flex items-center gap-0.5">
                             <ABtn icon={Edit2}  color={currentColor} onClick={() => openForm(item, item.item_type)} />
                             <ABtn icon={Trash2} color="#ef4444"      onClick={async () => { if (window.confirm(`"${item.name}" silinsin mi?`)) await handleDelete(item.id); }} />
                           </div>

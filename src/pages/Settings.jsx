@@ -442,20 +442,36 @@ function CategoryManager({ scope, c, currentColor, isDark }) {
   const saveCategory = async () => {
     if (!newName.trim()) return;
     setSaving(true);
-    if (editing === 'new') {
-      await supabase.from('item_categories').insert({ name: newName.trim(), item_scope: scope, fields: draftFields });
-    } else {
-      await supabase.from('item_categories').update({ name: newName.trim(), fields: draftFields, updated_at: new Date().toISOString() }).eq('id', editing);
+    try {
+      // Filtre: boş adlı alanları at
+      const cleanFields = draftFields.filter(f => f.name && f.name.trim());
+      if (editing === 'new') {
+        const { error } = await supabase.from('item_categories').insert({ name: newName.trim(), item_scope: scope, fields: cleanFields });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('item_categories').update({ name: newName.trim(), fields: cleanFields, updated_at: new Date().toISOString() }).eq('id', editing);
+        if (error) throw error;
+      }
+      cancelEdit();
+      load();
+    } catch (e) {
+      alert('Kategori kaydedilemedi: ' + (e.message || JSON.stringify(e)));
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
-    cancelEdit();
-    load();
   };
 
   const deleteCategory = async (id) => {
     if (!window.confirm('Bu kategoriyi silmek istiyor musunuz? Bu kategorideki ürünlerin kategorisi kaldırılır.')) return;
-    await supabase.from('item_categories').delete().eq('id', id);
-    load();
+    try {
+      // Önce bu kategoriye ait ürünlerin category_id'sini null yap
+      await supabase.from('items').update({ category_id: null }).eq('category_id', id);
+      const { error } = await supabase.from('item_categories').delete().eq('id', id);
+      if (error) throw error;
+      load();
+    } catch (e) {
+      alert('Kategori silinemedi: ' + (e.message || JSON.stringify(e)));
+    }
   };
 
   // ── Draft field helpers ──────────────────────────────────────────────────
