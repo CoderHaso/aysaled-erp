@@ -449,7 +449,7 @@ function CategoryManager({ scope, c, currentColor, isDark }) {
         const { error } = await supabase.from('item_categories').insert({ name: newName.trim(), item_scope: scope, fields: cleanFields });
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('item_categories').update({ name: newName.trim(), fields: cleanFields, updated_at: new Date().toISOString() }).eq('id', editing);
+        const { error } = await supabase.from('item_categories').update({ name: newName.trim(), fields: cleanFields }).eq('id', editing);
         if (error) throw error;
       }
       cancelEdit();
