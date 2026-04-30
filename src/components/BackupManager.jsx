@@ -32,12 +32,27 @@ const ALL_TABLES = [
 // FK sırasının tersi — silme için
 const DELETE_ORDER = [...ALL_TABLES].reverse();
 
+// Ağır tablolar — büyük JSONB alanları olan tablolar küçük sayfa boyutuyla başlar
+const HEAVY_TABLES = ['invoices', 'quotes', 'orders', 'catalogs'];
+
 async function fetchTable(name, onProgress) {
   const rows = [];
   let from = 0;
-  const ps = 1000;
+  let ps = HEAVY_TABLES.includes(name) ? 200 : 500;
+
   while (true) {
-    const { data, error } = await supabase.from(name).select('*').range(from, from + ps - 1);
+    let data, error;
+    let retries = 0;
+    while (retries < 3) {
+      const res = await supabase.from(name).select('*').range(from, from + ps - 1);
+      data = res.data; error = res.error;
+      if (!error) break;
+      // Timeout veya 500 hatası — sayfa boyutunu küçült ve tekrar dene
+      retries++;
+      ps = Math.max(10, Math.floor(ps / 3));
+      if (onProgress) onProgress(`${name}: yeniden deneniyor (sayfa: ${ps})...`);
+      await new Promise(r => setTimeout(r, 500));
+    }
     if (error) throw new Error(`${name}: ${error.message}`);
     if (!data || data.length === 0) break;
     rows.push(...data);
