@@ -191,7 +191,7 @@ function HareketModal({ contact, contactType, onClose, onSaved, prefill, editDat
 }
 
 // ── Bakiye gösterge helper ─────────────────────────────────────────────────────
-function BalanceChip({ value, compact = false, currencyTotals }) {
+function BalanceChip({ value, compact = false, currencyTotals, mainCurrency }) {
   const color  = value > 0 ? '#10b981' : value < 0 ? '#ef4444' : '#64748b';
   const label  = value > 0 ? 'Alacak'  : value < 0 ? 'Verecek'  : 'Eşit';
   // Birden fazla döviz varsa kısa gösterim
@@ -199,7 +199,7 @@ function BalanceChip({ value, compact = false, currencyTotals }) {
   return (
     <div className="text-right shrink-0">
       <p className="text-sm font-bold" style={{ color }}>
-        {value === 0 ? '—' : `${fmtN(Math.abs(value))} ₺`}
+        {value === 0 ? '—' : `${fmtN(Math.abs(value))} ${mainCurrency ? (CUR_SYM[mainCurrency] || mainCurrency) : '₺'}`}
       </p>
       {hasFx && Object.entries(currencyTotals).filter(([c, v]) => c !== 'TRY' && v !== 0).map(([c, v]) => (
         <p key={c} className="text-[10px] font-semibold" style={{ color: v > 0 ? '#10b981' : '#ef4444' }}>
@@ -212,7 +212,7 @@ function BalanceChip({ value, compact = false, currencyTotals }) {
 }
 
 // ── Tekil kişi satırı (accordion) ─────────────────────────────────────────────
-function ContactRow({ contact, contactType, color, preloadedBalance, externalOpen, externalPrefill, externalAutoModal, onExternalHandled, onBalanceChange }) {
+function ContactRow({ contact, contactType, color, preloadedTotals, externalOpen, externalPrefill, externalAutoModal, onExternalHandled, onBalanceChange }) {
   const { effectiveMode } = useTheme();
   const isDark = effectiveMode === 'dark';
   const { convert } = useFxRates();
@@ -267,21 +267,40 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
     onBalanceChange?.();
   };
 
-  // Anlık bakiye — tüm dövizleri TRY'ye çevirerek + döviz bazında ayrım
-  let running = 0;
   const curTotals = {}; // { USD: net, EUR: net, TRY: net }
-  const rows = hareketler.map(h => {
+  const tempRows = hareketler.map(h => {
     const cur = h.currency || 'TRY';
     const borcTRY   = convert(h.borc   || 0, cur, 'TRY');
     const alacakTRY = convert(h.alacak || 0, cur, 'TRY');
-    running += borcTRY - alacakTRY;
     // Döviz bazında toplam (orijinal birimde)
     if (!curTotals[cur]) curTotals[cur] = 0;
     curTotals[cur] += (h.borc || 0) - (h.alacak || 0);
-    return { ...h, borcTRY, alacakTRY, snapshot: running };
+    return { ...h, borcTRY, alacakTRY };
   });
+
   // Yerel veri yüklenmeden önce parent'ın önceden hesapladığı bakiyeyi göster
-  const totalBalance = hareketler.length > 0 ? running : (preloadedBalance ?? 0);
+  const activeTotals = hareketler.length > 0 ? curTotals : (preloadedTotals || { TRY: 0 });
+  const activeCurrencies = Object.keys(activeTotals).filter(c => activeTotals[c] !== 0);
+  const isSingleCur = activeCurrencies.length === 1;
+  const mainCur = isSingleCur ? activeCurrencies[0] : 'TRY';
+  
+  let runningAcc = 0;
+  const rows = tempRows.map(r => {
+    if (isSingleCur && mainCur !== 'TRY') {
+      runningAcc += (r.borc || 0) - (r.alacak || 0);
+    } else {
+      runningAcc += r.borcTRY - r.alacakTRY;
+    }
+    return { ...r, snapshot: runningAcc };
+  });
+
+  // Eğer sadece tek bir döviz varsa, ana denge o dövizde görünsün
+  let totalBalance = 0;
+  if (isSingleCur && mainCur !== 'TRY') {
+    totalBalance = activeTotals[mainCur] || 0;
+  } else {
+    totalBalance = Object.entries(activeTotals).reduce((sum, [cur, val]) => sum + convert(val, cur, 'TRY'), 0);
+  }
 
   return (
     <div className="rounded-2xl overflow-hidden transition-all"
@@ -303,7 +322,7 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
           <p className="text-sm font-semibold truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{contact.name}</p>
           <p className="text-[11px] truncate" style={{ color: '#64748b' }}>{contact.phone || contact.vkntckn || '—'}</p>
         </div>
-        <BalanceChip value={totalBalance} currencyTotals={curTotals}/>
+        <BalanceChip value={totalBalance} currencyTotals={isSingleCur ? {} : activeTotals} mainCurrency={isSingleCur ? mainCur : 'TRY'} />
         <ChevronDown size={15} className="text-slate-500 shrink-0 transition-transform"
           style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}/>
       </button>
@@ -388,7 +407,7 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
                             </td>
                             <td className="py-2 px-1 font-mono text-right whitespace-nowrap">
                               <span className="font-bold text-[11px]" style={{ color: balColor }}>
-                                {fmtN(Math.abs(h.snapshot))}
+                                {fmtN(Math.abs(h.snapshot))} {isSingleCur && mainCur !== 'TRY' ? (CUR_SYM[mainCur] || mainCur) : ''}
                               </span>
                               <span className="block text-[9px] font-semibold" style={{ color: balColor }}>{balLabel}</span>
                             </td>
@@ -426,7 +445,7 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
                         </td>
                         <td className="pt-2 pb-1 px-1 font-mono font-bold text-right text-[11px]"
                           style={{ color: totalBalance > 0 ? '#10b981' : totalBalance < 0 ? '#ef4444' : '#64748b' }}>
-                          {fmtN(Math.abs(totalBalance))} ₺
+                          {fmtN(Math.abs(totalBalance))} {isSingleCur ? (CUR_SYM[mainCur] || mainCur) : '₺'}
                           <span className="block text-[9px] font-semibold"
                             style={{ color: totalBalance > 0 ? '#10b981' : totalBalance < 0 ? '#ef4444' : '#64748b' }}>
                             {totalBalance > 0 ? 'Alacak' : totalBalance < 0 ? 'Verecek' : 'Eşit'}
@@ -505,6 +524,16 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
 export default function HesapDefteri() {
   const { currentColor, effectiveMode } = useTheme();
   const isDark = effectiveMode === 'dark';
+  const { convert } = useFxRates();
+
+  const getTryBalance = useCallback((bals) => {
+    if (!bals) return 0;
+    let sum = 0;
+    for (const [cur, val] of Object.entries(bals)) {
+      sum += convert(val, cur, 'TRY');
+    }
+    return sum;
+  }, [convert]);
 
   const [activeTab, setActiveTab]   = useState('faturali_cari');
   const [contacts, setContacts]     = useState([]);
@@ -537,7 +566,7 @@ export default function HesapDefteri() {
       if (ids.length > 0) {
         const { data: aggData } = await supabase
           .from('cari_hareketler')
-          .select(`${idCol}, borc, alacak, tarih`)
+          .select(`${idCol}, borc, alacak, tarih, currency`)
           .in(idCol, ids);
 
         // Bakiye ve son tarih hesapla
@@ -545,7 +574,10 @@ export default function HesapDefteri() {
         (aggData || []).forEach(h => {
           const cid = h[idCol];
           if (!cid) return;
-          balMap[cid]  = (balMap[cid]  || 0) + (h.borc || 0) - (h.alacak || 0);
+          const cur = h.currency || 'TRY';
+          if (!balMap[cid]) balMap[cid] = {};
+          if (!balMap[cid][cur]) balMap[cid][cur] = 0;
+          balMap[cid][cur] += (h.borc || 0) - (h.alacak || 0);
           if (!dateMap[cid] || h.tarih > dateMap[cid]) dateMap[cid] = h.tarih;
         });
         setBalances(balMap);
@@ -601,8 +633,8 @@ export default function HesapDefteri() {
       (c.vkntckn || '').includes(search)
     )
     .sort((a, b) => {
-      const ba = balances[a.id] || 0;
-      const bb = balances[b.id] || 0;
+      const ba = getTryBalance(balances[a.id]);
+      const bb = getTryBalance(balances[b.id]);
       const da = lastDates[a.id] || '';
       const db = lastDates[b.id] || '';
       switch (sort) {
@@ -622,8 +654,8 @@ export default function HesapDefteri() {
   const sortLabel = SORT_OPTIONS.find(s => s.id === sort)?.label || 'Sırala';
 
   // Özet: toplam alacak ve verecek
-  const totalAlacak  = Object.values(balances).filter(v => v > 0).reduce((a, b) => a + b, 0);
-  const totalVerecek = Object.values(balances).filter(v => v < 0).reduce((a, b) => a + b, 0);
+  const totalAlacak  = Object.values(balances).map(getTryBalance).filter(v => v > 0).reduce((a, b) => a + b, 0);
+  const totalVerecek = Object.values(balances).map(getTryBalance).filter(v => v < 0).reduce((a, b) => a + b, 0);
 
   return (
     <div className="flex flex-col h-full" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
@@ -671,11 +703,11 @@ export default function HesapDefteri() {
           <button onClick={() => {
             const isCust = tab?.type === 'customer';
             // Sadece hareketi olanları al
-            const withMovements = filtered.filter(c => balances[c.id] !== undefined && balances[c.id] !== 0);
+            const withMovements = filtered.filter(c => getTryBalance(balances[c.id]) !== 0);
             if (withMovements.length === 0) return;
 
             const rows = withMovements.map(contact => {
-              const bal = balances[contact.id] || 0;
+              const bal = getTryBalance(balances[contact.id]);
               // Müşteri: pozitif = alacak (düz), negatif = alınan (-)
               // Tedarikçi: pozitif = verecek (-), negatif = verilen (düz)
               const display = isCust ? bal : -bal;
@@ -690,7 +722,7 @@ export default function HesapDefteri() {
             }).join('');
 
             const totalNet = withMovements.reduce((s, c) => {
-              const bal = balances[c.id] || 0;
+              const bal = getTryBalance(balances[c.id]);
               return s + (isCust ? bal : -bal);
             }, 0);
 
@@ -827,7 +859,7 @@ export default function HesapDefteri() {
                   contact={contact}
                   contactType={tab?.type}
                   color={tabColor}
-                  preloadedBalance={balances[contact.id] ?? 0}
+                  preloadedTotals={balances[contact.id] || {}}
                   externalOpen={isSel}
                   externalPrefill={isSel ? selectedContact?.prefill : null}
                   externalAutoModal={isSel && !!selectedContact?.autoOpenModal}

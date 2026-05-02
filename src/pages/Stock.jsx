@@ -1274,6 +1274,26 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
     return totalCount > 0 ? (totalCostInBase / totalCount).toFixed(2) : null;
   }, [recipes, recipeStocks, isProduct, convert, item.base_currency]);
 
+  const getMultiCurLabel = (val, cur) => {
+    if (!val || val <= 0) return '—';
+    const isUsd = cur === 'USD';
+    const isTry = cur === 'TRY';
+    const isEur = cur === 'EUR';
+    const kurUsd = convert(1, 'USD', 'TRY').toFixed(2);
+    const kurEur = convert(1, 'EUR', 'TRY').toFixed(2);
+    if (isTry) {
+      const usdVal = convert(val, 'TRY', 'USD').toFixed(2);
+      return `₺${val} ($${usdVal} | Dolar:${kurUsd})`;
+    } else if (isUsd) {
+      const tryVal = convert(val, 'USD', 'TRY').toFixed(2);
+      return `$${val} (₺${tryVal} | Kur:${kurUsd})`;
+    } else if (isEur) {
+      const tryVal = convert(val, 'EUR', 'TRY').toFixed(2);
+      return `€${val} (₺${tryVal} | Kur:${kurEur})`;
+    }
+    return `${val} ${cur}`;
+  };
+
   const hasRecipes = isProduct && recipes.length > 0;
   const rows = [
     { icon: Tag,           label: 'Tür',           value: item.item_type === 'product' ? 'Mamül Ürün' : 'Hammadde' },
@@ -1281,9 +1301,9 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
     { icon: Ruler,         label: 'Birim',          value: item.unit },
     { icon: Boxes,         label: 'Stok',           value: `${item.stock_count} ${item.unit}`, color: clr, field: 'stock_count', suffix: item.unit, numField: true },
     { icon: AlertTriangle, label: 'Kritik Limit',   value: item.critical_limit > 0 ? `${item.critical_limit} ${item.unit}` : '—', field: 'critical_limit', suffix: item.unit, numField: true },
-    hasRecipes ? { icon: DollarSign, label: 'Ort. Maliyet', value: avgCost ? `${sym}${avgCost}` : '—', color: '#94a3b8', disabled: true } : null,
-    { icon: DollarSign, label: 'Alış Fiyatı',  value: item.purchase_price > 0 ? `${sym}${item.purchase_price}` : '—', color: '#10b981', field: 'purchase_price', prefix: sym, numField: true },
-    { icon: DollarSign,    label: 'Satış Fiyatı',   value: item.sale_price > 0 ? `${saleSym}${item.sale_price}` : '—', color: '#3b82f6', field: 'sale_price', prefix: saleSym, numField: true },
+    hasRecipes ? { icon: DollarSign, label: 'Ort. Maliyet', value: avgCost ? getMultiCurLabel(avgCost, item.base_currency || 'TRY') : '—', color: '#94a3b8', disabled: true } : null,
+    { icon: DollarSign, label: 'Alış Fiyatı',  value: item.purchase_price > 0 ? getMultiCurLabel(item.purchase_price, item.base_currency || 'TRY') : '—', color: '#10b981', field: 'purchase_price', prefix: sym, numField: true },
+    { icon: DollarSign,    label: 'Satış Fiyatı',   value: item.sale_price > 0 ? getMultiCurLabel(item.sale_price, item.sale_currency || 'TRY') : '—', color: '#3b82f6', field: 'sale_price', prefix: saleSym, numField: true },
     { icon: MapPin,        label: 'Konum',          value: item.location || '—', field: 'location' },
     { icon: Package,       label: 'Tedarikçi',      value: item.supplier_name || '—', field: 'supplier_name' },
   ].filter(Boolean);
@@ -1567,7 +1587,7 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
                               onChange={e => setRcpStockInput(e.target.value)}
                               className="w-12 text-center text-xs font-bold rounded-lg px-1 py-0.5"
                               style={inputStyle} autoFocus/>
-                            <button onClick={() => saveRecipeStock('base', rs.id, stk, Number(rcpStockInput) || 0)}
+                            <button onClick={() => saveRecipeStock('base', rs?.id, stk, Number(rcpStockInput) || 0)}
                               className="p-1 rounded-lg" style={{ color: '#10b981', background: 'rgba(16,185,129,0.1)' }}>
                               <Check size={10}/>
                             </button>

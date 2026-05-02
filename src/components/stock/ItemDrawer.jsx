@@ -29,8 +29,7 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
   const { effectiveMode, currentColor } = useTheme();
   const { convert: fxConvert } = useFxRates();
   const isDark = effectiveMode === 'dark';
-  const isEdit    = !!item?.id;
-  const isProduct = defaultType === 'product' || item?.item_type === 'product';
+  const isEdit = !!item?.id;
 
   const c = {
     bg:      isDark ? '#0f172a' : '#f8fafc',
@@ -60,7 +59,7 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
     critical_limit: item?.critical_limit || 0,
     location:       item?.location       || '',
     is_active:      item?.is_active      ?? true,
-    item_type:      isProduct ? 'product' : 'raw',
+    item_type:      item?.item_type      || defaultType || 'raw',
     technical_specs: item?.technical_specs || {},
     image_url:      item?.image_url      || '',
   });
@@ -97,7 +96,7 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
       const { data, error } = await supabase.from('items').insert({
         name: '',
         unit: 'Adet',
-        item_type: isProduct ? 'product' : 'raw',
+        item_type: form.item_type,
         is_draft: true,
         is_active: false,
       }).select('id').single();
@@ -150,7 +149,7 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
 
   // ── Kategoriler + tedarikçiler ────────────────────────────────────────────
   useEffect(() => {
-    const scope = isProduct ? 'product' : 'rawmaterial';
+    const scope = form.item_type === 'product' ? 'product' : 'rawmaterial';
     supabase.from('item_categories').select('*').eq('item_scope', scope).order('name')
       .then(({ data }) => setCategories(data || []));
     supabase.from('suppliers').select('id,name').order('name')
@@ -247,6 +246,7 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
   };
 
   // ── Sekme tanımları ──────────────────────────────────────────────────────
+  const isProduct = form.item_type === 'product';
   const SECS_RAW  = ['info','price','stock'];
   const SECS_PROD = ['info','price','stock','recipe'];
   const SECTIONS  = isProduct ? SECS_PROD : SECS_RAW;
@@ -330,6 +330,24 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
         {/* ━━ BİLGİLER ━━ */}
         {section === 'info' && (
           <>
+            {/* Tür değişimi */}
+            <div className="flex gap-2 p-1 mb-4 rounded-xl" style={{ background: c.inputBg, border: `1px solid ${c.border}` }}>
+              <button 
+                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors`}
+                style={{ background: form.item_type === 'raw' ? currentColor : 'transparent', color: form.item_type === 'raw' ? '#fff' : c.muted }}
+                onClick={() => set('item_type', 'raw')}
+              >
+                🔩 Hammadde
+              </button>
+              <button 
+                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors`}
+                style={{ background: form.item_type === 'product' ? currentColor : 'transparent', color: form.item_type === 'product' ? '#fff' : c.muted }}
+                onClick={() => set('item_type', 'product')}
+              >
+                ⚡ Mamül
+              </button>
+            </div>
+
             <FField label="Ad *" error={errors.name}>
               <input value={form.name} onChange={e => set('name', e.target.value)}
                 className="form-input"

@@ -91,10 +91,14 @@ export default function RecipeEditor({ productId, productName, productCurrency, 
   };
 
   // ── Kalem ekle ────────────────────────────────────────────────────────────
-  const addItem = async (recipeId) => {
-    const { data } = await supabase.from('recipe_items').insert({
+  const addItem = async (recipeId, rawItem = null) => {
+    const payload = rawItem ? {
+      recipe_id: recipeId, item_id: rawItem.id, item_name: rawItem.name, quantity: 1, unit: rawItem.unit || 'Adet', order_index: 99
+    } : {
       recipe_id: recipeId, item_name: '', quantity: 1, unit: 'Adet', order_index: 99,
-    }).select().single();
+    };
+    const { data } = await supabase.from('recipe_items').insert(payload)
+      .select('*, item:item_id(id,name,unit,purchase_price,base_currency)').single();
     setRecipes(prev => prev.map(r =>
       r.id === recipeId ? { ...r, recipe_items: [...(r.recipe_items||[]), data] } : r
     ));
@@ -259,6 +263,11 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
   const [tagInput, setTagInput] = useState('');
   const [editingName, setEditingName] = useState(false);
   const [nameVal, setNameVal] = useState(recipe.name);
+  const [rawSearch, setRawSearch] = useState('');
+
+  const filteredRaw = rawSearch.trim()
+    ? rawItems.filter(r => trNorm(r.name).includes(trNorm(rawSearch)) || trNorm(r.sku || '').includes(trNorm(rawSearch))).slice(0, 50)
+    : rawItems.slice(0, 50);
 
   const [expenseDrop, setExpenseDrop] = useState(false);
   const expenseDropRef = React.useRef(null);
@@ -380,68 +389,107 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
 
       {/* Expanded content */}
       {expanded && (
-        <div className="border-t px-4 py-4 space-y-4 rounded-b-2xl" style={{ borderColor: c.border }}>
-          {/* Etiketler */}
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: c.muted }}>
-              <Tag size={10} className="inline mr-1" />Etiketler
-            </p>
-            <div className="flex flex-wrap gap-1.5 mb-2">
-              {(recipe.tags || []).map(tag => (
-                <span key={tag}
-                  className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full cursor-pointer"
-                  style={{ background: `${currentColor}20`, color: currentColor }}
-                  onClick={() => onToggleTag(recipe, tag)}>
-                  {tag} <X size={10} />
-                </span>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <input value={tagInput} onChange={e => setTagInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && addTag()}
-                placeholder="Etiket ekle (Örn: 3000K, Tavan Montaj)..."
-                className="flex-1 px-3 py-1.5 text-xs rounded-xl outline-none border"
+        <div className="border-t flex flex-col sm:flex-row rounded-b-2xl" style={{ borderColor: c.border }}>
+          {/* SOL: Hammadde Listesi */}
+          <div className="sm:w-1/3 p-4 border-b sm:border-b-0 sm:border-r" style={{ borderColor: c.border, background: isDark ? 'rgba(255,255,255,0.01)' : '#f8fafc' }}>
+            <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: c.muted }}>Malzeme Listesi</p>
+            <div className="relative mb-3">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: c.muted }} />
+              <input value={rawSearch} onChange={e => setRawSearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-xl outline-none border"
+                placeholder="Hammadde ara..."
                 style={{ background: c.card, borderColor: c.border, color: c.text }} />
-              <button onClick={addTag}
-                className="px-3 py-1.5 text-xs font-bold rounded-xl"
-                style={{ background: `${currentColor}15`, color: currentColor }}>
-                + Ekle
-              </button>
+            </div>
+            <div className="space-y-1.5 max-h-[400px] overflow-y-auto pr-1">
+              {filteredRaw.map(r => (
+                <div key={r.id} onClick={() => onAddItem(recipe.id, r)}
+                  className="flex items-center justify-between p-2 rounded-xl cursor-pointer border transition-colors group"
+                  style={{ background: c.card, borderColor: c.border }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = currentColor}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = c.border}>
+                  <div className="min-w-0 flex-1 pr-2">
+                    <p className="text-xs font-semibold truncate" style={{ color: c.text }}>{r.name}</p>
+                    <p className="text-[9px]" style={{ color: c.muted }}>{r.sku || 'SKU Yok'} • Stok: {r.stock_count || 0}</p>
+                  </div>
+                  <div className="flex flex-col items-end flex-shrink-0">
+                    <button className="w-5 h-5 rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: currentColor }}>
+                      <Plus size={10} />
+                    </button>
+                    {r.purchase_price > 0 && (
+                      <span className="text-[9px] font-bold mt-1" style={{ color: currentColor }}>
+                        {CURRENCY_SYM[r.base_currency || 'TRY'] || '₺'}{r.purchase_price}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {filteredRaw.length === 0 && <p className="text-xs text-center py-4" style={{ color: c.muted }}>Sonuç bulunamadı</p>}
             </div>
           </div>
 
-          {/* Kalemler */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: c.muted }}>Kalemler</p>
-              <button onClick={() => onAddItem(recipe.id)}
-                className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg"
-                style={{ background: `${currentColor}15`, color: currentColor }}>
-                <Plus size={11} /> Kalem Ekle
-              </button>
-            </div>
-            <div className="space-y-1.5">
-              {(recipe.recipe_items || [])
-                .sort((a, b) => (a.order_index || 0) - (b.order_index || 0))
-                .map((ri, i) => (
-                  <RecipeItemRow
-                    key={ri.id}
-                    item={ri}
-                    index={i}
-                    rawItems={rawItems}
-                    onChange={patch => onUpdateItem(recipe.id, ri.id, patch)}
-                    onBlur={patch => onSaveItem(ri.id, patch)}
-                    onDelete={() => onDeleteItem(recipe.id, ri.id)}
-                    c={c} currentColor={currentColor} isDark={isDark}
-                  />
+          {/* SAĞ: Reçete Detayları */}
+          <div className="sm:w-2/3 p-4 space-y-4">
+            {/* Etiketler */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: c.muted }}>
+                <Tag size={10} className="inline mr-1" />Etiketler
+              </p>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {(recipe.tags || []).map(tag => (
+                  <span key={tag}
+                    className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full cursor-pointer"
+                    style={{ background: `${currentColor}20`, color: currentColor }}
+                    onClick={() => onToggleTag(recipe, tag)}>
+                    {tag} <X size={10} />
+                  </span>
                 ))}
-              {(recipe.recipe_items || []).length === 0 && (
-                <p className="text-center text-xs py-4" style={{ color: c.muted }}>
-                  Henüz kalem yok — Kalem Ekle ile malzeme ekleyin
-                </p>
-              )}
+              </div>
+              <div className="flex gap-2">
+                <input value={tagInput} onChange={e => setTagInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && addTag()}
+                  placeholder="Etiket ekle (Örn: 3000K, Tavan Montaj)..."
+                  className="flex-1 px-3 py-1.5 text-xs rounded-xl outline-none border"
+                  style={{ background: c.card, borderColor: c.border, color: c.text }} />
+                <button onClick={addTag}
+                  className="px-3 py-1.5 text-xs font-bold rounded-xl"
+                  style={{ background: `${currentColor}15`, color: currentColor }}>
+                  + Ekle
+                </button>
+              </div>
             </div>
-          </div>
+
+            {/* Kalemler */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: c.muted }}>Reçete İçeriği</p>
+                <button onClick={() => onAddItem(recipe.id)}
+                  className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg"
+                  style={{ background: `${currentColor}15`, color: currentColor }}>
+                  <Plus size={10} /> Boş Satır Ekle
+                </button>
+              </div>
+              <div className="space-y-1.5">
+                {(recipe.recipe_items || [])
+                  .sort((a, b) => (a.order_index || 0) - (b.order_index || 0))
+                  .map((ri, i) => (
+                    <RecipeItemRow
+                      key={ri.id}
+                      item={ri}
+                      index={i}
+                      rawItems={rawItems}
+                      onChange={patch => onUpdateItem(recipe.id, ri.id, patch)}
+                      onBlur={patch => onSaveItem(ri.id, patch)}
+                      onDelete={() => onDeleteItem(recipe.id, ri.id)}
+                      c={c} currentColor={currentColor} isDark={isDark}
+                    />
+                  ))}
+                {(recipe.recipe_items || []).length === 0 && (
+                  <p className="text-center text-xs py-6 border border-dashed rounded-xl" style={{ color: c.muted, borderColor: c.border }}>
+                    Soldaki listeden malzeme seçerek reçeteye ekleyin
+                  </p>
+                )}
+              </div>
+            </div>
 
           {/* Diğer Giderler */}
           <div>
@@ -496,26 +544,27 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
             )}
           </div>
 
-          {/* Toplam */}
-          {(recipe.recipe_items?.length > 0 || otherCosts.length > 0) && (
-            <div className="rounded-xl px-3 py-2 flex items-center justify-between mt-2"
-              style={{ background: `${currentColor}08`, border: `1px solid ${currentColor}25` }}>
-              <span className="text-xs font-semibold" style={{ color: c.muted }}>Maliyet Toplamı ({CURRENCY_SYM[productCurrency || 'TRY'] || '₺'})</span>
-              <div className="text-right">
-                <span className="text-[10px] mr-3" style={{ color: c.muted }}>
-                  {totalItems} kalem{otherCosts.length > 0 ? ` + ${otherCosts.length} gider` : ''}
-                </span>
-                <span className="text-sm font-black" style={{ color: currentColor }}>
-                  {CURRENCY_SYM[productCurrency || 'TRY'] || '₺'}{totalCost.toFixed(2)}
-                </span>
-                {isForeign && totalCost > 0 && (
-                  <div className="text-[9px] font-bold mt-0.5" style={{ color: c.muted }}>
-                    ≈ ₺{tryEq} (Kur: {kur})
-                  </div>
-                )}
+            {/* Toplam */}
+            {(recipe.recipe_items?.length > 0 || otherCosts.length > 0) && (
+              <div className="rounded-xl px-3 py-2 flex items-center justify-between mt-2"
+                style={{ background: `${currentColor}08`, border: `1px solid ${currentColor}25` }}>
+                <span className="text-xs font-semibold" style={{ color: c.muted }}>Maliyet Toplamı ({CURRENCY_SYM[productCurrency || 'TRY'] || '₺'})</span>
+                <div className="text-right">
+                  <span className="text-[10px] mr-3" style={{ color: c.muted }}>
+                    {totalItems} kalem{otherCosts.length > 0 ? ` + ${otherCosts.length} gider` : ''}
+                  </span>
+                  <span className="text-sm font-black" style={{ color: currentColor }}>
+                    {CURRENCY_SYM[productCurrency || 'TRY'] || '₺'}{totalCost.toFixed(2)}
+                  </span>
+                  {isForeign && totalCost > 0 && (
+                    <div className="text-[9px] font-bold mt-0.5" style={{ color: c.muted }}>
+                      ≈ ₺{tryEq} (Kur: {kur})
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
     </div>
