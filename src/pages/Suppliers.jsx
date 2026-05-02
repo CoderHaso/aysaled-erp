@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { pageCache } from '../lib/pageCache';
 import CustomDialog from '../components/CustomDialog';
 import PaymentsTab from '../components/PaymentsTab';
+import { trNorm } from '../lib/trNorm';
 
 const fmt = (n) => n != null ? Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2 }) : '0,00';
 const fmtD = (d) => d ? new Date(d).toLocaleDateString('tr-TR') : '-';
@@ -516,11 +517,11 @@ export default function Suppliers() {
   const [filterSource, setFilterSource] = useState('all');
 
   const filtered = suppliers.filter(s => {
-    const t = search.toLowerCase();
-    const matchSearch = (s.name||'').toLowerCase().includes(t)
-      || (s.vkntckn||'').includes(t)
-      || (s.phone||'').includes(t)
-      || (s.email||'').toLowerCase().includes(t);
+    const t = trNorm(search);
+    const matchSearch = trNorm(s.name).includes(t)
+      || (s.vkntckn||'').includes(search)
+      || (s.phone||'').includes(search)
+      || trNorm(s.email).includes(t);
     const matchSource = filterSource === 'all' ? true
       : filterSource === 'faturali'  ? (!s.is_faturasiz && s.source !== 'manual')
       : filterSource === 'faturasiz' ? !!s.is_faturasiz

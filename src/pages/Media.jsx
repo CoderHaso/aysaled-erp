@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
+import { trNorm } from '../lib/trNorm';
 
 function Toast({ msg, type, onClose }) {
   useEffect(() => { const t = setTimeout(onClose, 3000); return () => clearTimeout(t); }, []);
@@ -133,7 +134,7 @@ export default function Media() {
   };
 
   const filtered = items.filter(i =>
-    (i.name || '').toLowerCase().includes(search.toLowerCase())
+    trNorm(i.name).includes(trNorm(search))
   );
 
   const isImage = (mime) => mime?.startsWith('image/');

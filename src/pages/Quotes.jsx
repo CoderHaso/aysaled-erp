@@ -9,6 +9,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import QuoteForm, { QuotePreview } from './QuoteForm';
 import CustomDialog from '../components/CustomDialog';
+import { trNorm } from '../lib/trNorm';
 
 const STATUS = {
   draft: { label: 'Taslak', color: '#94a3b8', icon: Clock },
@@ -121,8 +122,8 @@ export default function Quotes() {
 
   const filtered = quotes.filter(q => {
     const matchSearch = !search ||
-      (q.quote_no || '').toLowerCase().includes(search.toLowerCase()) ||
-      (q.company_name || '').toLowerCase().includes(search.toLowerCase());
+      trNorm(q.quote_no).includes(trNorm(search)) ||
+      trNorm(q.company_name).includes(trNorm(search));
     const matchStatus = statusFilter === 'all' || q.status === statusFilter;
     const d = new Date(q.created_at || q.issue_date);
     if (dateFrom && d < new Date(dateFrom)) return false;

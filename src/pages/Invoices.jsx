@@ -13,6 +13,7 @@ import { useLocation } from 'react-router-dom';
 import { pageCache } from '../lib/pageCache';
 import CustomDialog from '../components/CustomDialog';
 import { useFxRates } from '../hooks/useFxRates';
+import { trNorm } from '../lib/trNorm';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const STATUS_MAP = {
@@ -100,8 +101,8 @@ function typeToTR(code) {
 function isIadeInvoice(inv) {
   // İngilizce değerler: InvoiceTipType=Return, Status=Return
   if (inv.is_iade === true) return true;
-  const tip    = (inv.invoice_type    || '').toLowerCase();
-  const status = (inv.status          || '').toLowerCase();
+  const tip    = trNorm(inv.invoice_type    || '');
+  const status = trNorm(inv.status          || '');
   return tip === 'return' || status === 'return'
       || tip.includes('iade') || tip.includes('return');
 }
@@ -1393,10 +1394,10 @@ export default function Invoices({ type = 'inbox' }) {
   const filtered = invoices.filter(inv => {
     // İptal + zarf ID'si olmayan = iptal edilmiş taslak, gizle
     if (inv.status === 'Canceled' && !inv.envelope_identifier) return false;
-    const t = search.toLowerCase();
-    return (inv.invoice_id||'').toLowerCase().includes(t)
-      || (inv.cari_name||'').toLowerCase().includes(t)
-      || (inv.vkntckn||'').toLowerCase().includes(t);
+    const t = trNorm(search);
+    return trNorm(inv.invoice_id).includes(t)
+      || trNorm(inv.cari_name).includes(t)
+      || (inv.vkntckn||'').includes(search);
   });
 
   return (

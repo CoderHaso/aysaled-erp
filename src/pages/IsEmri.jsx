@@ -11,6 +11,7 @@ import { supabase } from '../lib/supabaseClient';
 import { pageCache } from '../lib/pageCache';
 import RecipePickerModal from '../components/RecipePickerModal';
 import { printDocument } from '../lib/printService';
+import { trNorm } from '../lib/trNorm';
 
 // ── Durumlar ──────────────────────────────────────────────────────────────────
 const STATUS = {
@@ -37,7 +38,7 @@ function WorkOrderForm({ items, orders, allRecipes, onClose, onSaved, currentCol
   const [showRecipePicker, setShowRecipePicker] = useState(false);
 
   const selectedItem  = items.find(i => i.id === form.item_id);
-  const itemMatches   = items.filter(i => i.item_type === 'product' && (!itemQ || i.name.toLowerCase().includes(itemQ.toLowerCase()))).slice(0,8);
+  const itemMatches   = items.filter(i => i.item_type === 'product' && (!itemQ || trNorm(i.name).includes(trNorm(itemQ)))).slice(0,8);
   const productRecipes = (allRecipes||[]).filter(r => r.product_id === form.item_id);
   const hasRecipe     = form.item_id && productRecipes.length > 0;
 
@@ -608,10 +609,10 @@ export default function IsEmri() {
     if (!search) return true;
     const item = items.find(i => i.id === wo.item_id);
     const ord  = orders.find(o => o.id === wo.order_id);
-    const q = search.toLowerCase();
-    return item?.name?.toLowerCase().includes(q) ||
-      ord?.customer_name?.toLowerCase().includes(q) ||
-      ord?.order_number?.toLowerCase().includes(q);
+    const q = trNorm(search);
+    return trNorm(item?.name).includes(q) ||
+      trNorm(ord?.customer_name).includes(q) ||
+      trNorm(ord?.order_number).includes(q);
   };
 
   // Tüm filtrelenen WO'lar

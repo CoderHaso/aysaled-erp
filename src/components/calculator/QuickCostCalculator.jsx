@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { X, Search, Plus, Trash2, Calculator, DollarSign, Calculator as CalcIcon } from 'lucide-react';
 import { useStock } from '../../hooks/useStock';
 import { useFxRates } from '../../hooks/useFxRates';
+import { trNorm } from '../../lib/trNorm';
 
 const CURRENCY_SYM = { TRY: '₺', USD: '$', EUR: '€', GBP: '£' };
 
@@ -28,10 +29,10 @@ export default function QuickCostCalculator({ isDark, currentColor, onClose }) {
 
   const filteredItems = useMemo(() => {
     if (!search.trim()) return [];
-    const q = search.toLowerCase();
+    const q = trNorm(search);
     return allDbItems.filter(i => 
-      (i.name && i.name.toLowerCase().includes(q)) ||
-      (i.sku && i.sku.toLowerCase().includes(q))
+      (i.name && trNorm(i.name).includes(q)) ||
+      (i.sku && trNorm(i.sku).includes(q))
     ).slice(0, 15);
   }, [allDbItems, search]);
 

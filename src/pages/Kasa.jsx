@@ -14,6 +14,7 @@ import CustomDialog from '../components/CustomDialog';
 import ImageCropper from '../components/ImageCropper';
 import MediaPickerModal from '../components/MediaPickerModal';
 import { printDocument } from '../lib/printService';
+import { trNorm } from '../lib/trNorm';
 
 // ─── Sabitler ─────────────────────────────────────────────────────────────────
 const CATEGORIES = [
@@ -267,8 +268,8 @@ export default function Kasa() {
     if (filterDir !== 'all' && t.direction !== filterDir) return false;
     if (filterCat !== 'all' && t.category !== filterCat) return false;
     if (search) {
-      const q = search.toLowerCase();
-      return (t.description||'').toLowerCase().includes(q);
+      const q = trNorm(search);
+      return trNorm(t.description).includes(q);
     }
     return true;
   });

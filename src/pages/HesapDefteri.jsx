@@ -11,6 +11,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useLocation } from 'react-router-dom';
 import { printDocument } from '../lib/printService';
 import { useFxRates } from '../hooks/useFxRates';
+import { trNorm } from '../lib/trNorm';
 
 const fmtN = (n) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtD = (d) => d ? new Date(d).toLocaleDateString('tr-TR') : '—';
@@ -190,14 +191,21 @@ function HareketModal({ contact, contactType, onClose, onSaved, prefill, editDat
 }
 
 // ── Bakiye gösterge helper ─────────────────────────────────────────────────────
-function BalanceChip({ value, compact = false }) {
+function BalanceChip({ value, compact = false, currencyTotals }) {
   const color  = value > 0 ? '#10b981' : value < 0 ? '#ef4444' : '#64748b';
   const label  = value > 0 ? 'Alacak'  : value < 0 ? 'Verecek'  : 'Eşit';
+  // Birden fazla döviz varsa kısa gösterim
+  const hasFx = currencyTotals && Object.keys(currencyTotals).some(c => c !== 'TRY' && currencyTotals[c] !== 0);
   return (
     <div className="text-right shrink-0">
       <p className="text-sm font-bold" style={{ color }}>
         {value === 0 ? '—' : `${fmtN(Math.abs(value))} ₺`}
       </p>
+      {hasFx && Object.entries(currencyTotals).filter(([c, v]) => c !== 'TRY' && v !== 0).map(([c, v]) => (
+        <p key={c} className="text-[10px] font-semibold" style={{ color: v > 0 ? '#10b981' : '#ef4444' }}>
+          {CUR_SYM[c] || c}{fmtN(Math.abs(v))}
+        </p>
+      ))}
       {!compact && <p className="text-[10px] font-semibold" style={{ color }}>{label}</p>}
     </div>
   );
@@ -259,13 +267,17 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
     onBalanceChange?.();
   };
 
-  // Anlık bakiye — tüm dövizleri TRY'ye çevirerek hesapla
+  // Anlık bakiye — tüm dövizleri TRY'ye çevirerek + döviz bazında ayrım
   let running = 0;
+  const curTotals = {}; // { USD: net, EUR: net, TRY: net }
   const rows = hareketler.map(h => {
     const cur = h.currency || 'TRY';
     const borcTRY   = convert(h.borc   || 0, cur, 'TRY');
     const alacakTRY = convert(h.alacak || 0, cur, 'TRY');
     running += borcTRY - alacakTRY;
+    // Döviz bazında toplam (orijinal birimde)
+    if (!curTotals[cur]) curTotals[cur] = 0;
+    curTotals[cur] += (h.borc || 0) - (h.alacak || 0);
     return { ...h, borcTRY, alacakTRY, snapshot: running };
   });
   // Yerel veri yüklenmeden önce parent'ın önceden hesapladığı bakiyeyi göster
@@ -291,7 +303,7 @@ function ContactRow({ contact, contactType, color, preloadedBalance, externalOpe
           <p className="text-sm font-semibold truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{contact.name}</p>
           <p className="text-[11px] truncate" style={{ color: '#64748b' }}>{contact.phone || contact.vkntckn || '—'}</p>
         </div>
-        <BalanceChip value={totalBalance}/>
+        <BalanceChip value={totalBalance} currencyTotals={curTotals}/>
         <ChevronDown size={15} className="text-slate-500 shrink-0 transition-transform"
           style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}/>
       </button>
@@ -584,7 +596,7 @@ export default function HesapDefteri() {
   const filtered = contacts
     .filter(c =>
       search === '' ||
-      (c.name || '').toLowerCase().includes(search.toLowerCase()) ||
+      trNorm(c.name).includes(trNorm(search)) ||
       (c.phone || '').includes(search) ||
       (c.vkntckn || '').includes(search)
     )

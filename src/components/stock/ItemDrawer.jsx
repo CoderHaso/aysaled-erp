@@ -15,6 +15,7 @@ import RecipeEditor from './RecipeEditor';
 import { useFxRates } from '../../hooks/useFxRates';
 import MediaPickerModal from '../MediaPickerModal';
 import { Image as ImageIcon } from 'lucide-react';
+import { trNorm } from '../../lib/trNorm';
 
 const UNITS       = ['Adet','Metre','cm','mm','Kg','g','Litre','ml','m²','m³','Rulo','Paket','Kutu','Set','Takım','Saat','Gün'];
 const CURRENCIES  = ['TRY','USD','EUR'];
@@ -167,7 +168,7 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
   const catFields       = currentCategory?.fields || [];
 
   const filteredSupp = suppSearch
-    ? suppliers.filter(s => s.name.toLowerCase().includes(suppSearch.toLowerCase()))
+    ? suppliers.filter(s => trNorm(s.name).includes(trNorm(suppSearch)))
     : suppliers.slice(0, 8);
 
   // ── Kaydet ───────────────────────────────────────────────────────────────

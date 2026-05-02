@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useStock } from '../hooks/useStock';
+import { trNorm } from '../lib/trNorm';
 import { useFxRates } from '../hooks/useFxRates';
 import { supabase } from '../lib/supabaseClient';
 import { pageCache } from '../lib/pageCache';
@@ -122,16 +123,16 @@ export default function Stock() {
   const filtered = useMemo(() => {
     let list = [...baseList];
     if (search) {
-      const q = search.toLowerCase();
+      const q = trNorm(search);
       list = list.filter(i =>
-        i.name?.toLowerCase().includes(q) ||
-        i.sku?.toLowerCase().includes(q) ||
-        i.supplier_name?.toLowerCase().includes(q)
+        trNorm(i.name).includes(q) ||
+        trNorm(i.sku).includes(q) ||
+        trNorm(i.supplier_name).includes(q)
       );
     }
     list.sort((a, b) => {
       let va = a[sortKey] ?? '', vb = b[sortKey] ?? '';
-      if (typeof va === 'string') { va = va.toLowerCase(); vb = vb.toLowerCase(); }
+      if (typeof va === 'string') { va = trNorm(va); vb = trNorm(vb); }
       if (va < vb) return sortDir === 'asc' ? -1 : 1;
       if (va > vb) return sortDir === 'asc' ?  1 : -1;
       return 0;
@@ -179,7 +180,7 @@ export default function Stock() {
   /** Satırı Supabase items formatına dönüştür */
   const mapRowToItem = (row, forcedType) => {
     const tip = forcedType ||
-      (String(row['_A_ERP_Tip'] || row['Tip'] || '').toLowerCase().includes('mamül') ? 'product' : 'raw');
+      (trNorm(String(row['_A_ERP_Tip'] || row['Tip'] || '')).includes('mamül') ? 'product' : 'raw');
     return {
       name:           String(row['Stok Adı'] || row['name'] || '').trim(),
       unit:           String(row['Birim']    || row['unit'] || 'Adet').trim(),
@@ -1960,9 +1961,9 @@ function BulkUpdateModal({ allItems, c, currentColor, isDark, supabase, onClose,
         <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3" style={{ overflowX: 'visible' }}>
           {rows.map((row, idx) => {
             const selectedItem = allItems.find(i => i.id === row.itemId);
-            const sq = (searchStates[row._key] || '').toLowerCase();
+            const sq = trNorm(searchStates[row._key] || '');
             const results = sq ? allItems.filter(i =>
-              i.name.toLowerCase().includes(sq) || (i.sku || '').toLowerCase().includes(sq)
+              trNorm(i.name).includes(sq) || trNorm(i.sku || '').includes(sq)
             ).slice(0, 8) : [];
 
             return (

@@ -14,6 +14,7 @@ import { useNavigate } from 'react-router-dom';
 import { printDocument } from '../lib/printService';
 import { useFxRates } from '../hooks/useFxRates';
 import QuickCostCalculator from '../components/calculator/QuickCostCalculator';
+import { trNorm } from '../lib/trNorm';
 
 const CUR_SYM = { TRY: '₺', USD: '$', EUR: '€', GBP: '£' };
 
@@ -243,8 +244,8 @@ export default function Dashboard() {
     if (personType === 'all' || personType === 'supplier') {
       suppliers.forEach(s => list.push({ id: s.id, name: s.name, type: 'supplier', faturasiz: s.is_faturasiz }));
     }
-    const q = personSearch.toLowerCase();
-    return q ? list.filter(p => p.name?.toLowerCase().includes(q)) : list;
+    const q = trNorm(personSearch);
+    return q ? list.filter(p => trNorm(p.name).includes(q)) : list;
   }, [customers, suppliers, personType, personSearch]);
 
   const selectedPerson = useMemo(() =>

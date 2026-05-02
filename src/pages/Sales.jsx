@@ -17,6 +17,7 @@ import InvoicePreviewModal from '../components/InvoicePreviewModal';
 import CustomDialog from '../components/CustomDialog';
 import RecipePickerModal from '../components/RecipePickerModal';
 import { printDocument } from '../lib/printService';
+import { trNorm } from '../lib/trNorm';
 
 // ─── Sabitler & Yardımcılar ───────────────────────────────────────────────────
 const STATUS = {
@@ -79,11 +80,7 @@ function parseTurkishAddress(addr) {
   return { address, district, city };
 }
 
-// Türkçe dahil case-insensitive normalize (YİĞİT = yiğit = YİĞİT)
-const trNorm = (s = '') => s
-  .toLocaleLowerCase('tr-TR')
-  .replace(/ı/g, 'i').replace(/ş/g, 's').replace(/ç/g, 'c')
-  .replace(/ö/g, 'o').replace(/ü/g, 'u').replace(/ğ/g, 'g');
+// Türkçe normalize artık ../lib/trNorm'dan geliyor
 
 // ── Tutar yazıya çevirme (fatura açıklaması için) ──────────────────────────
 const buildAmountWords = (total, currency) => {
@@ -135,8 +132,8 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
   const [q, setQ]                   = useState('');
   const [showRecipePicker, setShowRecipePicker] = useState(false);
   const matches = allItems.filter(i =>
-    !q || i.name.toLowerCase().includes(q.toLowerCase()) ||
-    (i.sku||'').toLowerCase().includes(q.toLowerCase())
+    !q || trNorm(i.name).includes(trNorm(q)) ||
+    trNorm(i.sku).includes(trNorm(q))
   ).slice(0, 8);
 
   // product_recipes: bu ürüne ait reçete var mı?
@@ -1939,7 +1936,7 @@ export default function Sales() {
         quoteProcessedRef.current = true; // Sadece bir kez işle
         const q = state.createFromQuote;
         const cName = q.company_name || '';
-        const matchedCust = customers.find(c => c.name.toLowerCase() === cName.toLowerCase());
+        const matchedCust = customers.find(c => trNorm(c.name) === trNorm(cName));
         
         const num = await generateOrderNumber(cName);
         const parsed = parseTurkishAddress(matchedCust?.address || q.address);

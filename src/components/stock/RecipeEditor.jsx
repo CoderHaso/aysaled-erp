@@ -11,6 +11,7 @@ import { supabase } from '../../lib/supabaseClient';
 import { Plus, Trash2, Copy, ChevronDown, ChevronRight, Search, X, Check, AlertCircle, Loader2, Tag, Edit2 } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useFxRates } from '../../hooks/useFxRates';
+import { trNorm } from '../../lib/trNorm';
 
 const UNITS = ['Adet','Metre','cm','mm','Kg','g','Litre','ml','m²','m³','Rulo','Paket','Kutu','Set','Takım'];
 const CURRENCY_SYM = { TRY: '₺', USD: '$', EUR: '€' };
@@ -529,10 +530,10 @@ function RecipeItemRow({ item, index, rawItems, onChange, onBlur, onDelete, c, c
   const btnRef = React.useRef(null);
 
   const filtered = itemSearch.trim()
-    ? rawItems.filter(r =>
-        r.name.toLowerCase().includes(itemSearch.toLowerCase()) ||
-        (r.sku || '').toLowerCase().includes(itemSearch.toLowerCase())
-      ).slice(0, 10)
+      ? rawItems.filter(r =>
+          trNorm(r.name).includes(trNorm(itemSearch)) ||
+          trNorm(r.sku || '').includes(trNorm(itemSearch))
+        ).slice(0, 10)
     : rawItems.slice(0, 10);
 
   const selectRaw = (raw) => {
@@ -668,7 +669,7 @@ function CopyFromProductModal({ allProducts, onCopy, onClose, c, currentColor, i
   const [loading, setLoading]   = useState(false);
 
   const filtered = search
-    ? allProducts.filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
+    ? allProducts.filter(p => trNorm(p.name).includes(trNorm(search)))
     : allProducts.slice(0, 10);
 
   const selectProduct = async (prod) => {

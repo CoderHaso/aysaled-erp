@@ -8,6 +8,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import MediaPickerModal from '../components/MediaPickerModal';
+import { trNorm } from '../lib/trNorm';
 
 const TEMPLATES = {
     modern: {
@@ -1236,7 +1237,7 @@ export default function App() {
                                                                     {/* Özellikler Grid (Sınırsız sayıda yan yana akar) */}
                                                                     <div className="flex flex-wrap gap-x-[16px] gap-y-[12px] content-start">
                                                                         {product.features?.filter(f => f.key || f.value).map((feat, i) => {
-                                                                            const keyLower = feat.key.toLowerCase();
+                                                                            const keyLower = trNorm(feat.key);
                                                                             const isLength = keyLower.includes('uzun') || keyLower.includes('boy') || keyLower.includes('çap');
                                                                             const isPack = keyLower.includes('koli') || keyLower.includes('adet');
                                                                             const isVolt = keyLower.includes('volt') || keyLower.includes('güç') || keyLower.includes('watt');

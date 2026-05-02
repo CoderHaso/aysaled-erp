@@ -10,6 +10,7 @@ import { supabase } from '../lib/supabaseClient';
 import CustomDialog from '../components/CustomDialog';
 import MediaPickerModal from '../components/MediaPickerModal';
 import { useFxRates } from '../hooks/useFxRates';
+import { trNorm } from '../lib/trNorm';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt     = (n, d = 2) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -43,9 +44,9 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, onAddN
 
   const suggestions = (allItems && q.trim().length >= 1)
     ? allItems.filter(i => {
-        const i_name = (i.name || i.item_name || '').toLowerCase();
-        const i_code = (i.item_code || i.sku || '').toLowerCase();
-        const search = q.toLowerCase();
+        const i_name = trNorm(i.name || i.item_name);
+        const i_code = trNorm(i.item_code || i.sku);
+        const search = trNorm(q);
         return i_name.includes(search) || i_code.includes(search);
       }).slice(0, 15)
     : [];
@@ -687,10 +688,10 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
   const [custQ, setCustQ]           = useState('');
   const [showCustSugg, setShowCustSugg] = useState(false);
   const custExists = allCustomers.some(c =>
-    (c.name || '').toLowerCase() === (custQ || '').toLowerCase()
+    trNorm(c.name) === trNorm(custQ)
   );
   const custSuggestions = custQ.length >= 1
-    ? allCustomers.filter(c => (c.name || '').toLowerCase().includes(custQ.toLowerCase())).slice(0, 8)
+    ? allCustomers.filter(c => trNorm(c.name).includes(trNorm(custQ))).slice(0, 8)
     : [];
 
   // ── Veri yükle ────────────────────────────────────────────────────────────

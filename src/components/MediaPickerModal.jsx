@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
+import { trNorm } from '../lib/trNorm';
 
 export default function MediaPickerModal({ isOpen, onClose, onSelect }) {
   const { effectiveMode, currentColor } = useTheme();
@@ -102,7 +103,7 @@ export default function MediaPickerModal({ isOpen, onClose, onSelect }) {
   if (!isOpen) return null;
 
   const filtered = items.filter(i =>
-    (i.name || '').toLowerCase().includes(search.toLowerCase())
+    trNorm(i.name || '').includes(trNorm(search))
   );
 
   return (

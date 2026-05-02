@@ -20,6 +20,7 @@ import {
   ArrowRight, Edit2, Plus, Info,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
+import { trNorm } from '../lib/trNorm';
 
 const fmt = (n) =>
   n != null ? Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
@@ -59,11 +60,11 @@ export default function InvoiceStockModal({
 
   // Stok arama sonuçları
   const searchResults = (idx) => {
-    const q = (searches[idx] || '').toLowerCase().trim();
+    const q = trNorm(searches[idx]).trim();
     if (!q) return allItems.slice(0, 12);
     return allItems.filter(i =>
-      i.name.toLowerCase().includes(q) ||
-      (i.sku || '').toLowerCase().includes(q)
+      trNorm(i.name).includes(q) ||
+      trNorm(i.sku).includes(q)
     ).slice(0, 12);
   };
 

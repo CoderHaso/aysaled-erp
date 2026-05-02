@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import { pageCache } from '../lib/pageCache';
 import CustomDialog from '../components/CustomDialog';
 import PaymentsTab from '../components/PaymentsTab';
+import { trNorm } from '../lib/trNorm';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmt = (n) => n != null ? Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2 }) : '0,00';
@@ -619,11 +620,11 @@ export default function Customers() {
   const [filterSource, setFilterSource] = useState('all');
 
   const filtered = customers.filter(c => {
-    const t = search.toLowerCase();
-    const matchSearch = (c.name||'').toLowerCase().includes(t)
-      || (c.vkntckn||'').includes(t)
-      || (c.phone||'').includes(t)
-      || (c.email||'').toLowerCase().includes(t);
+    const t = trNorm(search);
+    const matchSearch = trNorm(c.name).includes(t)
+      || (c.vkntckn||'').includes(search)
+      || (c.phone||'').includes(search)
+      || trNorm(c.email).includes(t);
     const matchSource = filterSource === 'all' ? true
       : filterSource === 'faturali'  ? (!c.is_faturasiz && c.source !== 'manual')
       : filterSource === 'faturasiz' ? !!c.is_faturasiz

@@ -3,6 +3,7 @@ import { Plus, X, Loader2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useSuppliers } from '../../hooks/useSuppliers';
+import { trNorm } from '../../lib/trNorm';
 
 /**
  * Tedarikçi autocomplete input.
@@ -31,9 +32,9 @@ export default function SupplierAutocomplete({ value, onChange }) {
   useEffect(() => { setInputVal(value || ''); }, [value]);
 
   const filtered = suppliers.filter(s =>
-    s.name.toLowerCase().includes(inputVal.toLowerCase())
+    trNorm(s.name).includes(trNorm(inputVal))
   );
-  const exactMatch = suppliers.some(s => s.name.toLowerCase() === inputVal.toLowerCase());
+  const exactMatch = suppliers.some(s => trNorm(s.name) === trNorm(inputVal));
 
   const border  = isDark ? 'rgba(148,163,184,0.14)' : '#e2e8f0';
   const text    = isDark ? '#f1f5f9' : '#0f172a';

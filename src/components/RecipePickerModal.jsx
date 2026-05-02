@@ -8,6 +8,7 @@ import {
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
 import { useFxRates } from '../hooks/useFxRates';
+import { trNorm } from '../lib/trNorm';
 
 const UNITS = ['Adet','Metre','cm','mm','Kg','g','Litre','ml','m²','Rulo','Paket','Kutu','Set','Takım'];
 const CURRENCIES = ['TRY', 'USD', 'EUR', 'GBP'];
@@ -745,11 +746,11 @@ function ItemPickerModal({ allItems, onPick, onClose, currentColor, isSwap }) {
   const [search, setSearch] = useState('');
 
   const filtered = useMemo(() => {
-    const q = search.toLowerCase().trim();
+    const q = trNorm(search).trim();
     if (!q) return (allItems || []).slice(0, 40);
     return (allItems || []).filter(i =>
-      i.name.toLowerCase().includes(q) ||
-      (i.sku || '').toLowerCase().includes(q)
+      trNorm(i.name).includes(q) ||
+      trNorm(i.sku).includes(q)
     ).slice(0, 40);
   }, [allItems, search]);
 
