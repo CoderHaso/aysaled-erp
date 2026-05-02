@@ -1078,62 +1078,74 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
 
   const saveQuickEdit = async () => {
     setQeSaving(true); setQeError('');
-    const oldStock = Number(item.stock_count) || 0;
-    const newStock = Number(qeForm.stock_count) || 0;
-    const delta = newStock - oldStock;
+    try {
+      const oldStock = Number(item.stock_count) || 0;
+      const newStock = Number(qeForm.stock_count) || 0;
+      const delta = newStock - oldStock;
 
-    // Reçeteli ürünlerde minimum stok kontrolü
-    if (isProduct && recipeMinStock > 0 && newStock < recipeMinStock) {
-      setQeError(`Minimum ${recipeMinStock} olabilir (reçete stokları toplamı). Reçeteler sekmesinden düşürebilirsiniz.`);
-      setQeSaving(false); return;
+      // Reçeteli ürünlerde minimum stok kontrolü
+      if (isProduct && recipeMinStock > 0 && newStock < recipeMinStock) {
+        setQeError(`Minimum ${recipeMinStock} olabilir (reçete stokları toplamı). Reçeteler sekmesinden düşürebilirsiniz.`);
+        setQeSaving(false); return;
+      }
+
+      const oldPurchase = Number(item.purchase_price) || 0;
+      const newPurchase = Number(qeForm.purchase_price) || 0;
+      const oldSale = Number(item.sale_price) || 0;
+      const newSale = Number(qeForm.sale_price) || 0;
+
+      const patch = {
+        sale_price: newSale,
+        critical_limit: Number(qeForm.critical_limit) || 0,
+        sku: qeForm.sku?.trim() || null,
+        location: qeForm.location?.trim() || null,
+        supplier_name: qeForm.supplier_name?.trim() || null,
+        base_currency: qeForm.base_currency || 'TRY',
+        sale_currency: qeForm.sale_currency || 'TRY',
+        image_url: qeForm.image_url || null,
+      };
+      // Reçeteli ürünlerde alış fiyatı değiştirilemez
+      if (!isProduct || recipes.length === 0) {
+        patch.purchase_price = newPurchase;
+      }
+
+      if (delta !== 0) {
+        if (delta > 0) {
+          const { error: rpcErr } = await supabase.rpc('increment_stock', { p_item_id: item.id, p_qty: delta, p_source: 'manual', p_note: 'Hızlı düzenleme' });
+          if (rpcErr) throw new Error(`Stok artırılamadı: ${rpcErr.message}`);
+        } else {
+          const { error: rpcErr } = await supabase.rpc('decrement_stock', { p_item_id: item.id, p_qty: Math.abs(delta), p_source: 'manual', p_note: 'Hızlı düzenleme' });
+          if (rpcErr) throw new Error(`Stok azaltılamadı: ${rpcErr.message}`);
+        }
+      }
+
+      const { error: updErr } = await supabase.from('items').update(patch).eq('id', item.id);
+      if (updErr) throw new Error(`Kayıt güncellenemedi: ${updErr.message}`);
+
+      // Fiyat değişikliği varsa stock_movements'a kaydet
+      if (oldPurchase !== newPurchase && (!isProduct || recipes.length === 0)) {
+        await supabase.from('stock_movements').insert({
+          item_id: item.id, delta: 0, quantity_before: oldStock, quantity_after: oldStock,
+          source: 'manual', note: `Alış fiyatı: ${sym}${oldPurchase} → ${sym}${newPurchase}`,
+          type: 'manual',
+        });
+      }
+      if (oldSale !== newSale) {
+        await supabase.from('stock_movements').insert({
+          item_id: item.id, delta: 0, quantity_before: oldStock, quantity_after: oldStock,
+          source: 'manual', note: `Satış fiyatı: ₺${oldSale} → ₺${newSale}`,
+          type: 'manual',
+        });
+      }
+
+      setQe(false); setQeSaving(false);
+      pageCache.invalidate('stock_items');
+      onRefresh?.({ ...item, ...patch, stock_count: newStock, purchase_price: patch.purchase_price ?? item.purchase_price });
+    } catch (e) {
+      console.error('[saveQuickEdit] Error:', e);
+      setQeError(e.message || 'Kaydetme sırasında bir hata oluştu');
+      setQeSaving(false);
     }
-
-    const oldPurchase = Number(item.purchase_price) || 0;
-    const newPurchase = Number(qeForm.purchase_price) || 0;
-    const oldSale = Number(item.sale_price) || 0;
-    const newSale = Number(qeForm.sale_price) || 0;
-
-    const patch = {
-      sale_price: newSale,
-      critical_limit: Number(qeForm.critical_limit) || 0,
-      sku: qeForm.sku?.trim() || null,
-      location: qeForm.location?.trim() || null,
-      supplier_name: qeForm.supplier_name?.trim() || null,
-      base_currency: qeForm.base_currency || 'TRY',
-      sale_currency: qeForm.sale_currency || 'TRY',
-      image_url: qeForm.image_url || null,
-    };
-    // Reçeteli ürünlerde alış fiyatı değiştirilemez
-    if (!isProduct || recipes.length === 0) {
-      patch.purchase_price = newPurchase;
-    }
-
-    if (delta !== 0) {
-      if (delta > 0) await supabase.rpc('increment_stock', { p_item_id: item.id, p_qty: delta, p_source: 'manual', p_note: 'Hızlı düzenleme' });
-      else await supabase.rpc('decrement_stock', { p_item_id: item.id, p_qty: Math.abs(delta), p_source: 'manual', p_note: 'Hızlı düzenleme' });
-    }
-
-    await supabase.from('items').update(patch).eq('id', item.id);
-
-    // Fiyat değişikliği varsa stock_movements'a kaydet
-    if (oldPurchase !== newPurchase && (!isProduct || recipes.length === 0)) {
-      await supabase.from('stock_movements').insert({
-        item_id: item.id, delta: 0, quantity_before: oldStock, quantity_after: oldStock,
-        source: 'manual', note: `Alış fiyatı: ${sym}${oldPurchase} → ${sym}${newPurchase}`,
-        type: 'manual',
-      });
-    }
-    if (oldSale !== newSale) {
-      await supabase.from('stock_movements').insert({
-        item_id: item.id, delta: 0, quantity_before: oldStock, quantity_after: oldStock,
-        source: 'manual', note: `Satış fiyatı: ₺${oldSale} → ₺${newSale}`,
-        type: 'manual',
-      });
-    }
-
-    setQe(false); setQeSaving(false);
-    pageCache.invalidate('stock_items');
-    onRefresh?.({ ...item, ...patch, stock_count: newStock });
   };
 
   // ── Reçete stok düzenleme (sadece azaltma) ──

@@ -435,9 +435,29 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
 
       {/* Expanded content */}
       {expanded && (
-        <div className="border-t flex flex-col md:flex-row rounded-b-2xl" style={{ borderColor: c.border }}>
+        <div className="border-t rounded-b-2xl" style={{ borderColor: c.border }}>
+          {/* Kur bilgisi barı */}
+          <div className="flex items-center gap-4 px-4 py-2" style={{ background: isDark ? 'rgba(59,130,246,0.04)' : 'rgba(59,130,246,0.03)', borderBottom: `1px solid ${c.border}` }}>
+            <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: c.muted }}>💱 Güncel Kur</span>
+            {fxRates && (
+              <>
+                <span className="text-[11px] font-bold" style={{ color: '#3b82f6' }}>
+                  USD: ₺{(fxRates.USD || 0).toFixed(4)}
+                </span>
+                <span className="text-[11px] font-bold" style={{ color: '#f59e0b' }}>
+                  EUR: ₺{(fxRates.EUR || 0).toFixed(4)}
+                </span>
+                {fxRates.GBP && (
+                  <span className="text-[11px] font-bold" style={{ color: '#a78bfa' }}>
+                    GBP: ₺{(fxRates.GBP || 0).toFixed(4)}
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+          <div className="flex flex-col lg:flex-row">
           {/* SOL: Hammadde Listesi */}
-          <div className="md:w-[260px] lg:w-[320px] p-4 border-b md:border-b-0 md:border-r flex-shrink-0" style={{ borderColor: c.border, background: isDark ? 'rgba(255,255,255,0.01)' : '#f8fafc' }}>
+          <div className="lg:w-[240px] xl:w-[280px] p-3 border-b lg:border-b-0 lg:border-r flex-shrink-0" style={{ borderColor: c.border, background: isDark ? 'rgba(255,255,255,0.01)' : '#f8fafc' }}>
             <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: c.muted }}>Malzeme Listesi</p>
             <div className="relative mb-3">
               <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: c.muted }} />
@@ -474,7 +494,7 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
           </div>
 
           {/* SAĞ: Reçete Detayları */}
-          <div className="flex-1 min-w-0 p-4 space-y-4">
+          <div className="flex-1 min-w-0 p-3 space-y-3 overflow-x-auto">
             {/* Etiketler */}
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: c.muted }}>
@@ -620,6 +640,7 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
               </div>
             )}
           </div>
+          </div>{/* /flex-row */}
         </div>
       )}
     </div>
