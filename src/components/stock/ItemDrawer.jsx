@@ -326,7 +326,7 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
       )}
 
       {/* ── İçerik ───────────────────────────────────────────────────────── */}
-      <div className="p-4 sm:p-6 max-w-2xl mx-auto space-y-4 pb-12">
+      <div className={`p-4 sm:p-6 ${section === 'recipe' ? 'max-w-5xl' : 'max-w-2xl'} mx-auto space-y-4 pb-12`}>
 
         {/* ━━ BİLGİLER ━━ */}
         {section === 'info' && (

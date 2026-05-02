@@ -1339,12 +1339,6 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
             <h3 className="text-sm font-bold mt-0.5 truncate" style={{ color: c.text }}>{item.name}</h3>
           </div>
           <div className="flex items-center gap-1">
-            {!qe && (
-              <button onClick={startQuickEdit} className="p-2 rounded-xl transition-all hover:scale-105"
-                style={{ color: '#f59e0b', background: 'rgba(245,158,11,0.08)' }} title="Hızlı Düzenle">
-                <Pencil size={14}/>
-              </button>
-            )}
             <button onClick={onClose} className="p-2 rounded-xl" style={{ color: c.muted }}>
               <X size={15}/>
             </button>
@@ -1355,25 +1349,18 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
         <div className="px-5 py-4 flex-shrink-0" style={{ borderBottom: `1px solid ${c.border}` }}>
           <div className="flex items-end gap-3">
             <div 
-              onClick={() => qe ? setImgModalOpen(true) : (item.image_url ? setFullImg(item.image_url) : null)}
-              className={`w-12 h-12 rounded-2xl flex items-center justify-center overflow-hidden ${(qe || item.image_url) ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
-              title={qe ? 'Görsel ekle/değiştir' : (item.image_url ? 'Tam boyutu gör' : '')}
-              style={{ background: `${clr}15`, border: qe ? `2px dashed ${clr}` : 'none' }}>
-              {(qe ? qeForm.image_url : item.image_url) ? (
-                <img src={qe ? qeForm.image_url : item.image_url} alt="Ürün" className="w-full h-full object-cover" />
+              onClick={() => item.image_url ? setFullImg(item.image_url) : null}
+              className={`w-12 h-12 rounded-2xl flex items-center justify-center overflow-hidden ${item.image_url ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+              title={item.image_url ? 'Tam boyutu gör' : ''}
+              style={{ background: `${clr}15`, border: 'none' }}>
+              {item.image_url ? (
+                <img src={item.image_url} alt="Ürün" className="w-full h-full object-cover" />
               ) : (
                 <Package size={22} style={{ color: clr }}/>
               )}
             </div>
             <div>
-              {qe ? (
-                <input type="number" value={qeForm.stock_count}
-                  onChange={e => setQeForm(f => ({ ...f, stock_count: e.target.value }))}
-                  className="text-2xl font-black w-24 bg-transparent outline-none"
-                  style={{ color: clr, borderBottom: `2px solid ${clr}` }}/>
-              ) : (
-                <p className="text-2xl font-black" style={{ color: clr }}>{item.stock_count}</p>
-              )}
+              <p className="text-2xl font-black" style={{ color: clr }}>{item.stock_count}</p>
               <p className="text-[10px] font-semibold" style={{ color: c.muted }}>{item.unit} stokta</p>
             </div>
           </div>
@@ -1421,26 +1408,9 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
                       <r.icon size={12} style={{ color: c.muted, flexShrink: 0 }}/>
                       <span className="text-xs font-semibold whitespace-nowrap" style={{ color: c.muted }}>{r.label}</span>
                     </div>
-                    {qe && r.field ? (
-                      <div className="flex items-center gap-1">
-                        {r.field === 'purchase_price' && hasRecipes && avgCost ? (
-                          <button onClick={() => setQeForm(f => ({ ...f, purchase_price: avgCost }))}
-                            className="px-1.5 py-0.5 rounded text-[9px] font-bold"
-                            style={{ background: `${currentColor}15`, color: currentColor }} title="Ort. Maliyeti Kullan">
-                            Ort
-                          </button>
-                        ) : null}
-                        {r.prefix && <span className="text-xs font-bold" style={{ color: c.muted }}>{r.prefix}</span>}
-                        <input type={r.numField ? 'number' : 'text'} value={qeForm[r.field] ?? ''}
-                          onChange={e => setQeForm(f => ({ ...f, [r.field]: e.target.value }))}
-                          style={inputStyle} placeholder={r.label}/>
-                        {r.suffix && <span className="text-[10px] font-semibold" style={{ color: c.muted }}>{r.suffix}</span>}
-                      </div>
-                    ) : (
-                      <span className="text-xs font-bold text-right ml-2" style={{ color: r.color || c.text, maxWidth: '55%', wordBreak: 'break-word', overflowWrap: 'break-word' }}>
-                        {r.value}
-                      </span>
-                    )}
+                    <span className="text-xs font-bold text-right ml-2" style={{ color: r.color || c.text, maxWidth: '55%', wordBreak: 'break-word', overflowWrap: 'break-word' }}>
+                      {r.value}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -1592,28 +1562,10 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
                         <span className="text-xs font-bold truncate" style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}>{r.name}</span>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        {editingRecipeStock?.type === 'base' && editingRecipeStock?.id === rs?.id ? (
-                          <div className="flex items-center gap-1">
-                            <input type="number" value={rcpStockInput}
-                              onChange={e => setRcpStockInput(e.target.value)}
-                              className="w-12 text-center text-xs font-bold rounded-lg px-1 py-0.5"
-                              style={inputStyle} autoFocus/>
-                            <button onClick={() => saveRecipeStock('base', rs?.id, stk, Number(rcpStockInput) || 0)}
-                              className="p-1 rounded-lg" style={{ color: '#10b981', background: 'rgba(16,185,129,0.1)' }}>
-                              <Check size={10}/>
-                            </button>
-                            <button onClick={() => setEditingRecipeStock(null)}
-                              className="p-1 rounded-lg" style={{ color: '#ef4444', background: 'rgba(239,68,68,0.1)' }}>
-                              <X size={10}/>
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full cursor-pointer group"
-                            onClick={() => { setEditingRecipeStock({ type: 'base', id: rs?.id }); setRcpStockInput(String(stk)); }}
-                            style={{ background: stk > 0 ? 'rgba(16,185,129,0.12)' : 'rgba(148,163,184,0.06)', color: stk > 0 ? '#10b981' : c.muted }}>
-                            {stk > 0 ? `${stk} stokta` : '0 stok'} <Pencil size={7} className="inline ml-0.5 opacity-40"/>
-                          </span>
-                        )}
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded-full"
+                          style={{ background: stk > 0 ? 'rgba(16,185,129,0.12)' : 'rgba(148,163,184,0.06)', color: stk > 0 ? '#10b981' : c.muted }}>
+                          {stk > 0 ? `${stk} stokta` : '0 stok'}
+                        </span>
                         {r.tags && r.tags.length > 0 && r.tags.map((t, i) => (
                           <span key={i} className="text-[9px] px-1.5 py-0.5 rounded-full"
                             style={{ background: `${currentColor}15`, color: currentColor }}>{t}</span>
@@ -1864,27 +1816,11 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
 
         {/* Alt butonlar */}
         <div className="px-5 py-4 flex gap-2 flex-shrink-0" style={{ borderTop: `1px solid ${c.border}` }}>
-          {qe ? (
-            <>
-              <button onClick={() => setQe(false)} disabled={qeSaving}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold transition-all"
-                style={{ background: isDark ? 'rgba(255,255,255,0.04)' : '#f1f5f9', color: c.muted, border: `1px solid ${c.border}` }}>
-                <X size={14}/> İptal
-              </button>
-              <button onClick={saveQuickEdit} disabled={qeSaving}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-all"
-                style={{ background: '#10b981', opacity: qeSaving ? 0.6 : 1 }}>
-                {qeSaving ? <RefreshCcw size={14} className="animate-spin"/> : <Check size={14}/>}
-                {qeSaving ? 'Kaydediliyor...' : 'Kaydet'}
-              </button>
-            </>
-          ) : (
-            <button onClick={() => onEdit(item)}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white"
-              style={{ background: currentColor }}>
-              <Edit2 size={14}/> Düzenle
-            </button>
-          )}
+          <button onClick={() => onEdit(item)}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white"
+            style={{ background: currentColor }}>
+            <Edit2 size={14}/> Düzenle
+          </button>
         </div>
 
         {imgModalOpen && (
