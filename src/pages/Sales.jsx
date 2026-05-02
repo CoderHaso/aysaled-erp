@@ -487,6 +487,7 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
     billing_address:      order?.billing_address || '',
     notes:                order?.notes || '',
     quote_id:             order?.quote_id || null,
+    is_history:           false, // Yeni eklenti: Geçmiş sipariş
   });
   const [lines, setLines]   = useState(order?.items?.length ? order.items.map(i => ({ ...i, _key: Math.random() })) : [blankLine()]);
   const [saving, setSaving] = useState(false);
@@ -591,7 +592,7 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
         customer_id:      form.customer_id   || null,
         customer_name:    form.customer_name,
         customer_vkntckn: form.customer_vkntckn || null,
-        status:           form.status         || 'pending',
+        status:           form.is_history ? 'completed' : (form.status || 'pending'),
         currency:         form.currency       || 'TRY',
         due_date:         form.due_date ? new Date(form.due_date).toISOString() : null,
         delivery_address: form.delivery_address || null,
@@ -726,7 +727,8 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
       }
 
       // ── UYUMSOFT INVOICE DRAFT CREATION ──
-      if (invoiceToggle && !isEdit) {
+      // Geçmiş siparişlerde fatura sistemi çağrılmaz, sadece DB'ye faturalı olarak yazılır.
+      if (invoiceToggle && !isEdit && !form.is_history) {
         try {
           // Fatura ayarlarını oku
           let invSettings = { show_amount_words: true, custom_note: '' };
@@ -842,20 +844,39 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
         <SectionCard title="Sipariş Bilgileri" icon={FileText} isDark={isDark}>
           
           {/* Fatura Toggle - En Üste Alındı */}
-          <div className="flex items-center justify-between mb-4 p-3 rounded-xl" style={{ background: isDark ? 'rgba(16,185,129,0.05)' : 'rgba(16,185,129,0.05)', border: `1px solid rgba(16,185,129,0.2)` }}>
-            <div>
-              <p className="text-sm font-semibold" style={{ color: isDark ? '#10b981' : '#059669' }}>Resmi Fatura Kesilecek</p>
-              <p className="text-xs mt-0.5" style={{ color: isDark ? '#64748b' : '#64748b' }}>
-                Kapalıysa sadece iç sipariş kaydı. Açıksa Uyumsoft'a taslak gönderilebilir.
-              </p>
+          <div className="flex flex-col gap-3 mb-4">
+            <div className="flex items-center justify-between p-3 rounded-xl" style={{ background: isDark ? 'rgba(16,185,129,0.05)' : 'rgba(16,185,129,0.05)', border: `1px solid rgba(16,185,129,0.2)` }}>
+              <div>
+                <p className="text-sm font-semibold" style={{ color: isDark ? '#10b981' : '#059669' }}>Resmi Fatura Kesilecek</p>
+                <p className="text-xs mt-0.5" style={{ color: isDark ? '#64748b' : '#64748b' }}>
+                  Kapalıysa sadece iç sipariş kaydı. Açıksa Uyumsoft'a taslak gönderilebilir.
+                </p>
+              </div>
+              {/* Toggle Switch */}
+              <button onClick={() => { setInvoiceToggle(v => !v); setDraftPreviewUrl(null); }}
+                className="relative w-12 h-6 rounded-full transition-all flex-shrink-0"
+                style={{ background: invoiceToggle ? '#10b981' : 'rgba(148,163,184,0.2)' }}>
+                <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-all"
+                  style={{ left: invoiceToggle ? '1.625rem' : '0.125rem' }} />
+              </button>
             </div>
-            {/* Toggle Switch */}
-            <button onClick={() => { setInvoiceToggle(v => !v); setDraftPreviewUrl(null); }}
-              className="relative w-12 h-6 rounded-full transition-all flex-shrink-0"
-              style={{ background: invoiceToggle ? '#10b981' : 'rgba(148,163,184,0.2)' }}>
-              <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-all"
-                style={{ left: invoiceToggle ? '1.625rem' : '0.125rem' }} />
-            </button>
+
+            {!isEdit && (
+              <div className="flex items-center justify-between p-3 rounded-xl" style={{ background: isDark ? 'rgba(245,158,11,0.05)' : 'rgba(245,158,11,0.05)', border: `1px solid rgba(245,158,11,0.2)` }}>
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: isDark ? '#f59e0b' : '#d97706' }}>Geçmiş Sipariş (Sadece Kayıt)</p>
+                  <p className="text-xs mt-0.5" style={{ color: isDark ? '#64748b' : '#64748b' }}>
+                    Açıksa iş emri oluşturulmaz, stok düşülmez, fatura kesilmez. Sadece raporlama için tamamlandı olarak eklenir.
+                  </p>
+                </div>
+                <button onClick={() => setForm(f => ({ ...f, is_history: !f.is_history }))}
+                  className="relative w-12 h-6 rounded-full transition-all flex-shrink-0"
+                  style={{ background: form.is_history ? '#f59e0b' : 'rgba(148,163,184,0.2)' }}>
+                  <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-md transition-all"
+                    style={{ left: form.is_history ? '1.625rem' : '0.125rem' }} />
+                </button>
+              </div>
+            )}
           </div>
 
           <AnimatePresence>

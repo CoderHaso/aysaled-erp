@@ -64,6 +64,8 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
     image_url:      item?.image_url      || '',
   });
 
+  const isProduct = form.item_type === 'product';
+
   const [section,     setSection]     = useState('info');
   const [categories,  setCategories]  = useState([]);
   const [suppliers,   setSuppliers]   = useState([]);
@@ -246,7 +248,6 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
   };
 
   // ── Sekme tanımları ──────────────────────────────────────────────────────
-  const isProduct = form.item_type === 'product';
   const SECS_RAW  = ['info','price','stock'];
   const SECS_PROD = ['info','price','stock','recipe'];
   const SECTIONS  = isProduct ? SECS_PROD : SECS_RAW;

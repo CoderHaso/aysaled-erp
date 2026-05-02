@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search, Loader2, AlertCircle, FileDown, FileUp, Eye, RefreshCw,
   X, Building2, Tag, Package, BarChart2, CheckCircle2, Receipt, Info, ScanEye,
-  FilePlus2, Plus, Trash2, CheckCheck, Check
+  FilePlus2, Plus, Trash2, CheckCheck, Check, Printer
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
@@ -14,6 +14,7 @@ import { pageCache } from '../lib/pageCache';
 import CustomDialog from '../components/CustomDialog';
 import { useFxRates } from '../hooks/useFxRates';
 import { trNorm } from '../lib/trNorm';
+import { printDocument } from '../lib/printService';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const STATUS_MAP = {
@@ -763,6 +764,8 @@ export default function Invoices({ type = 'inbox' }) {
   const [syncing, setSyncing]     = useState(false);
   const [error, setError]         = useState(null);
   const [search, setSearch]       = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate]     = useState('');
   const [selected, setSelected]   = useState(null);
   const [previewInv, setPreviewInv] = useState(null);
   // Manuel fatura oluşturma
@@ -1394,11 +1397,84 @@ export default function Invoices({ type = 'inbox' }) {
   const filtered = invoices.filter(inv => {
     // İptal + zarf ID'si olmayan = iptal edilmiş taslak, gizle
     if (inv.status === 'Canceled' && !inv.envelope_identifier) return false;
+    if (startDate && inv.issue_date && inv.issue_date.slice(0, 10) < startDate) return false;
+    if (endDate && inv.issue_date && inv.issue_date.slice(0, 10) > endDate) return false;
     const t = trNorm(search);
     return trNorm(inv.invoice_id).includes(t)
       || trNorm(inv.cari_name).includes(t)
       || (inv.vkntckn||'').includes(search);
   });
+
+  const handlePrintReport = () => {
+    if (filtered.length === 0) return;
+    const isOutbox = type === 'outbox';
+    const title = `${isOutbox ? 'Giden (Satış)' : 'Gelen (Alış)'} Faturaları Raporu`;
+    
+    let grandTotalTRY = 0;
+
+    const rows = filtered.map(inv => {
+      const date = inv.issue_date ? new Date(inv.issue_date).toLocaleDateString('tr-TR') : '-';
+      const statusLabel = STATUS_MAP[inv.status]?.label || inv.status || '-';
+      
+      let tryEq = 0;
+      if (inv.currency === 'TRY') {
+        tryEq = Number(inv.amount || 0);
+      } else if (inv.exchange_rate) {
+        tryEq = Number(inv.amount || 0) * Number(inv.exchange_rate);
+      } else {
+        // Eğer kur yoksa, genel bir tahmini oran kullanılamıyorsa 0
+        tryEq = Number(inv.amount || 0); 
+      }
+      grandTotalTRY += tryEq;
+
+      return `<tr>
+        <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px">${date}</td>
+        <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px">${inv.invoice_id}</td>
+        <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px">${inv.cari_name || '-'}</td>
+        <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px">${inv.vkntckn || '-'}</td>
+        <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px">${statusLabel}</td>
+        <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px;text-align:right;font-weight:bold">
+          ${Number(inv.amount).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${inv.currency}
+        </td>
+      </tr>`;
+    }).join('');
+
+    const html = `
+      <div style="font-family:sans-serif;color:#1e293b">
+        <h2 style="margin-bottom:5px;font-size:20px">${title}</h2>
+        <p style="margin-top:0;font-size:13px;color:#64748b;margin-bottom:20px">
+          ${startDate ? startDate + ' tarihinden itibaren' : ''} 
+          ${endDate ? (startDate ? ' - ' : '') + endDate + ' tarihine kadar' : ''}
+          (${filtered.length} kayıt)
+        </p>
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="background:#f8fafc">
+              <th style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px;text-align:left">Tarih</th>
+              <th style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px;text-align:left">Fatura No</th>
+              <th style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px;text-align:left">Cari Ünvanı</th>
+              <th style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px;text-align:left">VKN/TCKN</th>
+              <th style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px;text-align:left">Durum</th>
+              <th style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px;text-align:right">Tutar</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+          </tbody>
+          <tfoot>
+            <tr style="background:#f1f5f9">
+              <td colspan="5" style="padding:10px 12px;border:1px solid #e2e8f0;font-size:13px;text-align:right;font-weight:bold">Genel Toplam (Yaklaşık TL Karşılığı):</td>
+              <td style="padding:10px 12px;border:1px solid #e2e8f0;font-size:14px;text-align:right;font-weight:900;color:#10b981">
+                ₺${grandTotalTRY.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    `;
+
+    printDocument('custom', { title, content: html }, title);
+  };
 
   return (
     <>
@@ -1428,6 +1504,24 @@ export default function Invoices({ type = 'inbox' }) {
                 className="pl-9 pr-4 py-2 text-sm rounded-xl border outline-none min-w-[220px]"
                 style={{ background: c.card, borderColor: c.border, color: c.text }} />
             </div>
+            
+            {/* Tarih Filtreleri */}
+            <div className="flex items-center gap-2">
+              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                className="px-3 py-2 text-sm rounded-xl border outline-none"
+                style={{ background: c.card, borderColor: c.border, color: c.text }} title="Başlangıç Tarihi" />
+              <span className="text-slate-400">-</span>
+              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+                className="px-3 py-2 text-sm rounded-xl border outline-none"
+                style={{ background: c.card, borderColor: c.border, color: c.text }} title="Bitiş Tarihi" />
+            </div>
+
+            {/* Rapor Yazdır */}
+            <button onClick={handlePrintReport} disabled={filtered.length === 0}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold transition-all disabled:opacity-50"
+              style={{ background: '#6366f1' }}>
+              <Printer size={15} /> Rapor Yazdır
+            </button>
             {/* Gelir: Fatura Oluştur (outbox → Uyumsoft) */}
             {!isInbox && (
               <button onClick={() => openCreate('outbox')}
