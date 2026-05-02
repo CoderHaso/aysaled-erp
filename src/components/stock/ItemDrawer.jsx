@@ -722,13 +722,16 @@ function RecipeStockEditor({ itemId, c, currentColor, isDark }) {
 
     setSaving(recipeId);
     if (existing) {
-      await supabase.from('product_recipe_stock').update({ stock_count: newCount, updated_at: new Date().toISOString() }).eq('id', existing.id);
+      await supabase.from('product_recipe_stock').update({ stock_count: newCount, updated_at: new Date().toISOString() }).eq('recipe_id', recipeId);
     } else {
       await supabase.from('product_recipe_stock').insert({ product_id: itemId, recipe_id: recipeId, stock_count: newCount });
     }
     // Toplam stok güncelle
-    if (diff > 0) await supabase.rpc('increment_stock', { p_item_id: itemId, p_qty: diff, p_source: 'manual', p_note: 'Reçete stok düzenleme' });
-    else await supabase.rpc('decrement_stock', { p_item_id: itemId, p_qty: Math.abs(diff), p_source: 'manual', p_note: 'Reçete stok düzenleme' });
+    if (diff > 0) {
+      await supabase.rpc('increment_stock', { p_item_id: itemId, p_qty: diff, p_source: 'manual', p_note: 'Reçete stok düzenleme', p_source_id: null, p_recipe_id: null, p_custom_recipe: null });
+    } else {
+      await supabase.rpc('decrement_stock', { p_item_id: itemId, p_qty: Math.abs(diff), p_source: 'manual', p_note: 'Reçete stok düzenleme', p_source_id: null, p_recipe_id: null, p_custom_recipe: null });
+    }
 
     // Yenile
     const { data: newStocks } = await supabase.from('product_recipe_stock').select('*').eq('product_id', itemId);

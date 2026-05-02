@@ -1111,10 +1111,10 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
 
       if (delta !== 0) {
         if (delta > 0) {
-          const { error: rpcErr } = await supabase.rpc('increment_stock', { p_item_id: item.id, p_qty: delta, p_source: 'manual', p_note: 'Hızlı düzenleme' });
+          const { error: rpcErr } = await supabase.rpc('increment_stock', { p_item_id: item.id, p_qty: delta, p_source: 'manual', p_note: 'Hızlı düzenleme', p_source_id: null, p_recipe_id: null, p_custom_recipe: null });
           if (rpcErr) throw new Error(`Stok artırılamadı: ${rpcErr.message}`);
         } else {
-          const { error: rpcErr } = await supabase.rpc('decrement_stock', { p_item_id: item.id, p_qty: Math.abs(delta), p_source: 'manual', p_note: 'Hızlı düzenleme' });
+          const { error: rpcErr } = await supabase.rpc('decrement_stock', { p_item_id: item.id, p_qty: Math.abs(delta), p_source: 'manual', p_note: 'Hızlı düzenleme', p_source_id: null, p_recipe_id: null, p_custom_recipe: null });
           if (rpcErr) throw new Error(`Stok azaltılamadı: ${rpcErr.message}`);
         }
       }
@@ -1155,18 +1155,18 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
     const diff = newCount - oldCount;
     if (diff === 0) { setEditingRecipeStock(null); return; }
     if (type === 'base') {
-      await supabase.from('product_recipe_stock').update({ stock_count: newCount, updated_at: new Date().toISOString() }).eq('id', id);
+      await supabase.from('product_recipe_stock').update({ stock_count: newCount, updated_at: new Date().toISOString() }).eq('recipe_id', id);
     }
     // Toplam stok güncelle
-    if (diff > 0) await supabase.rpc('increment_stock', { p_item_id: item.id, p_qty: diff, p_source: 'manual', p_note: 'Reçete stok düzenleme' });
-    else await supabase.rpc('decrement_stock', { p_item_id: item.id, p_qty: Math.abs(diff), p_source: 'manual', p_note: 'Reçete stok düzenleme' });
+    if (diff > 0) await supabase.rpc('increment_stock', { p_item_id: item.id, p_qty: diff, p_source: 'manual', p_note: 'Reçete stok düzenleme', p_source_id: null, p_recipe_id: null, p_custom_recipe: null });
+    else await supabase.rpc('decrement_stock', { p_item_id: item.id, p_qty: Math.abs(diff), p_source: 'manual', p_note: 'Reçete stok düzenleme', p_source_id: null, p_recipe_id: null, p_custom_recipe: null });
     pageCache.invalidate('stock_items');
     setEditingRecipeStock(null);
     setTab(''); setTimeout(() => setTab('recipes'), 50);
   };
   const deleteCustomRecipeStock = async (cs) => {
     if (!confirm(`Bu özel reçete stoğunu silmek istediğinize emin misiniz? (${cs.count} adet)`)) return;
-    if (cs.count > 0) await supabase.rpc('decrement_stock', { p_item_id: item.id, p_qty: cs.count, p_source: 'manual', p_note: 'Özel reçete stoğu silindi' });
+    if (cs.count > 0) await supabase.rpc('decrement_stock', { p_item_id: item.id, p_qty: cs.count, p_source: 'manual', p_note: 'Özel reçete stoğu silindi', p_source_id: null, p_recipe_id: null, p_custom_recipe: null });
     for (const mv of cs.movements) await supabase.from('stock_movements').delete().eq('id', mv.id);
     pageCache.invalidate('stock_items');
     setTab(''); setTimeout(() => setTab('recipes'), 50);
