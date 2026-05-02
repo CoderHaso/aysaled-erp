@@ -602,6 +602,8 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
         tax_total:        invoiceToggle ? Math.round(taxTotal * 100) / 100 : 0,
         grand_total:      invoiceToggle ? Math.round(grandTotal * 100) / 100 : Math.round(subtotal * 100) / 100,
         is_invoiced:      invoiceToggle ? true : false,
+        // Geçmiş sipariş: created_at'i kullanıcının seçtiği tarih olarak ayarla
+        ...(form.is_history && form.history_date ? { created_at: new Date(form.history_date).toISOString() } : {}),
         // quote_id — tekliften gelen siparişlerde bağlantı kurulur
         ...(quoteId ? { quote_id: quoteId } : {}),
       };
@@ -862,6 +864,7 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
             </div>
 
             {!isEdit && (
+              <>
               <div className="flex items-center justify-between p-3 rounded-xl" style={{ background: isDark ? 'rgba(245,158,11,0.05)' : 'rgba(245,158,11,0.05)', border: `1px solid rgba(245,158,11,0.2)` }}>
                 <div>
                   <p className="text-sm font-semibold" style={{ color: isDark ? '#f59e0b' : '#d97706' }}>Geçmiş Sipariş (Sadece Kayıt)</p>
@@ -876,6 +879,19 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
                     style={{ left: form.is_history ? '1.625rem' : '0.125rem' }} />
                 </button>
               </div>
+              {form.is_history && (
+                <div className="flex items-center gap-3 p-3 rounded-xl" style={{ background: isDark ? 'rgba(245,158,11,0.03)' : 'rgba(245,158,11,0.03)', border: `1px solid rgba(245,158,11,0.15)` }}>
+                  <div className="flex-1">
+                    <p className="text-xs font-bold" style={{ color: '#f59e0b' }}>Sipariş Tarihi</p>
+                    <p className="text-[10px] mt-0.5" style={{ color: isDark ? '#64748b' : '#64748b' }}>Raporlarda bu tarihte görünecektir.</p>
+                  </div>
+                  <input type="date" value={form.history_date || new Date().toISOString().slice(0,10)}
+                    onChange={e => setForm(f => ({ ...f, history_date: e.target.value }))}
+                    className="px-3 py-2 text-sm rounded-xl border outline-none"
+                    style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', borderColor: isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0', color: isDark ? '#f1f5f9' : '#1e293b' }} />
+                </div>
+              )}
+              </>
             )}
           </div>
 

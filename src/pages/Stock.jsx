@@ -1132,6 +1132,7 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
     }
 
     setQe(false); setQeSaving(false);
+    pageCache.invalidate('stock_items');
     onRefresh?.({ ...item, ...patch, stock_count: newStock });
   };
 
@@ -1141,8 +1142,6 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
   const saveRecipeStock = async (type, id, oldCount, newCount) => {
     const diff = newCount - oldCount;
     if (diff === 0) { setEditingRecipeStock(null); return; }
-    // Base reçeteler sadece azaltılabilir
-    if (type === 'base' && diff > 0) { setEditingRecipeStock(null); return; }
     if (type === 'base') {
       await supabase.from('product_recipe_stock').update({ stock_count: newCount, updated_at: new Date().toISOString() }).eq('id', id);
     }

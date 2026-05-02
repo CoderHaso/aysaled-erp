@@ -626,6 +626,8 @@ export default function ItemDrawer({ item, defaultType = 'raw', onBack, onSave, 
                 </p>
               </div>
             )}
+            {/* Reçeteli ürünlerde reçete bazlı stok düzenleme */}
+            {isProduct && isEdit && <RecipeStockEditor itemId={item.id} c={c} currentColor={currentColor} isDark={isDark} />}
           </>
         )}
 
@@ -685,4 +687,90 @@ function stkLabel(c, l) {
   if (c <= 0) return '🔴 Stok Yok';
   if (c <= l) return '🟡 Kritik';
   return '🟢 Normal';
+}
+
+// ── Reçete Stok Düzenleme (ItemDrawer stok sekmesi içinde) ──
+function RecipeStockEditor({ itemId, c, currentColor, isDark }) {
+  const [recipes, setRecipes] = React.useState([]);
+  const [recipeStocks, setRecipeStocks] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [saving, setSaving] = React.useState(null);
+  const [editVals, setEditVals] = React.useState({});
+
+  React.useEffect(() => {
+    if (!itemId) return;
+    setLoading(true);
+    Promise.all([
+      supabase.from('product_recipes').select('id, name').eq('product_id', itemId).order('name'),
+      supabase.from('product_recipe_stock').select('*').eq('product_id', itemId),
+    ]).then(([rRes, sRes]) => {
+      setRecipes(rRes.data || []);
+      setRecipeStocks(sRes.data || []);
+      setLoading(false);
+    });
+  }, [itemId]);
+
+  if (loading) return <p className="text-xs py-4 text-center" style={{ color: c.muted }}>Reçete stokları yükleniyor...</p>;
+  if (recipes.length === 0) return null;
+
+  const handleSave = async (recipeId) => {
+    const newCount = Number(editVals[recipeId] ?? 0);
+    const existing = recipeStocks.find(rs => rs.recipe_id === recipeId);
+    const oldCount = existing?.stock_count || 0;
+    const diff = newCount - oldCount;
+    if (diff === 0) { setEditVals(v => { const n = {...v}; delete n[recipeId]; return n; }); return; }
+
+    setSaving(recipeId);
+    if (existing) {
+      await supabase.from('product_recipe_stock').update({ stock_count: newCount, updated_at: new Date().toISOString() }).eq('id', existing.id);
+    } else {
+      await supabase.from('product_recipe_stock').insert({ product_id: itemId, recipe_id: recipeId, stock_count: newCount });
+    }
+    // Toplam stok güncelle
+    if (diff > 0) await supabase.rpc('increment_stock', { p_item_id: itemId, p_qty: diff, p_source: 'manual', p_note: 'Reçete stok düzenleme' });
+    else await supabase.rpc('decrement_stock', { p_item_id: itemId, p_qty: Math.abs(diff), p_source: 'manual', p_note: 'Reçete stok düzenleme' });
+
+    // Yenile
+    const { data: newStocks } = await supabase.from('product_recipe_stock').select('*').eq('product_id', itemId);
+    setRecipeStocks(newStocks || []);
+    setEditVals(v => { const n = {...v}; delete n[recipeId]; return n; });
+    setSaving(null);
+  };
+
+  return (
+    <div className="rounded-2xl p-4 space-y-3" style={{ background: `${currentColor}06`, border: `1px solid ${currentColor}25` }}>
+      <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: currentColor }}>
+        🧪 Reçete Bazlı Stok
+      </p>
+      <p className="text-[10px]" style={{ color: c.muted }}>
+        Her reçetenin bilinen stok adedini buradan ayarlayabilirsiniz. Normal stok sayısına etki etmez, yalnızca hangi reçeteden kaç adet bilindiğini gösterir.
+      </p>
+      <div className="space-y-2">
+        {recipes.map(r => {
+          const rs = recipeStocks.find(s => s.recipe_id === r.id);
+          const currentVal = editVals[r.id] ?? rs?.stock_count ?? 0;
+          const isEditing = editVals[r.id] !== undefined;
+          return (
+            <div key={r.id} className="flex items-center gap-3 p-2.5 rounded-xl" style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', border: `1px solid ${c.border}` }}>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold truncate" style={{ color: c.text }}>{r.name}</p>
+              </div>
+              <input type="number" min="0" step="1" value={currentVal}
+                onChange={e => setEditVals(v => ({ ...v, [r.id]: e.target.value }))}
+                className="w-20 px-2 py-1.5 text-xs font-bold rounded-lg border outline-none text-center"
+                style={{ background: 'transparent', borderColor: isEditing ? currentColor : c.border, color: currentColor }} />
+              <span className="text-[10px] font-bold" style={{ color: c.muted }}>adet</span>
+              {isEditing && (
+                <button onClick={() => handleSave(r.id)} disabled={saving === r.id}
+                  className="px-3 py-1.5 text-[10px] font-bold rounded-lg text-white"
+                  style={{ background: saving === r.id ? '#64748b' : currentColor }}>
+                  {saving === r.id ? '...' : 'Kaydet'}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }

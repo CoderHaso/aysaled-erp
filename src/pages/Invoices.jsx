@@ -14,7 +14,7 @@ import { pageCache } from '../lib/pageCache';
 import CustomDialog from '../components/CustomDialog';
 import { useFxRates } from '../hooks/useFxRates';
 import { trNorm } from '../lib/trNorm';
-import { printDocument } from '../lib/printService';
+import { printHTML } from '../lib/printService';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const STATUS_MAP = {
@@ -1411,30 +1411,46 @@ export default function Invoices({ type = 'inbox' }) {
     const title = `${isOutbox ? 'Giden (Satış)' : 'Gelen (Alış)'} Faturaları Raporu`;
     
     let grandTotalTRY = 0;
+    let grandMatrahTRY = 0;
+    let grandVatTRY = 0;
 
     const rows = filtered.map(inv => {
       const date = inv.issue_date ? new Date(inv.issue_date).toLocaleDateString('tr-TR') : '-';
       const statusLabel = STATUS_MAP[inv.status]?.label || inv.status || '-';
+      const tip = typeToTR(inv.invoice_type) || '-';
+      const profil = typeToTR(inv.invoice_tip_type) || '-';
+      const isIade = isIadeInvoice(inv);
+      const isTevkifat = profil.toUpperCase().includes('TEVKIFAT');
+
+      let flags = [];
+      if (isIade) flags.push('<span style="color:#f97316">İADE</span>');
+      if (isTevkifat) flags.push('<span style="color:#8b5cf6">TEVKİFAT</span>');
+      const flagsHtml = flags.length > 0 ? `<br><small>${flags.join(' / ')}</small>` : '';
+
+      const rate = (inv.currency !== 'TRY' && inv.exchange_rate) ? Number(inv.exchange_rate) : 1;
       
-      let tryEq = 0;
-      if (inv.currency === 'TRY') {
-        tryEq = Number(inv.amount || 0);
-      } else if (inv.exchange_rate) {
-        tryEq = Number(inv.amount || 0) * Number(inv.exchange_rate);
-      } else {
-        // Eğer kur yoksa, genel bir tahmini oran kullanılamıyorsa 0
-        tryEq = Number(inv.amount || 0); 
-      }
-      grandTotalTRY += tryEq;
+      const matrah = Number(inv.tax_exclusive_amount || 0);
+      const kdv = Number(inv.tax_total || 0);
+      const total = Number(inv.amount || 0);
+
+      grandMatrahTRY += matrah * rate;
+      grandVatTRY += kdv * rate;
+      grandTotalTRY += total * rate;
 
       return `<tr>
-        <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px">${date}</td>
-        <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px">${inv.invoice_id}</td>
-        <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px">${inv.cari_name || '-'}</td>
-        <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px">${inv.vkntckn || '-'}</td>
-        <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px">${statusLabel}</td>
-        <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px;text-align:right;font-weight:bold">
-          ${Number(inv.amount).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${inv.currency}
+        <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:11px">${date}</td>
+        <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:11px">${inv.invoice_id}</td>
+        <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:11px">${inv.cari_name || '-'}</td>
+        <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:11px">${tip} / ${profil}${flagsHtml}</td>
+        <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:11px">${statusLabel}</td>
+        <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:11px;text-align:right">
+          ${matrah.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${inv.currency}
+        </td>
+        <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:11px;text-align:right">
+          ${kdv.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${inv.currency}
+        </td>
+        <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:11px;text-align:right;font-weight:bold">
+          ${total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${inv.currency}
         </td>
       </tr>`;
     }).join('');
@@ -1445,17 +1461,19 @@ export default function Invoices({ type = 'inbox' }) {
         <p style="margin-top:0;font-size:13px;color:#64748b;margin-bottom:20px">
           ${startDate ? startDate + ' tarihinden itibaren' : ''} 
           ${endDate ? (startDate ? ' - ' : '') + endDate + ' tarihine kadar' : ''}
-          (${filtered.length} kayıt)
+          (${filtered.length} adet fatura listeleniyor)
         </p>
         <table style="width:100%;border-collapse:collapse;">
           <thead>
             <tr style="background:#f8fafc">
-              <th style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px;text-align:left">Tarih</th>
-              <th style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px;text-align:left">Fatura No</th>
-              <th style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px;text-align:left">Cari Ünvanı</th>
-              <th style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px;text-align:left">VKN/TCKN</th>
-              <th style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px;text-align:left">Durum</th>
-              <th style="padding:8px 12px;border:1px solid #e2e8f0;font-size:12px;text-align:right">Tutar</th>
+              <th style="padding:8px 12px;border:1px solid #e2e8f0;font-size:11px;text-align:left">Tarih</th>
+              <th style="padding:8px 12px;border:1px solid #e2e8f0;font-size:11px;text-align:left">Fatura No</th>
+              <th style="padding:8px 12px;border:1px solid #e2e8f0;font-size:11px;text-align:left">Cari Ünvanı</th>
+              <th style="padding:8px 12px;border:1px solid #e2e8f0;font-size:11px;text-align:left">Tür / Profil</th>
+              <th style="padding:8px 12px;border:1px solid #e2e8f0;font-size:11px;text-align:left">Durum</th>
+              <th style="padding:8px 12px;border:1px solid #e2e8f0;font-size:11px;text-align:right">Matrah</th>
+              <th style="padding:8px 12px;border:1px solid #e2e8f0;font-size:11px;text-align:right">KDV</th>
+              <th style="padding:8px 12px;border:1px solid #e2e8f0;font-size:11px;text-align:right">Genel Toplam</th>
             </tr>
           </thead>
           <tbody>
@@ -1463,8 +1481,14 @@ export default function Invoices({ type = 'inbox' }) {
           </tbody>
           <tfoot>
             <tr style="background:#f1f5f9">
-              <td colspan="5" style="padding:10px 12px;border:1px solid #e2e8f0;font-size:13px;text-align:right;font-weight:bold">Genel Toplam (Yaklaşık TL Karşılığı):</td>
-              <td style="padding:10px 12px;border:1px solid #e2e8f0;font-size:14px;text-align:right;font-weight:900;color:#10b981">
+              <td colspan="5" style="padding:10px 12px;border:1px solid #e2e8f0;font-size:12px;text-align:right;font-weight:bold">Tahmini TRY Karşılığı Toplamı:</td>
+              <td style="padding:10px 12px;border:1px solid #e2e8f0;font-size:12px;text-align:right;font-weight:bold;color:#475569">
+                ₺${grandMatrahTRY.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+              </td>
+              <td style="padding:10px 12px;border:1px solid #e2e8f0;font-size:12px;text-align:right;font-weight:bold;color:#475569">
+                ₺${grandVatTRY.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
+              </td>
+              <td style="padding:10px 12px;border:1px solid #e2e8f0;font-size:13px;text-align:right;font-weight:900;color:#10b981">
                 ₺${grandTotalTRY.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
               </td>
             </tr>
@@ -1473,7 +1497,7 @@ export default function Invoices({ type = 'inbox' }) {
       </div>
     `;
 
-    printDocument('custom', { title, content: html }, title);
+    printHTML(html, title);
   };
 
   return (

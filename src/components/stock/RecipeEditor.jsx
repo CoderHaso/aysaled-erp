@@ -374,6 +374,52 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
           </div>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
+          <button onClick={() => {
+            const html = `
+              <div style="font-family:sans-serif;color:#1e293b;padding:20px;">
+                <h2 style="margin-bottom:20px;font-size:24px;border-bottom:2px solid #e2e8f0;padding-bottom:10px">
+                  ${recipe.name}
+                </h2>
+                <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+                  <thead>
+                    <tr style="background:#f8fafc">
+                      <th style="padding:10px;border:1px solid #e2e8f0;text-align:left;font-size:14px">#</th>
+                      <th style="padding:10px;border:1px solid #e2e8f0;text-align:left;font-size:14px">Malzeme</th>
+                      <th style="padding:10px;border:1px solid #e2e8f0;text-align:right;font-size:14px">Miktar</th>
+                      <th style="padding:10px;border:1px solid #e2e8f0;text-align:left;font-size:14px">Birim</th>
+                      <th style="padding:10px;border:1px solid #e2e8f0;text-align:right;font-size:14px">B. Maliyet</th>
+                      <th style="padding:10px;border:1px solid #e2e8f0;text-align:right;font-size:14px">Tutar</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${(recipe.recipe_items || []).map((ri, i) => {
+                      const qty = Number(ri.quantity || 1);
+                      const price = Number(ri.item?.purchase_price || 0);
+                      const sym = CURRENCY_SYM[ri.item?.base_currency || 'TRY'] || '₺';
+                      return `<tr>
+                        <td style="padding:10px;border:1px solid #e2e8f0;font-size:13px">${i+1}</td>
+                        <td style="padding:10px;border:1px solid #e2e8f0;font-size:13px">${ri.item_name}</td>
+                        <td style="padding:10px;border:1px solid #e2e8f0;font-size:13px;text-align:right">${qty}</td>
+                        <td style="padding:10px;border:1px solid #e2e8f0;font-size:13px">${ri.unit}</td>
+                        <td style="padding:10px;border:1px solid #e2e8f0;font-size:13px;text-align:right">${sym}${price.toFixed(2)}</td>
+                        <td style="padding:10px;border:1px solid #e2e8f0;font-size:13px;text-align:right;font-weight:bold">${sym}${(qty*price).toFixed(2)}</td>
+                      </tr>`;
+                    }).join('')}
+                  </tbody>
+                </table>
+                <div style="text-align:right;font-size:18px;font-weight:bold;margin-top:20px;color:#10b981">
+                  Maliyet Toplamı: ${CURRENCY_SYM[productCurrency || 'TRY'] || '₺'}${totalCost.toFixed(2)}
+                </div>
+              </div>
+            `;
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write('<html><head><title>Reçete Yazdır</title></head><body onload="window.print();window.close()">' + html + '</body></html>');
+            printWindow.document.close();
+          }}
+            className="p-1.5 rounded-lg hover:bg-emerald-500/10 transition-colors"
+            title="Reçeteyi Yazdır" style={{ color: '#10b981' }}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+          </button>
           <button onClick={() => onCopyThisRecipe(recipe)}
             className="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
             title="Bu reçeteyi kopyala" style={{ color: c.muted }}>
@@ -389,9 +435,9 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
 
       {/* Expanded content */}
       {expanded && (
-        <div className="border-t flex flex-col sm:flex-row rounded-b-2xl" style={{ borderColor: c.border }}>
+        <div className="border-t flex flex-col md:flex-row rounded-b-2xl" style={{ borderColor: c.border }}>
           {/* SOL: Hammadde Listesi */}
-          <div className="sm:w-1/3 p-4 border-b sm:border-b-0 sm:border-r" style={{ borderColor: c.border, background: isDark ? 'rgba(255,255,255,0.01)' : '#f8fafc' }}>
+          <div className="md:w-[260px] lg:w-[320px] p-4 border-b md:border-b-0 md:border-r flex-shrink-0" style={{ borderColor: c.border, background: isDark ? 'rgba(255,255,255,0.01)' : '#f8fafc' }}>
             <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: c.muted }}>Malzeme Listesi</p>
             <div className="relative mb-3">
               <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: c.muted }} />
@@ -428,7 +474,7 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
           </div>
 
           {/* SAĞ: Reçete Detayları */}
-          <div className="sm:w-2/3 p-4 space-y-4">
+          <div className="flex-1 min-w-0 p-4 space-y-4">
             {/* Etiketler */}
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: c.muted }}>
@@ -556,9 +602,18 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
                   <span className="text-sm font-black" style={{ color: currentColor }}>
                     {CURRENCY_SYM[productCurrency || 'TRY'] || '₺'}{totalCost.toFixed(2)}
                   </span>
-                  {isForeign && totalCost > 0 && (
-                    <div className="text-[9px] font-bold mt-0.5" style={{ color: c.muted }}>
-                      ≈ ₺{tryEq} (Kur: {kur})
+                  {totalCost > 0 && (
+                    <div className="text-[9px] font-bold mt-0.5 flex items-center justify-end gap-2" style={{ color: c.muted }}>
+                      <span className="flex items-center gap-1">
+                        <span style={{ color: '#10b981' }}>₺{tryEq}</span>
+                        {productCurrency !== 'TRY' && <span className="opacity-70">(Kur: {kur})</span>}
+                      </span>
+                      {productCurrency !== 'USD' && (
+                        <span style={{ color: '#3b82f6' }}>${convert(totalCost, productCurrency || 'TRY', 'USD').toFixed(2)}</span>
+                      )}
+                      {productCurrency !== 'EUR' && (
+                        <span style={{ color: '#f59e0b' }}>€{convert(totalCost, productCurrency || 'TRY', 'EUR').toFixed(2)}</span>
+                      )}
                     </div>
                   )}
                 </div>
@@ -606,15 +661,19 @@ function RecipeItemRow({ item, index, rawItems, onChange, onBlur, onDelete, c, c
     setDropOpen(true);
   };
 
+  const unitPrice = item.item?.purchase_price || 0;
+  const qty = Number(item.quantity || 1);
+  const subtotal = unitPrice * qty;
+  const curSym = CURRENCY_SYM[item.item?.base_currency || 'TRY'] || '₺';
+
   return (
-    <div className="grid gap-1.5 rounded-xl p-2"
-      style={{ background: isDark ? 'rgba(255,255,255,0.02)' : '#f8fafc', border: `1px solid ${c.border}`,
-        gridTemplateColumns: '24px 1fr 70px 80px 28px' }}>
-      <span className="text-[10px] font-bold flex items-center justify-center" style={{ color: c.muted }}>
+    <div className="flex flex-wrap sm:flex-nowrap gap-1.5 rounded-xl p-2 items-center"
+      style={{ background: isDark ? 'rgba(255,255,255,0.02)' : '#f8fafc', border: `1px solid ${c.border}` }}>
+      <span className="text-[10px] font-bold w-5 flex-shrink-0 text-center" style={{ color: c.muted }}>
         {index + 1}
       </span>
       {/* İsim / hammadde seçici */}
-      <div className="relative">
+      <div className="relative flex-1 min-w-[120px]">
         {dropOpen ? (
           <div>
             <input autoFocus value={itemSearch}
@@ -675,12 +734,12 @@ function RecipeItemRow({ item, index, rawItems, onChange, onBlur, onDelete, c, c
           </div>
         ) : (
           <button ref={btnRef} onClick={openDrop}
-            className="w-full h-full text-left px-2 py-1 flex items-center justify-between text-xs rounded-lg border min-w-0"
+            className="w-full h-full text-left px-2 py-1.5 flex items-center justify-between text-xs rounded-lg border min-w-0"
             style={{ background: 'transparent', borderColor: c.border, color: item.item_name ? c.text : c.muted }}>
             <span className="truncate pr-1">{item.item_name || 'Malzeme seç...'}</span>
             {item.item?.purchase_price > 0 && (
               <span className="text-[9px] font-bold flex-shrink-0" style={{ color: currentColor, opacity: 0.8 }}>
-                {CURRENCY_SYM[item.item?.base_currency || 'TRY'] || '₺'}{item.item?.purchase_price}
+                {curSym}{item.item?.purchase_price}
               </span>
             )}
           </button>
@@ -691,20 +750,28 @@ function RecipeItemRow({ item, index, rawItems, onChange, onBlur, onDelete, c, c
         value={item.quantity}
         onChange={e => onChange({ quantity: e.target.value })}
         onBlur={e => onBlur({ quantity: parseFloat(e.target.value) || 1 })}
-        className="px-2 py-1 text-xs rounded-lg border outline-none text-center"
+        className="w-16 px-2 py-1 text-xs rounded-lg border outline-none text-center flex-shrink-0"
         style={{ background: 'transparent', borderColor: c.border, color: c.text }} />
       {/* Birim */}
       <select value={item.unit || 'Adet'}
         onChange={e => { onChange({ unit: e.target.value }); onBlur({ unit: e.target.value }); }}
-        className="px-1 py-1 text-xs rounded-lg border outline-none"
+        className="w-20 px-1 py-1.5 text-xs rounded-lg border outline-none flex-shrink-0"
         style={{ background: c.card, borderColor: c.border, color: c.text }}>
         {UNITS.map(u => <option key={u}>{u}</option>)}
       </select>
+      {/* Subtotal */}
+      {unitPrice > 0 ? (
+        <div className="w-16 text-right flex-shrink-0 text-[10px] font-bold" style={{ color: currentColor }}>
+          {curSym}{subtotal.toFixed(2)}
+        </div>
+      ) : (
+        <div className="w-16 flex-shrink-0"></div>
+      )}
       {/* Sil */}
       <button onClick={onDelete}
-        className="p-1 rounded-lg flex items-center justify-center hover:bg-red-500/10 transition-colors"
+        className="w-6 h-6 flex items-center justify-center rounded-lg hover:bg-red-500/10 transition-colors flex-shrink-0"
         style={{ color: '#ef4444' }}>
-        <Trash2 size={12} />
+        <Trash2 size={13} />
       </button>
     </div>
   );
