@@ -87,13 +87,13 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'query_items',
-      description: 'Ürün veya hammadde arar. Stok durumu, fiyat bilgisi içerir.',
+      description: 'Ürün veya hammadde arar. Stok durumu, fiyat bilgisi içerir. has_recipe alanı reçetesi olup olmadığını gösterir.',
       parameters: {
         type: 'object',
         properties: {
           search:     { type: 'string', description: 'Ürün adı veya SKU ile ara' },
           type:       { type: 'string', enum: ['product', 'raw', 'all'], description: 'product=mamül, raw=hammadde, all=tümü', default: 'all' },
-          limit:      { type: 'integer', description: 'Sonuç limiti', default: 30 },
+          limit:      { type: 'integer', description: 'Sonuç limiti', default: 50 },
           critical_only: { type: 'boolean', description: 'Sadece kritik stok altındakileri getir' },
         },
       },
@@ -103,16 +103,16 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'query_invoices',
-      description: 'Faturaları sorgular. Gelen (alış) veya giden (satış) faturalarını filtreler. Belirli bir ay (ör: Nisan) istenirse date_from ve date_to ile (invoice_date sütunu üzerinden) filtreleyin.',
+      description: 'Faturaları sorgular ve özet istatistiklerle birlikte döner. TEK ÇAĞRI ile hem fatura listesini hem de toplam/adet/kdv özetini alırsın. Nisan ayı gibi dönem sorularında date_from ve date_to kullan.',
       parameters: {
         type: 'object',
         properties: {
-          direction:   { type: 'string', enum: ['inbound', 'outbound', 'all'], description: 'inbound=gelen/alış, outbound=giden/satış', default: 'all' },
-          date_from:   { type: 'string', description: 'Başlangıç tarihi (YYYY-MM-DD). Fatura tarihi (invoice_date) bu tarihten büyük/eşit olanları getirir.' },
-          date_to:     { type: 'string', description: 'Bitiş tarihi (YYYY-MM-DD). Fatura tarihi (invoice_date) bu tarihten küçük/eşit olanları getirir.' },
+          direction:   { type: 'string', enum: ['inbound', 'outbound', 'all'], description: 'inbound=gelen/alış, outbound=giden/satış, all=tümü', default: 'all' },
+          date_from:   { type: 'string', description: 'Başlangıç tarihi (YYYY-MM-DD)' },
+          date_to:     { type: 'string', description: 'Bitiş tarihi (YYYY-MM-DD)' },
           customer_id: { type: 'string', description: 'Cari ID filtresi' },
           search:      { type: 'string', description: 'Fatura numarası veya cari adı ile ara' },
-          limit:       { type: 'integer', description: 'Sonuç limiti', default: 100 },
+          limit:       { type: 'integer', description: 'Sonuç limiti', default: 200 },
         },
       },
     },
@@ -121,7 +121,7 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'query_orders',
-      description: 'Siparişleri sorgular. Belirli bir ay veya tarih istenirse date_from ve date_to ile (order_date sütunu üzerinden) filtreleyin.',
+      description: 'Siparişleri sorgular ve özet istatistiklerle birlikte döner. TEK ÇAĞRI ile hem sipariş listesini hem de toplam/adet özetini alırsın.',
       parameters: {
         type: 'object',
         properties: {
@@ -129,7 +129,7 @@ const TOOLS = [
           status:      { type: 'string', description: 'Sipariş durumu filtresi' },
           date_from:   { type: 'string', description: 'Başlangıç tarihi (YYYY-MM-DD)' },
           date_to:     { type: 'string', description: 'Bitiş tarihi (YYYY-MM-DD)' },
-          limit:       { type: 'integer', default: 100 },
+          limit:       { type: 'integer', default: 200 },
         },
       },
     },
@@ -138,14 +138,14 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'query_order_items',
-      description: 'Satış siparişlerindeki satır kalemlerini (hangi üründen ne kadar satılmış) sorgular. Tarihe göre (orders tablosundan) filtreleyerek en çok satılan ürünleri vs. bulabilirsiniz.',
+      description: 'Sipariş satır kalemlerini sorgular. Hangi üründen kaç adet satıldığını, ürün bazlı toplam ciroyu verir. En çok satılan ürünleri bulmak için kullan.',
       parameters: {
         type: 'object',
         properties: {
           date_from:   { type: 'string', description: 'Başlangıç tarihi (YYYY-MM-DD)' },
           date_to:     { type: 'string', description: 'Bitiş tarihi (YYYY-MM-DD)' },
           item_id:     { type: 'string', description: 'Ürün ID filtresi' },
-          limit:       { type: 'integer', default: 100 },
+          limit:       { type: 'integer', default: 500 },
         },
       },
     },
@@ -202,12 +202,14 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'query_recipes',
-      description: 'Bir ürüne ait reçeteleri ve malzeme listesini getirir.',
+      description: 'Reçeteleri sorgular. Tek bir ürünün reçetesini veya TÜM reçeteleri toplam maliyetleriyle birlikte döner. Her reçetenin kalem detayları (hammadde adı, miktar, birim fiyat) ve hesaplanmış maliyet toplamı dahildir. En pahalı reçeteler, maliyet analizi vb. için kullan.',
       parameters: {
         type: 'object',
         properties: {
-          product_id: { type: 'string', description: 'Ürün ID' },
-          search:     { type: 'string', description: 'Ürün adı ile ara' },
+          product_id: { type: 'string', description: 'Belirli bir ürünün reçeteleri için ürün ID' },
+          search:     { type: 'string', description: 'Ürün adı ile ara (tek ürün)' },
+          list_all:   { type: 'boolean', description: 'true ise TÜM reçeteleri maliyetleriyle birlikte listeler', default: false },
+          limit:      { type: 'integer', description: 'list_all modunda sonuç limiti', default: 50 },
         },
       },
     },
@@ -248,7 +250,7 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'get_summary_stats',
-      description: 'Genel özet istatistikleri getirir: toplam ürün, hammadde, müşteri, tedarikçi, sipariş, fatura sayıları ve toplam stok değeri.',
+      description: 'Genel özet istatistikleri getirir: toplam ürün, hammadde, müşteri, tedarikçi, sipariş, fatura sayıları.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -441,7 +443,7 @@ async function executeTool(name, rawArgs) {
       }
 
       case 'query_items': {
-        let q = supabase.from('items').select('id,name,sku,unit,item_type,stock_count,critical_limit,purchase_price,sale_price,base_currency,sale_currency,location,supplier_name').eq('is_draft', false).order('name').limit(args.limit || 30);
+        let q = supabase.from('items').select('id,name,sku,unit,item_type,stock_count,critical_limit,purchase_price,sale_price,base_currency,sale_currency,location,supplier_name,vat_rate,category').eq('is_draft', false).order('name').limit(args.limit || 50);
         if (args.type === 'product') q = q.eq('item_type', 'product');
         else if (args.type === 'raw') q = q.neq('item_type', 'product');
         if (args.search) q = q.or(`name.ilike.%${args.search}%,sku.ilike.%${args.search}%`);
@@ -449,43 +451,118 @@ async function executeTool(name, rawArgs) {
         if (error) throw error;
         let items = data || [];
         if (args.critical_only) items = items.filter(i => i.critical_limit > 0 && i.stock_count <= i.critical_limit);
+
+        // Reçetesi olan ürünleri işaretle
+        if (items.length > 0) {
+          const productIds = items.filter(i => i.item_type === 'product').map(i => i.id);
+          if (productIds.length > 0) {
+            const { data: recipes } = await supabase.from('product_recipes').select('product_id').in('product_id', productIds);
+            const recipeProductIds = new Set((recipes || []).map(r => r.product_id));
+            items = items.map(i => ({ ...i, has_recipe: recipeProductIds.has(i.id) }));
+          }
+        }
         return { count: items.length, data: items };
       }
 
       case 'query_invoices': {
-        let q = supabase.from('invoices').select('id,invoice_number,direction,total_amount,vat_amount,currency,customer_name,customer_vkn,invoice_date,status,source').order('invoice_date', { ascending: false }).limit(args.limit || 50);
-        if (args.direction === 'inbound') q = q.eq('direction', 'inbound');
-        else if (args.direction === 'outbound') q = q.eq('direction', 'outbound');
+        // Sadece gerekli sütunları seç — raw_detail, items vs. gibi ağır alanları ALMA
+        let q = supabase.from('invoices').select('id,invoice_number,direction,total_amount,vat_amount,currency,customer_name,invoice_date,status').order('invoice_date', { ascending: false }).limit(args.limit || 200);
+        if (args.direction && args.direction !== 'all') q = q.eq('direction', args.direction);
         if (args.date_from) q = q.gte('invoice_date', args.date_from);
         if (args.date_to) q = q.lte('invoice_date', args.date_to);
         if (args.customer_id) q = q.eq('customer_id', args.customer_id);
         if (args.search) q = q.or(`invoice_number.ilike.%${args.search}%,customer_name.ilike.%${args.search}%`);
         const { data, error } = await q;
         if (error) throw error;
-        return { count: data?.length || 0, data: data || [] };
+        const invoices = data || [];
+
+        // ── Otomatik özet hesapla (AI'ın tekrar çağırmasına gerek kalmaz) ──
+        const inbound = invoices.filter(i => i.direction === 'inbound');
+        const outbound = invoices.filter(i => i.direction === 'outbound');
+        const sumAmount = (arr) => arr.reduce((s, i) => s + (Number(i.total_amount) || 0), 0);
+        const sumVat = (arr) => arr.reduce((s, i) => s + (Number(i.vat_amount) || 0), 0);
+
+        return {
+          count: invoices.length,
+          summary: {
+            total_invoices: invoices.length,
+            inbound_count: inbound.length,
+            outbound_count: outbound.length,
+            inbound_total: sumAmount(inbound).toFixed(2),
+            inbound_vat: sumVat(inbound).toFixed(2),
+            outbound_total: sumAmount(outbound).toFixed(2),
+            outbound_vat: sumVat(outbound).toFixed(2),
+            grand_total: sumAmount(invoices).toFixed(2),
+            grand_vat: sumVat(invoices).toFixed(2),
+          },
+          data: invoices,
+        };
       }
 
       case 'query_orders': {
-        let q = supabase.from('orders').select('id,order_number,customer_name,customer_vkn,status,total,vat_total,grand_total,currency,order_date,delivery_date,notes').order('order_date', { ascending: false }).limit(args.limit || 100);
+        let q = supabase.from('orders').select('id,order_number,customer_name,status,total,vat_total,grand_total,currency,order_date').order('order_date', { ascending: false }).limit(args.limit || 200);
         if (args.customer_id) q = q.eq('customer_id', args.customer_id);
         if (args.status) q = q.eq('status', args.status);
         if (args.date_from) q = q.gte('order_date', args.date_from);
         if (args.date_to) q = q.lte('order_date', args.date_to);
         const { data, error } = await q;
         if (error) throw error;
-        return { count: data?.length || 0, data: data || [] };
+        const orders = data || [];
+
+        // ── Otomatik özet hesapla ──
+        const byStatus = {};
+        orders.forEach(o => {
+          const s = o.status || 'unknown';
+          if (!byStatus[s]) byStatus[s] = { count: 0, total: 0 };
+          byStatus[s].count++;
+          byStatus[s].total += Number(o.grand_total) || 0;
+        });
+        const grandTotal = orders.reduce((s, o) => s + (Number(o.grand_total) || 0), 0);
+        const vatTotal = orders.reduce((s, o) => s + (Number(o.vat_total) || 0), 0);
+
+        return {
+          count: orders.length,
+          summary: {
+            total_orders: orders.length,
+            grand_total: grandTotal.toFixed(2),
+            vat_total: vatTotal.toFixed(2),
+            by_status: byStatus,
+          },
+          data: orders,
+        };
       }
 
       case 'query_order_items': {
-        // Sipariş satırları (order_items) ve ilgili sipariş tarihi (orders.order_date)
-        let q = supabase.from('order_items').select('id, order_id, item_id, item_name, quantity, unit, unit_price, line_total, orders!inner(order_date, status)');
+        // Sipariş satırları (order_items) ve ilgili sipariş tarihi
+        let q = supabase.from('order_items').select('id, order_id, item_id, item_name, quantity, unit, unit_price, line_total, orders!inner(order_date, status, order_number)');
         if (args.item_id) q = q.eq('item_id', args.item_id);
         if (args.date_from) q = q.gte('orders.order_date', args.date_from);
         if (args.date_to) q = q.lte('orders.order_date', args.date_to);
-        q = q.limit(args.limit || 100);
+        q = q.limit(args.limit || 500);
         const { data, error } = await q;
         if (error) throw error;
-        return { count: data?.length || 0, data: data || [] };
+        const items = data || [];
+
+        // ── Ürün bazlı toplama (en çok satılanlar) ──
+        const byProduct = {};
+        items.forEach(oi => {
+          const key = oi.item_name || oi.item_id || 'Bilinmeyen';
+          if (!byProduct[key]) byProduct[key] = { item_id: oi.item_id, item_name: key, total_qty: 0, total_revenue: 0, order_count: 0 };
+          byProduct[key].total_qty += Number(oi.quantity) || 0;
+          byProduct[key].total_revenue += Number(oi.line_total) || 0;
+          byProduct[key].order_count++;
+        });
+        const topProducts = Object.values(byProduct).sort((a, b) => b.total_revenue - a.total_revenue);
+
+        return {
+          count: items.length,
+          summary: {
+            unique_products: topProducts.length,
+            total_revenue: topProducts.reduce((s, p) => s + p.total_revenue, 0).toFixed(2),
+          },
+          top_products: topProducts.slice(0, 20),
+          data: items,
+        };
       }
 
       case 'query_quotes': {
@@ -499,7 +576,7 @@ async function executeTool(name, rawArgs) {
       }
 
       case 'query_payments': {
-        let q = supabase.from('payments').select('*').order('payment_date', { ascending: false }).limit(args.limit || 30);
+        let q = supabase.from('payments').select('id,amount,currency,payment_type,payment_date,description,customer_id,supplier_id').order('payment_date', { ascending: false }).limit(args.limit || 30);
         if (args.customer_id) q = q.eq('customer_id', args.customer_id);
         if (args.supplier_id) q = q.eq('supplier_id', args.supplier_id);
         if (args.date_from) q = q.gte('payment_date', args.date_from);
@@ -510,7 +587,7 @@ async function executeTool(name, rawArgs) {
       }
 
       case 'query_work_orders': {
-        let q = supabase.from('work_orders').select('*').order('created_at', { ascending: false }).limit(args.limit || 20);
+        let q = supabase.from('work_orders').select('id,product_id,status,quantity,notes,created_at').order('created_at', { ascending: false }).limit(args.limit || 20);
         if (args.status) q = q.eq('status', args.status);
         if (args.product_id) q = q.eq('product_id', args.product_id);
         const { data, error } = await q;
@@ -519,17 +596,82 @@ async function executeTool(name, rawArgs) {
       }
 
       case 'query_recipes': {
+        // ── list_all modu: TÜM reçeteleri maliyetleriyle listele ──
+        if (args.list_all) {
+          const { data: allRecipes, error } = await supabase.from('product_recipes')
+            .select('id, product_id, name, tags, other_costs, recipe_items(id, item_name, quantity, unit, item:item_id(purchase_price, base_currency))')
+            .order('created_at', { ascending: false })
+            .limit(args.limit || 50);
+          if (error) throw error;
+
+          // Her reçetenin toplam maliyetini hesapla
+          const recipesWithCost = (allRecipes || []).map(r => {
+            let materialCost = 0;
+            (r.recipe_items || []).forEach(ri => {
+              materialCost += (Number(ri.item?.purchase_price) || 0) * (Number(ri.quantity) || 1);
+            });
+            let otherCost = 0;
+            (r.other_costs || []).forEach(oc => { otherCost += Number(oc.amount) || 0; });
+            return {
+              id: r.id,
+              product_id: r.product_id,
+              name: r.name,
+              tags: r.tags,
+              item_count: (r.recipe_items || []).length,
+              material_cost: materialCost.toFixed(2),
+              other_cost: otherCost.toFixed(2),
+              total_cost: (materialCost + otherCost).toFixed(2),
+              items: (r.recipe_items || []).map(ri => ({
+                item_name: ri.item_name,
+                quantity: ri.quantity,
+                unit: ri.unit,
+                unit_price: ri.item?.purchase_price || 0,
+                currency: ri.item?.base_currency || 'TRY',
+                subtotal: ((Number(ri.item?.purchase_price) || 0) * (Number(ri.quantity) || 1)).toFixed(2),
+              })),
+              other_costs: r.other_costs || [],
+            };
+          });
+
+          // Maliyete göre sırala (en pahalı önce)
+          recipesWithCost.sort((a, b) => Number(b.total_cost) - Number(a.total_cost));
+
+          // Ürün adlarını getir
+          const productIds = [...new Set(recipesWithCost.map(r => r.product_id).filter(Boolean))];
+          let productNames = {};
+          if (productIds.length > 0) {
+            const { data: products } = await supabase.from('items').select('id, name').in('id', productIds);
+            (products || []).forEach(p => { productNames[p.id] = p.name; });
+          }
+          recipesWithCost.forEach(r => { r.product_name = productNames[r.product_id] || 'Bilinmeyen'; });
+
+          return { count: recipesWithCost.length, data: recipesWithCost };
+        }
+
+        // ── Tek ürün modu (mevcut davranış) ──
         let productId = args.product_id;
         if (!productId && args.search) {
           const { data: items } = await supabase.from('items').select('id').eq('item_type', 'product').ilike('name', `%${args.search}%`).limit(1);
           productId = items?.[0]?.id;
         }
-        if (!productId) return { error: 'Ürün bulunamadı', data: [] };
+        if (!productId) return { error: 'Ürün bulunamadı. Lütfen ürün adını veya ID\'sini belirtin.', data: [] };
         const { data, error } = await supabase.from('product_recipes')
           .select('*, recipe_items(*, item:item_id(id,name,unit,purchase_price,base_currency))')
           .eq('product_id', productId).order('created_at');
         if (error) throw error;
-        return { count: data?.length || 0, data: data || [] };
+
+        // Maliyet hesapla
+        const enriched = (data || []).map(r => {
+          let materialCost = 0;
+          (r.recipe_items || []).forEach(ri => {
+            materialCost += (Number(ri.item?.purchase_price) || 0) * (Number(ri.quantity) || 1);
+          });
+          let otherCost = 0;
+          (r.other_costs || []).forEach(oc => { otherCost += Number(oc.amount) || 0; });
+          return { ...r, calculated_material_cost: materialCost.toFixed(2), calculated_other_cost: otherCost.toFixed(2), calculated_total_cost: (materialCost + otherCost).toFixed(2) };
+        });
+
+        return { count: enriched.length, data: enriched };
       }
 
       case 'query_stock_movements': {
