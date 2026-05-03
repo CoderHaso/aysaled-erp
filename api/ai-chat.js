@@ -17,12 +17,15 @@ const supabase = createClient(
 // ── Model Registry ───────────────────────────────────────────────────────────
 const MODEL_REGISTRY = {
   // ── Tool-capable models (veritabanı sorgulayabilir) ──
-  'openai/gpt-oss-120b':   { label: 'GPT-OSS 120B',   tier: 1, toolUse: true,  speed: '~500 tps',  desc: 'En güçlü, tool use + reasoning' },
-  'deepseek-r1-distill-llama-70b': { label: 'DeepSeek R1 70B', tier: 1, toolUse: true, speed: '~250 tps', desc: 'Güçlü Mantık (Fiyat: $0.70/1M)' },
-  'llama-3.3-70b-versatile': { label: 'Llama 3.3 70B', tier: 2, toolUse: true,  speed: '~275 tps',  desc: 'Dengeli, güçlü tool (Fiyat: $0.59/1M)' },
-  'deepseek-r1-distill-qwen-32b': { label: 'DeepSeek R1 32B', tier: 3, toolUse: true, speed: '~400 tps', desc: 'Hızlı Mantık (Fiyat: $0.18/1M)' },
-  'qwen/qwen3-32b':        { label: 'Qwen3 32B',      tier: 3, toolUse: true,  speed: '~400 tps',  desc: 'Hızlı, iyi tool use (preview)' },
-  'meta-llama/llama-4-scout-17b-16e-instruct': { label: 'Llama 4 Scout', tier: 4, toolUse: true, speed: '~580 tps', desc: 'Çok hızlı, hafif tool use (preview)' },
+  'openai/gpt-oss-120b':   { label: 'GPT-OSS 120B',   tier: 1, toolUse: true,  speed: '~500 tps',  desc: 'En güçlü (Ücretsiz)' },
+  'deepseek-v4-pro':       { label: 'DeepSeek V4 Pro', tier: 1, toolUse: true, speed: '~80 tps', desc: 'Resmi API ($1.74/1M)' },
+  'deepseek-v4-flash':     { label: 'DeepSeek V4 Flash', tier: 2, toolUse: true, speed: '~250 tps', desc: 'Resmi API ($0.14/1M)' },
+  'deepseek-reasoner':     { label: 'DeepSeek R1',    tier: 1, toolUse: true, speed: '~100 tps', desc: 'Resmi API (Eski Adı)' },
+  'llama-3.3-70b-versatile': { label: 'Llama 3.3 70B', tier: 2, toolUse: true,  speed: '~275 tps',  desc: 'Dengeli, güçlü tool (Ücretsiz)' },
+  'deepseek-r1-distill-llama-70b': { label: 'R1 Distill 70B', tier: 2, toolUse: true, speed: '~250 tps', desc: 'Groq Sunucuları (Ücretsiz)' },
+  'deepseek-r1-distill-qwen-32b': { label: 'R1 Distill 32B', tier: 3, toolUse: true, speed: '~400 tps', desc: 'Groq Sunucuları (Ücretsiz)' },
+  'qwen/qwen3-32b':        { label: 'Qwen3 32B',      tier: 3, toolUse: true,  speed: '~400 tps',  desc: 'Hızlı tool use (Ücretsiz)' },
+  'meta-llama/llama-4-scout-17b-16e-instruct': { label: 'Llama 4 Scout', tier: 4, toolUse: true, speed: '~580 tps', desc: 'Çok hızlı (Ücretsiz)' },
   // ── Chat-only models (tool kullanamaz, sadece sohbet) ──
   'openai/gpt-oss-20b':    { label: 'GPT-OSS 20B',    tier: 5, toolUse: false, speed: '~1050 tps', desc: 'Hızlı sohbet, tool use yok' },
   'llama-3.1-8b-instant':  { label: 'Llama 3.1 8B',   tier: 6, toolUse: false, speed: '~1300 tps', desc: 'En hızlı, basit sohbet (Fiyat: $0.05/1M)' },
@@ -1209,10 +1212,18 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'messages array required' });
   }
 
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: 'GROQ_API_KEY is not configured' });
+  const isDeepSeekAPI = modelMode?.startsWith('deepseek-v4') || modelMode === 'deepseek-chat' || modelMode === 'deepseek-reasoner';
+  let groq;
 
-  const groq = new Groq({ apiKey });
+  if (isDeepSeekAPI) {
+    const dsKey = process.env.DEEPSEEK_API_KEY;
+    if (!dsKey) return res.status(500).json({ error: 'DEEPSEEK_API_KEY is not configured in Vercel' });
+    groq = new Groq({ apiKey: dsKey, baseURL: 'https://api.deepseek.com' });
+  } else {
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: 'GROQ_API_KEY is not configured in Vercel' });
+    groq = new Groq({ apiKey });
+  }
 
   // Sistem prompt — bugünün tarihini enjekte et (Türkiye saat dilimi)
   const today = new Date().toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul', year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
@@ -1302,7 +1313,7 @@ export default async function handler(req, res) {
       for (let modelAttempt = currentModelIdx; modelAttempt < fallbackModels.length; modelAttempt++) {
         const activeModel = fallbackModels[modelAttempt];
         try {
-          completion = await groq.chat.completions.create({
+          const apiOptions = {
             model: activeModel,
             messages: currentMessages,
             tools: TOOLS,
@@ -1310,7 +1321,17 @@ export default async function handler(req, res) {
             temperature: 0.5,
             max_completion_tokens: 4096,
             stream: false,
-          });
+          };
+          
+          if (isDeepSeekAPI) {
+            // DeepSeek specific options
+            if (activeModel === 'deepseek-v4-pro') {
+              apiOptions.thinking = { type: 'enabled' };
+              apiOptions.reasoning_effort = 'high';
+            }
+          }
+
+          completion = await groq.chat.completions.create(apiOptions);
           // Başarılı — bu modeli kullanmaya devam et
           model = activeModel;
           currentModelIdx = modelAttempt;

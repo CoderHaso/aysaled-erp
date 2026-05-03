@@ -16,13 +16,14 @@ function generateId() {
 export const MODEL_OPTIONS = [
   { id: 'auto', label: 'Auto', desc: 'Otomatik yönlendirme', icon: '🤖', group: 'auto' },
   { id: 'openai/gpt-oss-120b', label: 'GPT-OSS 120B', desc: 'En güçlü (Ücretsiz)', icon: '🏆', group: 'tool', speed: '~500 tps' },
-  { id: 'deepseek-r1-distill-llama-70b', label: 'DeepSeek R1 70B', desc: 'Güçlü Mantık ($0.70/1M)', icon: '🧠', group: 'tool', speed: '~250 tps' },
-  { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B', desc: 'Dengeli ($0.59/1M)', icon: '🦙', group: 'tool', speed: '~275 tps' },
-  { id: 'deepseek-r1-distill-qwen-32b', label: 'DeepSeek R1 32B', desc: 'Hızlı Mantık ($0.18/1M)', icon: '🧠', group: 'tool', speed: '~400 tps' },
-  { id: 'qwen/qwen3-32b', label: 'Qwen3 32B', desc: 'Hızlı tool use', icon: '🔮', group: 'tool', speed: '~400 tps' },
-  { id: 'meta-llama/llama-4-scout-17b-16e-instruct', label: 'Llama 4 Scout', desc: 'Çok hızlı, hafif', icon: '⚡', group: 'tool', speed: '~580 tps' },
+  { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', desc: 'Resmi API ($1.74/1M)', icon: '🧠', group: 'tool', speed: '~80 tps' },
+  { id: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash', desc: 'Resmi API ($0.14/1M)', icon: '🧠', group: 'tool', speed: '~250 tps' },
+  { id: 'deepseek-reasoner', label: 'DeepSeek R1', desc: 'Resmi API (Eski)', icon: '🧠', group: 'tool', speed: '~100 tps' },
+  { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B', desc: 'Dengeli (Ücretsiz)', icon: '🦙', group: 'tool', speed: '~275 tps' },
+  { id: 'deepseek-r1-distill-llama-70b', label: 'R1 Distill 70B', desc: 'Groq (Ücretsiz)', icon: '💨', group: 'tool', speed: '~250 tps' },
+  { id: 'qwen/qwen3-32b', label: 'Qwen3 32B', desc: 'Hızlı tool (Ücretsiz)', icon: '🔮', group: 'tool', speed: '~400 tps' },
   { id: 'openai/gpt-oss-20b', label: 'GPT-OSS 20B', desc: 'Sohbet (Ücretsiz)', icon: '💬', group: 'chat', speed: '~1050 tps' },
-  { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B', desc: 'Basit sohbet ($0.05/1M)', icon: '💨', group: 'chat', speed: '~1300 tps' },
+  { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B', desc: 'Basit sohbet (Ücretsiz)', icon: '💨', group: 'chat', speed: '~1300 tps' },
 ];
 
 export function AIChatProvider({ children }) {
