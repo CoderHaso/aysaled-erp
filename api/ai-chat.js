@@ -433,13 +433,13 @@ Kullanıcıdan ONAY aldıktan sonra çağır. Planı göster, onay al, sonra bu 
                 name:           { type: 'string', description: 'Ürün adı' },
                 sku:            { type: 'string', description: 'Stok kodu' },
                 unit:           { type: 'string', description: 'Adet, Metre vb.' },
-                purchase_price: { type: 'number', description: 'Fiyat' },
-                sale_price:     { type: 'number', description: 'Fiyat' },
+                purchase_price: { type: ['number', 'string'], description: 'Fiyat' },
+                sale_price:     { type: ['number', 'string'], description: 'Fiyat' },
                 base_currency:  { type: 'string', description: 'USD, TRY vb.' },
                 sale_currency:  { type: 'string', description: 'USD, TRY vb.' },
-                stock_count:    { type: 'number', description: 'Miktar' },
-                critical_limit: { type: 'number' },
-                vat_rate:       { type: 'number' },
+                stock_count:    { type: ['number', 'string'], description: 'Miktar' },
+                critical_limit: { type: ['number', 'string'] },
+                vat_rate:       { type: ['number', 'string'] },
                 category:       { type: 'string' },
                 location:       { type: 'string' },
                 recipe: {
@@ -448,7 +448,7 @@ Kullanıcıdan ONAY aldıktan sonra çağır. Planı göster, onay al, sonra bu 
                   properties: {
                     name: { type: 'string', description: 'Reçete adı' },
                     tags: { type: 'array', items: { type: 'string' } },
-                    other_costs: { type: 'array', items: { type: 'object', properties: { type: { type: 'string' }, amount: { type: 'number', description: 'Tutar (ASLA 1.4*2 gibi işlem yazma, sonucu hesaplayıp tek sayı yaz)' }, currency: { type: 'string' } } } },
+                    other_costs: { type: 'array', items: { type: 'object', properties: { type: { type: 'string' }, amount: { type: ['number', 'string'], description: 'Tutar (örn: 1.4 veya "1.4 * 2")' }, currency: { type: 'string' } } } },
                     items: {
                       type: 'array',
                       description: 'Reçete kalemleri',
@@ -457,7 +457,7 @@ Kullanıcıdan ONAY aldıktan sonra çağır. Planı göster, onay al, sonra bu 
                         properties: {
                           item_id:   { type: 'string', description: 'Hammadde ID (opsiyonel)' },
                           item_name: { type: 'string', description: 'Malzeme adı' },
-                          quantity:  { type: 'number', description: 'Miktar (ASLA 1.4*2 gibi işlem yazma, sonucu hesaplayıp tek sayı yaz)' },
+                          quantity:  { type: ['number', 'string'], description: 'Miktar (örn: 1.5 veya "1.5 * 2")' },
                           unit:      { type: 'string', description: 'Adet, Metre vb.' },
                         },
                         required: ['item_name', 'quantity'],
