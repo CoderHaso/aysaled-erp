@@ -590,13 +590,13 @@ export default function Stock() {
                   </tr>
                 </thead>
                 <tbody>
-                  {loading && (
+                  {loading && filtered.length === 0 && (
                     <tr><td colSpan={8} className="text-center py-14" style={{ color: c.muted }}>
                       <RefreshCcw size={20} className="animate-spin mx-auto mb-2" style={{ color: currentColor }} />
                       <p className="text-sm">Yükleniyor...</p>
                     </td></tr>
                   )}
-                  {!loading && error && (
+                  {error && (
                     <tr><td colSpan={8} className="text-center py-14">
                       <AlertCircle size={24} className="mx-auto mb-2" style={{ color: '#ef4444' }} />
                       <p className="text-sm font-semibold" style={{ color: '#ef4444' }}>{error}</p>
@@ -612,7 +612,7 @@ export default function Stock() {
                       </button>
                     </td></tr>
                   )}
-                  {!loading && filtered.map((item, idx) => {
+                  {!error && filtered.length > 0 && filtered.map((item, idx) => {
                     const clr = stockColor(item.stock_count, item.critical_limit);
                     const pct = item.critical_limit > 0 ? Math.min(100, (item.stock_count / (item.critical_limit * 3)) * 100) : 80;
                     const sym = CURRENCY_SYM[item.base_currency] || '₺';
@@ -794,13 +794,13 @@ export default function Stock() {
 
             {/* ── MOBİL KART LİSTESİ (< sm) ─────────────────────────────── */}
             <div className="sm:hidden">
-              {loading && (
+              {loading && filtered.length === 0 && (
                 <div className="text-center py-12" style={{ color: c.muted }}>
                   <RefreshCcw size={20} className="animate-spin mx-auto mb-2" style={{ color: currentColor }} />
                   <p className="text-sm">Yükleniyor...</p>
                 </div>
               )}
-              {!loading && filtered.length === 0 && (
+              {!loading && !error && filtered.length === 0 && (
                 <div className="text-center py-12" style={{ color: c.muted }}>
                   <Package size={32} strokeWidth={1} className="mx-auto mb-2 opacity-40" />
                   <p className="font-semibold text-sm">Kayıt bulunamadı</p>
@@ -810,7 +810,7 @@ export default function Stock() {
                   </button>
                 </div>
               )}
-              {!loading && filtered.map((item, idx) => {
+              {!error && filtered.length > 0 && filtered.map((item, idx) => {
                 const clr = stockColor(item.stock_count, item.critical_limit);
                 const pct = item.critical_limit > 0 ? Math.min(100, (item.stock_count / (item.critical_limit * 3)) * 100) : 80;
                 const sym = CURRENCY_SYM[item.base_currency] || '₺';
