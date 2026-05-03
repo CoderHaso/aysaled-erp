@@ -6,6 +6,8 @@
 import { Groq } from 'groq-sdk';
 import { createClient } from '@supabase/supabase-js';
 
+export const maxDuration = 60; // Vercel timeout limitini 60 saniyeye çıkar (Hobby plan max)
+
 // ── Supabase server-side client ──────────────────────────────────────────────
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL,
