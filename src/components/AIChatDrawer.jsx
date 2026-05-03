@@ -79,7 +79,7 @@ function ToolBadge({ tool, c, currentColor }) {
 }
 
 // ── Message bubble ───────────────────────────────────────────────────────────
-function MessageBubble({ msg, c, currentColor, isDark }) {
+function MessageBubble({ msg, c, currentColor, isDark, onContinue, isContinuing }) {
   const [copied, setCopied] = useState(false);
   const isUser = msg.role === 'user';
   const isError = msg.isError;
@@ -135,6 +135,27 @@ function MessageBubble({ msg, c, currentColor, isDark }) {
             </button>
           )}
         </div>
+
+        {/* Devam Et butonu — truncated mesajlarda */}
+        {msg.truncated && !msg.isError && (
+          <button
+            onClick={onContinue}
+            disabled={isContinuing}
+            className="flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all hover:scale-[1.02]"
+            style={{
+              background: `${currentColor}15`,
+              color: currentColor,
+              border: `1px solid ${currentColor}30`,
+              opacity: isContinuing ? 0.5 : 1,
+              cursor: isContinuing ? 'wait' : 'pointer',
+            }}>
+            {isContinuing ? (
+              <><Loader2 size={12} className="animate-spin" /> Devam ediyor...</>
+            ) : (
+              <><ChevronRight size={12} /> Devam Et</>
+            )}
+          </button>
+        )}
 
         {/* Meta */}
         <div className="flex items-center gap-2 mt-1 px-1">
@@ -256,7 +277,7 @@ export default function AIChatDrawer() {
     usePageContext, setUsePageContext,
     modelMode, setModelMode,
     messages, isLoading, error,
-    sendMessage, cancelRequest, startNewConversation,
+    sendMessage, cancelRequest, startNewConversation, continueMessage,
     canUseAI,
   } = useAIChat();
 
@@ -459,7 +480,8 @@ export default function AIChatDrawer() {
           ) : (
             <>
               {messages.map(msg => (
-                <MessageBubble key={msg.id} msg={msg} c={c} currentColor={currentColor} isDark={isDark} />
+                <MessageBubble key={msg.id} msg={msg} c={c} currentColor={currentColor} isDark={isDark}
+                  onContinue={continueMessage} isContinuing={isLoading} />
               ))}
               {/* Loading indicator */}
               {isLoading && (

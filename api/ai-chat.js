@@ -1071,15 +1071,12 @@ export default async function handler(req, res) {
           content = '⏳ İşleniyor... Lütfen mesajınızı tekrar gönderebilir misiniz?';
         }
 
-        // Token limiti aşıldıysa uyar
-        if (finishReason === 'length') {
-          content += '\n\n⚠️ *Yanıt çok uzun olduğu için kesildi. Lütfen daha küçük parçalar halinde isteyin.*';
-        }
+        const isTruncated = finishReason === 'length';
 
         if (conversationId) {
           await saveConversation(conversationId, messages, content, toolsUsed, pageContext);
         }
-        return res.json({ message: content, toolsUsed, model, intent });
+        return res.json({ message: content, toolsUsed, model, intent, truncated: isTruncated });
       }
 
       currentMessages.push(msg);
