@@ -37,6 +37,11 @@ const DATA_KEYWORDS = [
   'satış', 'alış', 'gelen', 'giden', 'hareket', 'nisan', 'mart', 'şubat', 'ocak',
   'mayıs', 'haziran', 'temmuz', 'ağustos', 'eylül', 'ekim', 'kasım', 'aralık',
   'bu ay', 'geçen ay', 'bu hafta', 'bugün', 'dün', 'ay için', 'aylık',
+  // Yazma / oluşturma / güncelleme anahtar kelimeleri
+  'ekle', 'oluştur', 'ekleme', 'yarat', 'güncelle', 'düzenle', 'değiştir',
+  'stoğa ekle', 'stok gir', 'reçete oluştur', 'ürün ekle', 'kaydet',
+  'yeni ürün', 'yeni müşteri', 'yeni tedarikçi', 'yeni reçete',
+  'evet', 'onay', 'tamam', 'onayla', 'başla', 'yap',
 ];
 
 function classifyIntent(text) {
@@ -247,6 +252,163 @@ const TOOLS = [
       parameters: { type: 'object', properties: {} },
     },
   },
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ── YAZMA ARAÇLARI (Write Tools) ─────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    type: 'function',
+    function: {
+      name: 'create_item',
+      description: 'Yeni ürün (mamül) veya hammadde oluşturur. Kullanıcıdan ONAY aldıktan sonra çağır.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name:           { type: 'string', description: 'Ürün/hammadde adı' },
+          sku:            { type: 'string', description: 'Stok kodu (SKU)' },
+          item_type:      { type: 'string', enum: ['product', 'rawmaterial'], description: 'product=mamül, rawmaterial=hammadde' },
+          unit:           { type: 'string', description: 'Birim: Adet, Metre, Kg, vb.', default: 'Adet' },
+          purchase_price: { type: 'number', description: 'Alış fiyatı' },
+          sale_price:     { type: 'number', description: 'Satış fiyatı' },
+          base_currency:  { type: 'string', description: 'Para birimi: TRY, USD, EUR', default: 'TRY' },
+          sale_currency:  { type: 'string', description: 'Satış para birimi', default: 'TRY' },
+          stock_count:    { type: 'number', description: 'Başlangıç stok miktarı', default: 0 },
+          critical_limit: { type: 'number', description: 'Kritik stok limiti', default: 0 },
+          vat_rate:       { type: 'number', description: 'KDV oranı (%)', default: 20 },
+          category:       { type: 'string', description: 'Kategori' },
+          location:       { type: 'string', description: 'Depo/konum' },
+        },
+        required: ['name', 'item_type'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_recipe',
+      description: 'Bir ürün (mamül) için yeni reçete oluşturur. product_id gereklidir. Kullanıcıdan ONAY aldıktan sonra çağır.',
+      parameters: {
+        type: 'object',
+        properties: {
+          product_id:  { type: 'string', description: 'Ürün ID (items tablosundaki mamül ID)' },
+          name:        { type: 'string', description: 'Reçete adı' },
+          tags:        { type: 'array', items: { type: 'string' }, description: 'Etiketler' },
+          other_costs: { type: 'array', items: { type: 'object' }, description: 'Diğer giderler [{type, amount, currency}]' },
+        },
+        required: ['product_id', 'name'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_recipe_items',
+      description: 'Bir reçeteye toplu olarak hammadde/malzeme kalemleri ekler. recipe_id gereklidir. Kullanıcıdan ONAY aldıktan sonra çağır. Maksimum 30 kalem.',
+      parameters: {
+        type: 'object',
+        properties: {
+          recipe_id: { type: 'string', description: 'Reçete ID (product_recipes tablosundaki ID)' },
+          items: {
+            type: 'array',
+            description: 'Eklenecek kalemler listesi',
+            items: {
+              type: 'object',
+              properties: {
+                item_id:   { type: 'string', description: 'Hammadde ID (items tablosu). Null ise item_name kullanılır.' },
+                item_name: { type: 'string', description: 'Malzeme adı' },
+                quantity:  { type: 'number', description: 'Miktar' },
+                unit:      { type: 'string', description: 'Birim', default: 'Adet' },
+              },
+              required: ['item_name', 'quantity'],
+            },
+          },
+        },
+        required: ['recipe_id', 'items'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_stock_movement',
+      description: 'Stok hareketi (giriş/çıkış) kaydı oluşturur ve items tablosundaki stock_count değerini günceller. Kullanıcıdan ONAY aldıktan sonra çağır.',
+      parameters: {
+        type: 'object',
+        properties: {
+          item_id: { type: 'string', description: 'Ürün/hammadde ID' },
+          delta:   { type: 'number', description: 'Miktar değişimi (+giriş, -çıkış)' },
+          source:  { type: 'string', description: 'Kaynak/sebep (ör: Reçeteli üretim, Manuel giriş)' },
+          note:    { type: 'string', description: 'Açıklama notu' },
+        },
+        required: ['item_id', 'delta', 'source'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_item',
+      description: 'Mevcut bir ürün/hammaddenin bilgilerini günceller. Kullanıcıdan ONAY aldıktan sonra çağır.',
+      parameters: {
+        type: 'object',
+        properties: {
+          item_id:        { type: 'string', description: 'Güncellenecek ürün ID' },
+          name:           { type: 'string', description: 'Yeni ad' },
+          sku:            { type: 'string', description: 'Yeni SKU' },
+          purchase_price: { type: 'number', description: 'Yeni alış fiyatı' },
+          sale_price:     { type: 'number', description: 'Yeni satış fiyatı' },
+          stock_count:    { type: 'number', description: 'Yeni stok miktarı' },
+          critical_limit: { type: 'number', description: 'Yeni kritik limit' },
+          base_currency:  { type: 'string' },
+          sale_currency:  { type: 'string' },
+          unit:           { type: 'string' },
+          vat_rate:       { type: 'number' },
+          category:       { type: 'string' },
+          location:       { type: 'string' },
+        },
+        required: ['item_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_customer',
+      description: 'Yeni müşteri/cari oluşturur. Kullanıcıdan ONAY aldıktan sonra çağır.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name:       { type: 'string', description: 'Müşteri adı / ünvanı' },
+          vkntckn:    { type: 'string', description: 'VKN veya TCKN' },
+          phone:      { type: 'string' },
+          email:      { type: 'string' },
+          city:       { type: 'string' },
+          address:    { type: 'string' },
+          tax_office: { type: 'string' },
+        },
+        required: ['name'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_supplier',
+      description: 'Yeni tedarikçi oluşturur. Kullanıcıdan ONAY aldıktan sonra çağır.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name:       { type: 'string', description: 'Tedarikçi adı / ünvanı' },
+          vkntckn:    { type: 'string', description: 'VKN veya TCKN' },
+          phone:      { type: 'string' },
+          email:      { type: 'string' },
+          city:       { type: 'string' },
+          address:    { type: 'string' },
+          tax_office: { type: 'string' },
+        },
+        required: ['name'],
+      },
+    },
+  },
 ];
 
 // ── Argüman tip dönüştürme (Groq bazen integer'ları string gönderir) ──────────
@@ -417,6 +579,137 @@ async function executeTool(name, rawArgs) {
         };
       }
 
+      // ═══════════════════════════════════════════════════════════════════════
+      // ── YAZMA ARAÇLARI (Write Tool Implementations) ──────────────────────
+      // ═══════════════════════════════════════════════════════════════════════
+
+      case 'create_item': {
+        const payload = {
+          name: args.name,
+          item_type: args.item_type || 'product',
+          unit: args.unit || 'Adet',
+          is_draft: false,
+        };
+        if (args.sku) payload.sku = args.sku;
+        if (args.purchase_price != null) payload.purchase_price = args.purchase_price;
+        if (args.sale_price != null) payload.sale_price = args.sale_price;
+        if (args.base_currency) payload.base_currency = args.base_currency;
+        if (args.sale_currency) payload.sale_currency = args.sale_currency;
+        if (args.stock_count != null) payload.stock_count = args.stock_count;
+        if (args.critical_limit != null) payload.critical_limit = args.critical_limit;
+        if (args.vat_rate != null) payload.vat_rate = args.vat_rate;
+        if (args.category) payload.category = args.category;
+        if (args.location) payload.location = args.location;
+
+        const { data, error } = await supabase.from('items').insert(payload).select('id, name, item_type, sku, unit, stock_count').single();
+        if (error) throw error;
+        return { success: true, message: `✅ "${data.name}" başarıyla oluşturuldu.`, data };
+      }
+
+      case 'create_recipe': {
+        if (!args.product_id) return { error: 'product_id gereklidir' };
+        const payload = {
+          product_id: args.product_id,
+          name: args.name,
+          tags: args.tags || [],
+        };
+        if (args.other_costs) payload.other_costs = args.other_costs;
+        const { data, error } = await supabase.from('product_recipes').insert(payload).select('id, product_id, name').single();
+        if (error) throw error;
+        return { success: true, message: `✅ Reçete "${data.name}" oluşturuldu.`, data };
+      }
+
+      case 'create_recipe_items': {
+        if (!args.recipe_id) return { error: 'recipe_id gereklidir' };
+        if (!args.items || !Array.isArray(args.items)) return { error: 'items array gereklidir' };
+        if (args.items.length > 30) return { error: 'Maksimum 30 kalem eklenebilir. Lütfen daha küçük gruplar halinde ekleyin.' };
+
+        const insertItems = args.items.map((item, idx) => ({
+          recipe_id: args.recipe_id,
+          item_id: item.item_id || null,
+          item_name: item.item_name,
+          quantity: item.quantity || 1,
+          unit: item.unit || 'Adet',
+          order_index: idx + 1,
+        }));
+
+        const { data, error } = await supabase.from('recipe_items').insert(insertItems).select('id, item_name, quantity, unit');
+        if (error) throw error;
+        return { success: true, message: `✅ ${data.length} kalem reçeteye eklendi.`, count: data.length, data };
+      }
+
+      case 'create_stock_movement': {
+        if (!args.item_id) return { error: 'item_id gereklidir' };
+        if (args.delta == null || args.delta === 0) return { error: 'delta (miktar değişimi) gereklidir ve 0 olamaz' };
+
+        // 1) Stok hareketi kaydı oluştur
+        const { error: smErr } = await supabase.from('stock_movements').insert({
+          item_id: args.item_id,
+          delta: args.delta,
+          source: args.source || 'AI Asistan',
+          note: args.note || '',
+        });
+        if (smErr) throw smErr;
+
+        // 2) items tablosundaki stock_count'u güncelle
+        const { data: itemData } = await supabase.from('items').select('stock_count, name').eq('id', args.item_id).single();
+        const currentStock = itemData?.stock_count || 0;
+        const newStock = currentStock + args.delta;
+        await supabase.from('items').update({ stock_count: newStock }).eq('id', args.item_id);
+
+        return {
+          success: true,
+          message: `✅ "${itemData?.name}" stok hareketi: ${args.delta > 0 ? '+' : ''}${args.delta}. Yeni stok: ${newStock}`,
+          item_name: itemData?.name,
+          previous_stock: currentStock,
+          delta: args.delta,
+          new_stock: newStock,
+        };
+      }
+
+      case 'update_item': {
+        if (!args.item_id) return { error: 'item_id gereklidir' };
+        const patch = {};
+        const allowedFields = ['name', 'sku', 'purchase_price', 'sale_price', 'stock_count', 'critical_limit', 'base_currency', 'sale_currency', 'unit', 'vat_rate', 'category', 'location'];
+        for (const f of allowedFields) {
+          if (args[f] !== undefined) patch[f] = args[f];
+        }
+        if (Object.keys(patch).length === 0) return { error: 'Güncellenecek alan belirtilmedi' };
+
+        const { data, error } = await supabase.from('items').update(patch).eq('id', args.item_id).select('id, name, sku, stock_count').single();
+        if (error) throw error;
+        return { success: true, message: `✅ "${data.name}" güncellendi.`, data, updated_fields: Object.keys(patch) };
+      }
+
+      case 'create_customer': {
+        const payload = { name: args.name };
+        if (args.vkntckn)    payload.vkntckn = args.vkntckn;
+        if (args.phone)      payload.phone = args.phone;
+        if (args.email)      payload.email = args.email;
+        if (args.city)       payload.city = args.city;
+        if (args.address)    payload.address = args.address;
+        if (args.tax_office) payload.tax_office = args.tax_office;
+        payload.company_name = args.name;
+
+        const { data, error } = await supabase.from('customers').insert(payload).select('id, name, vkntckn').single();
+        if (error) throw error;
+        return { success: true, message: `✅ Müşteri "${data.name}" oluşturuldu.`, data };
+      }
+
+      case 'create_supplier': {
+        const payload = { name: args.name };
+        if (args.vkntckn)    payload.vkntckn = args.vkntckn;
+        if (args.phone)      payload.phone = args.phone;
+        if (args.email)      payload.email = args.email;
+        if (args.city)       payload.city = args.city;
+        if (args.address)    payload.address = args.address;
+        if (args.tax_office) payload.tax_office = args.tax_office;
+
+        const { data, error } = await supabase.from('suppliers').insert(payload).select('id, name, vkntckn').single();
+        if (error) throw error;
+        return { success: true, message: `✅ Tedarikçi "${data.name}" oluşturuldu.`, data };
+      }
+
       default:
         return { error: `Bilinmeyen fonksiyon: ${name}` };
     }
@@ -428,46 +721,92 @@ async function executeTool(name, rawArgs) {
 
 // ── Sistem prompt ────────────────────────────────────────────────────────────
 const SYSTEM_PROMPT = `Sen A-ERP sisteminin yapay zeka asistanısın. Adın "A-ERP Asistan".
-Görevin: Kullanıcının ERP verilerini SORGULAYARAK, analiz etmesine ve anlamasına yardımcı olmak.
+Görevin: Kullanıcının ERP verilerini sorgulamasına, analiz etmesine ve VERİTABANINA YAZMASINA yardımcı olmak.
+
+BUGÜNÜN TARİHİ: {{TODAY_DATE}}
 
 KRİTİK KURALLAR:
 1. Her zaman Türkçe yanıt ver. Profesyonel ama samimi bir üslup kullan.
-2. KESİNLİKLE VERİ UYDURMA. Sadece ve sadece tool fonksiyonlarından aldığın gerçek verileri kullan.
-3. Eğer bir bilgiyi sorgulayamıyorsan veya tool çağıramadıysan, açıkça "Şu anda bu bilgiye erişemiyorum" de. ASLA tahmin veya örnek veri gösterme.
+2. KESİNLİKLE VERİ UYDURMA. Sadece tool fonksiyonlarından aldığın gerçek verileri kullan.
+3. Eğer bir bilgiyi sorgulayamıyorsan, açıkça "Bu bilgiye erişemiyorum" de. ASLA tahmin etme.
 4. Okuma işlemlerini direkt yap — onay gerektirmez.
-5. Yazma/güncelleme isteklerinde KESİNLİKLE direkt DB'ye yazma. Bunun yerine kullanıcıya ne yapması gerektiğini açıkla ve hangi sayfaya gitmesi gerektiğini söyle.
-6. Sayısal verilerde para birimi (₺, $, €) ve birim kullan.
-7. Belirsiz durumlarda kullanıcıya sor — tahmin etme.
-8. Hangi araçları kullandığını kısa açıkla.
-9. Veri bulunamazsa alternatif öneri sun.
-10. Tabloları markdown formatında göster.
-11. Büyük veri setlerinde özet ver, en önemli kalemlerden bahset.
-12. Kullanıcı mevcut sayfası hakkında bilgi verirse bağlamı kullan.
+5. Sayısal verilerde para birimi (₺, $, €) ve birim kullan.
+6. Belirsiz durumlarda kullanıcıya sor — tahmin etme.
+7. Tabloları markdown formatında göster.
+8. Büyük veri setlerinde özet ver, en önemli kalemlerden bahset.
 
-TEKRAR: HİÇBİR KOŞULDA sahte, örnek veya uydurma veri gösterme. Sadece veritabanından gelen gerçek verileri kullan. Eğer veritabanına erişemiyorsan bunu açıkça söyle.
+══════════════════════════════════════════════════════════════════
+YAZMA İŞLEMLERİ KURALLARI (ÇOK ÖNEMLİ):
+══════════════════════════════════════════════════════════════════
+
+✅ YAPABİLECEKLERİN:
+- Yeni ürün/hammadde oluşturma (create_item)
+- Yeni reçete oluşturma (create_recipe)
+- Reçeteye kalem ekleme (create_recipe_items)
+- Stok hareketi kaydetme (create_stock_movement)
+- Ürün bilgilerini güncelleme (update_item)
+- Yeni müşteri/tedarikçi oluşturma (create_customer, create_supplier)
+
+🚫 ASLA YAPAMADIĞIN İŞLEMLER:
+- SİLME işlemi (DELETE) — hiçbir koşulda, hiçbir tabloda, asla silme yapma
+- Fatura oluşturma/güncelleme (invoices) — sadece okuyabilirsin
+- Sipariş oluşturma/güncelleme (orders) — sadece okuyabilirsin
+- Ödeme oluşturma (payments) — sadece okuyabilirsin
+
+📋 YAZMA ADIMI İÇİN ZORUNLU AKIŞ:
+1. Kullanıcı bir yazma isteğinde bulunduğunda, ÖNCE yapacağın TÜM işlemleri detaylı bir tablo/liste olarak açıkla:
+   - Hangi tabloya ne yazılacak
+   - Her kalem için: ad, miktar, birim, fiyat, para birimi vb.
+   - Toplam kaç kayıt oluşturulacak
+2. Planı gösterdikten sonra kullanıcıdan AÇIKÇA ONAY iste: "Bu işlemleri gerçekleştirmemi ister misiniz?"
+3. Kullanıcı "evet", "onay", "tamam", "yap", "başla" gibi olumlu yanıt verene KADAR yazma tool'larını ÇAĞIRMA.
+4. Onay aldıktan sonra adım adım yaz. Her adımın sonucunu raporla.
+5. Toplu işlemlerde (birden fazla ürün/reçete) sırayla ilerle, her birini ayrı ayrı yaz.
+
+⚠️ GÜVENLİK SINIRLARI:
+- Tek seferde maksimum 30 reçete kalemi eklenebilir (create_recipe_items limiti)
+- Tek seferde maksimum 10 ürün oluşturulabilir — daha fazlası varsa gruplara böl
+- Sonsuz döngü oluşturma — her işlemde sonuç kontrol et
+- Hata alırsan dur, kullanıcıya bildir, devam etme
+
+💡 REÇETE OLUŞTURMA AKIŞI:
+1. Önce ürün (mamül) oluştur → create_item (item_type: product)
+2. Ürünün dönen ID'siyle reçete oluştur → create_recipe (product_id: <ürün_id>)
+3. Reçetenin dönen ID'siyle kalemleri ekle → create_recipe_items (recipe_id: <reçete_id>)
+4. Her adımda dönen ID'leri bir sonraki adımda kullan
+5. Hammaddelerin item_id'lerini bulmak için önce query_items ile ara
+
+💡 TOPLU ÜRÜN OLUŞTURMA (ör: "L100, L120, L150, L200 ekle"):
+- Her ürün için ayrı create_item çağrısı yap
+- Her ürün için ayrı create_recipe çağrısı yap
+- Her reçete için ayrı create_recipe_items çağrısı yap
+- Tüm planı bir tabloda göster, onay al, sonra sırayla yap
+
+TEKRAR: HİÇBİR KOŞULDA sahte veya uydurma veri gösterme. Sadece veritabanından gelen gerçek verileri kullan.
 
 VERİTABANI TABLOLARI:
 - customers: Cariler (müşteriler) — name, vkntckn, phone, email, balance
 - suppliers: Tedarikçiler — name, vkntckn, phone, email
-- items: Ürünler ve hammaddeler — name, sku, item_type (product/rawmaterial), stock_count, purchase_price, sale_price, base_currency, critical_limit
-- invoices: Faturalar — direction (inbound/outbound), total_amount, vat_amount, customer_name, invoice_date (Tarih filtresi için date_from/date_to argümanlarını kullan)
-- orders: Siparişler — order_number, customer_name, status, grand_total, currency, order_date (Tarih filtresi için date_from/date_to argümanlarını kullan)
-- order_items: Sipariş satırları — order_id, item_id, item_name, quantity, unit_price, line_total (Hangi üründen ne kadar satıldığını bulmak için kullanılır)
+- items: Ürünler ve hammaddeler — name, sku, item_type (product/rawmaterial), stock_count, purchase_price, sale_price, base_currency, sale_currency, critical_limit, vat_rate, category, unit, location
+- invoices: Faturalar — direction (inbound/outbound), total_amount, vat_amount, customer_name, invoice_date
+- orders: Siparişler — order_number, customer_name, status, grand_total, currency, order_date
+- order_items: Sipariş satırları — order_id, item_id, item_name, quantity, unit_price, line_total
 - quotes: Teklifler — quote_number, customer_name, status, total
 - payments: Ödemeler — amount, payment_date, customer_id, supplier_id
 - work_orders: İş emirleri — product_id, status, quantity
-- product_recipes: Reçeteler — product_id, name, tags
-- recipe_items: Reçete kalemleri — recipe_id, item_id, quantity, unit
+- product_recipes: Reçeteler — product_id, name, tags, other_costs (JSON array: [{type, amount, currency}])
+- recipe_items: Reçete kalemleri — recipe_id, item_id, item_name, quantity, unit, order_index
 - stock_movements: Stok hareketleri — item_id, delta, source, note
 - cheques: Çekler/senetler — due_date, amount, status
 
 PARA BİRİMLERİ: TRY (₺), USD ($), EUR (€), GBP (£)
 
 ÖNEMLİ:
-- "Giden fatura" = Satış faturası (biz keseriz, müşteriye gider) → direction: outbound
-- "Gelen fatura" = Alış faturası (tedarikçiden gelir) → direction: inbound
+- "Giden fatura" = Satış faturası → direction: outbound
+- "Gelen fatura" = Alış faturası → direction: inbound
 - Hammadde: item_type != 'product'
-- Mamül/Ürün: item_type == 'product'`;
+- Mamül/Ürün: item_type == 'product'
+- Tarih filtresi: date_from/date_to argümanlarını YYYY-MM-DD formatında kullan`;
 
 // ── Main handler ─────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
@@ -493,8 +832,10 @@ export default async function handler(req, res) {
 
   const groq = new Groq({ apiKey });
 
-  // Sistem prompt
-  let systemPrompt = SYSTEM_PROMPT;
+  // Sistem prompt — bugünün tarihini enjekte et (Türkiye saat dilimi)
+  const today = new Date().toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul', year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+  const todayISO = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Istanbul' }); // YYYY-MM-DD
+  let systemPrompt = SYSTEM_PROMPT.replace('{{TODAY_DATE}}', `${today} (${todayISO})`);
   if (pageContext) {
     systemPrompt += `\n\nKullanıcı şu anda "${pageContext}" sayfasında bulunuyor. Soruları bu bağlamda değerlendir.`;
   }
@@ -531,11 +872,11 @@ export default async function handler(req, res) {
 
   let model = selectedModel;
   let toolsUsed = [];
-  const MAX_TOOL_ROUNDS = 5;
+  const MAX_TOOL_ROUNDS = 12; // Yazma işlemleri için yükseltildi (ürün+reçete+kalemler = çok adım)
 
   // Chat-only model kullanıyorsak: NO TOOLS, ama sahte veri uyduramaz
   if (!useTools) {
-    const chatPrompt = SYSTEM_PROMPT + '\n\nÖNEMLİ: Şu anda veritabanı araçlarına erişimin yok. Sadece genel sorulara yanıt verebilirsin. Eğer kullanıcı veri ile ilgili bir soru sorarsa (stok, fatura, müşteri vb.), ona "Bu soruyu yanıtlamak için veritabanına erişmem gerekiyor. Lütfen model olarak tool destekleyen bir model seçin veya Auto modunu kullanın." de. KESİNLİKLE veri uydurup gösterme.';
+    const chatPrompt = systemPrompt + '\n\nÖNEMLİ: Şu anda veritabanı araçlarına erişimin yok. Sadece genel sorulara yanıt verebilirsin. Eğer kullanıcı veri ile ilgili bir soru sorarsa veya yazma/ekleme isterse (stok, fatura, müşteri, reçete, ürün ekle vb.), ona "Bu işlem için veritabanına erişmem gerekiyor. Lütfen tool destekleyen bir model seçin veya Auto modunu kullanın." de. KESİNLİKLE veri uydurup gösterme.';
     try {
       const completion = await groq.chat.completions.create({
         model,
