@@ -943,6 +943,26 @@ async function executeTool(name, rawArgs) {
           return 0;
         };
 
+        // ── ADIM 0: Yapay zekanın unuttuğu item_id'leri isimden otomatik bul ──
+        const missingNames = new Set();
+        args.products.forEach(p => {
+          if (p.recipe && p.recipe.items) {
+            p.recipe.items.forEach(i => {
+              if (!i.item_id && i.item_name) missingNames.add(i.item_name);
+            });
+          }
+        });
+        
+        const nameToIdMap = {};
+        if (missingNames.size > 0) {
+          const { data: foundItems } = await supabase.from('items')
+             .select('id, name')
+             .in('name', Array.from(missingNames));
+          (foundItems || []).forEach(fi => {
+             nameToIdMap[fi.name] = fi.id;
+          });
+        }
+
         for (const product of args.products) {
           const productResult = { name: product.name, steps: [] };
 
@@ -995,7 +1015,7 @@ async function executeTool(name, rawArgs) {
               if (product.recipe.items && product.recipe.items.length > 0) {
                 const insertItems = product.recipe.items.map((item, idx) => ({
                   recipe_id: recipeData.id,
-                  item_id: item.item_id || null,
+                  item_id: item.item_id || nameToIdMap[item.item_name] || null,
                   item_name: item.item_name,
                   quantity: evalMath(item.quantity) || 1,
                   unit: item.unit || 'Adet',
