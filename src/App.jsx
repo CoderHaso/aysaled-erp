@@ -22,6 +22,8 @@ import Katalog        from './pages/Katalog';
 import Login          from './pages/Login';
 import { supabase }   from './lib/supabaseClient';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { AIChatProvider, useAIChat } from './contexts/AIChatContext';
+import AIChatDrawer, { AIFloatingButton } from './components/AIChatDrawer';
 
 const PAGES = {
   '/':           { title: 'Genel Bakış',    sub: 'Aylık Raporlama & Analiz' },
@@ -266,6 +268,11 @@ function AppShell() {
 
       {/* WhatsApp İletişim Butonu */}
       <WhatsAppFab />
+
+      {/* AI Asistan */}
+      <AIFloatingButton />
+      <AIChatDrawer />
+      <PageContextTracker />
     </div>
   );
 }
@@ -391,12 +398,25 @@ function WhatsAppFab() {
   );
 }
 
+// ─── Sayfa bağlamı izleyici (AI için) ───────────────────────────────────────────
+function PageContextTracker() {
+  const location = useLocation();
+  const { setCurrentPage } = useAIChat();
+  useEffect(() => {
+    const page = PAGES[location.pathname];
+    setCurrentPage(page ? page.title : location.pathname);
+  }, [location.pathname, setCurrentPage]);
+  return null;
+}
+
 export default function App() {
   return (
     <AuthProvider>
-      <HashRouter>
-        <AppShell />
-      </HashRouter>
+      <AIChatProvider>
+        <HashRouter>
+          <AppShell />
+        </HashRouter>
+      </AIChatProvider>
     </AuthProvider>
   );
 }
