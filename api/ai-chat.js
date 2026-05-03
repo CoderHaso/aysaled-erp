@@ -1109,6 +1109,9 @@ JSON formatında matematiksel ifadeler (örneğin "amount": 1.4 * 1.2) KESİNLİ
 DOĞRU: {"amount": 1.68}
 YANLIŞ: {"amount": 1.4 * 1.2}
 
+🚨 ÜÇÜNCÜ KRİTİK UYARI: Fonksiyon parametrelerini ASLA sohbet metni içinde ```json formatında yazarak iletme!
+Bu sistemde fonksiyonları çalıştırmak için Native Tool Calling altyapısını KULLANMAK ZORUNDASIN. Kullanıcıya uzun uzun JSON kodu GÖSTERME, doğrudan fonksiyonu arka planda ÇAĞIR.
+
 Örnek akış:
 1. Kullanıcı: "L100, L120, L150, L200 ürünlerini reçeteleriyle ekle"
 2. AI: Planı tablo olarak gösterir, onay ister
