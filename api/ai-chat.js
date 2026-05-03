@@ -1076,6 +1076,12 @@ Birden fazla ürün oluşturulacaksa veya ürün + reçete birlikte oluşturulac
 → batch_create_products tüm adımları (ürün → reçete → kalemler) backend'de sırayla yapar.
 → AI sadece 1 kez fonksiyon çağırır, rate limit riski sıfır, işlem çok hızlı.
 
+🚨 KRİTİK UYARI: JSON anahtarlarını (parametre isimlerini) KESİNLİKLE Türkçe'ye çevirme!
+Örneğin reçete kalemleri için `hammadde`, `miktar`, `birim` yerine KESİNLİKLE Orijinal şema anahtarlarını kullan:
+DOĞRU: {"item_name": "Kablo", "quantity": 2, "unit": "Metre"}
+YANLIŞ: {"hammadde": "Kablo", "miktar": 2, "birim": "Metre"}
+Diğer giderler için de `giderler`, `gider`, `para birimi` yerine KESİNLİKLE `other_costs`, `type`, `amount`, `currency` kullan.
+
 Örnek akış:
 1. Kullanıcı: "L100, L120, L150, L200 ürünlerini reçeteleriyle ekle"
 2. AI: Planı tablo olarak gösterir, onay ister
