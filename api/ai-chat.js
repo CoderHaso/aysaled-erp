@@ -210,7 +210,7 @@ const TOOLS = [
         properties: {
           product_id: { type: 'string', description: 'Belirli bir ürünün reçeteleri için ürün ID' },
           search:     { type: 'string', description: 'Ürün adı ile ara (tek ürün)' },
-          list_all:   { type: 'boolean', description: 'true ise TÜM reçeteleri maliyetleriyle birlikte listeler', default: false },
+          list_all:   { type: 'string', description: '"true" veya "false" - true ise TÜM reçeteleri listeler' },
           limit:      { type: 'integer', description: 'list_all modunda sonuç limiti', default: 50 },
         },
       },
@@ -661,7 +661,7 @@ async function executeTool(name, rawArgs) {
 
       case 'query_recipes': {
         // ── list_all modu: TÜM reçeteleri maliyetleriyle listele ──
-        if (args.list_all) {
+        if (args.list_all === true || args.list_all === 'true') {
           const { data: allRecipes, error } = await supabase.from('product_recipes')
             .select('id, product_id, name, tags, other_costs, recipe_items(id, item_name, quantity, unit, item:item_id(purchase_price, base_currency))')
             .order('created_at', { ascending: false })
