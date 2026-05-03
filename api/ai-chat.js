@@ -201,8 +201,17 @@ const TOOLS = [
   },
 ];
 
+// ── Argüman tip dönüştürme (Groq bazen integer'ları string gönderir) ──────────
+function sanitizeArgs(args) {
+  const cleaned = { ...args };
+  if (cleaned.limit !== undefined) cleaned.limit = parseInt(cleaned.limit, 10) || 20;
+  if (cleaned.critical_only !== undefined) cleaned.critical_only = cleaned.critical_only === true || cleaned.critical_only === 'true';
+  return cleaned;
+}
+
 // ── Tool çalıştırıcılar ──────────────────────────────────────────────────────
-async function executeTool(name, args) {
+async function executeTool(name, rawArgs) {
+  const args = sanitizeArgs(rawArgs);
   try {
     switch (name) {
       case 'query_customers': {
@@ -359,19 +368,23 @@ async function executeTool(name, args) {
 
 // ── Sistem prompt ────────────────────────────────────────────────────────────
 const SYSTEM_PROMPT = `Sen A-ERP sisteminin yapay zeka asistanısın. Adın "A-ERP Asistan".
-Görevin: Kullanıcının ERP verilerini sorgulamasına, analiz etmesine ve anlamasına yardımcı olmak.
+Görevin: Kullanıcının ERP verilerini SORGULAYARAK, analiz etmesine ve anlamasına yardımcı olmak.
 
-KURALLAR:
+KRİTİK KURALLAR:
 1. Her zaman Türkçe yanıt ver. Profesyonel ama samimi bir üslup kullan.
-2. Okuma işlemlerini direkt yap — onay gerektirmez.
-3. Yazma/güncelleme isteklerinde KESİNLİKLE direkt DB'ye yazma. Bunun yerine kullanıcıya ne yapması gerektiğini açıkla ve hangi sayfaya gitmesi gerektiğini söyle.
-4. Sayısal verilerde para birimi (₺, $, €) ve birim kullan.
-5. Belirsiz durumlarda kullanıcıya sor — tahmin etme.
-6. Hangi araçları kullandığını kısa açıkla.
-7. Veri bulunamazsa alternatif öneri sun.
-8. Tabloları markdown formatında göster.
-9. Büyük veri setlerinde özet ver, en önemli kalemlerden bahset.
-10. Kullanıcı mevcut sayfası hakkında bilgi verirse bağlamı kullan.
+2. KESİNLİKLE VERİ UYDURMA. Sadece ve sadece tool fonksiyonlarından aldığın gerçek verileri kullan.
+3. Eğer bir bilgiyi sorgulayamıyorsan veya tool çağıramadıysan, açıkça "Şu anda bu bilgiye erişemiyorum" de. ASLA tahmin veya örnek veri gösterme.
+4. Okuma işlemlerini direkt yap — onay gerektirmez.
+5. Yazma/güncelleme isteklerinde KESİNLİKLE direkt DB'ye yazma. Bunun yerine kullanıcıya ne yapması gerektiğini açıkla ve hangi sayfaya gitmesi gerektiğini söyle.
+6. Sayısal verilerde para birimi (₺, $, €) ve birim kullan.
+7. Belirsiz durumlarda kullanıcıya sor — tahmin etme.
+8. Hangi araçları kullandığını kısa açıkla.
+9. Veri bulunamazsa alternatif öneri sun.
+10. Tabloları markdown formatında göster.
+11. Büyük veri setlerinde özet ver, en önemli kalemlerden bahset.
+12. Kullanıcı mevcut sayfası hakkında bilgi verirse bağlamı kullan.
+
+TEKRAR: HİÇBİR KOŞULDA sahte, örnek veya uydurma veri gösterme. Sadece veritabanından gelen gerçek verileri kullan. Eğer veritabanına erişemiyorsan bunu açıkça söyle.
 
 VERİTABANI TABLOLARI:
 - customers: Cariler (müşteriler) — name, vkntckn, phone, email, balance
@@ -495,28 +508,15 @@ export default async function handler(req, res) {
   } catch (err) {
     console.error('[ai-chat] Error:', err.message);
 
-    // Rate limit → fallback model ile tekrar dene
-    if (retryCount === 0 && (err.status === 429 || err.message?.includes('rate_limit'))) {
-      model = FALLBACK_MODEL;
-      retryCount++;
-      // Basitleştirilmiş tekrar deneme (tool'suz)
-      try {
-        const fallbackCompletion = await groq.chat.completions.create({
-          model: FALLBACK_MODEL,
-          messages: fullMessages,
-          temperature: 0.7,
-          max_completion_tokens: 1024,
-          stream: false,
-        });
-        return res.json({
-          message: fallbackCompletion.choices[0]?.message?.content || 'Yanıt alınamadı.',
-          toolsUsed: [],
-          model: FALLBACK_MODEL,
-          fallback: true,
-        });
-      } catch (fbErr) {
-        return res.status(500).json({ error: `AI servisi şu an meşgul. Lütfen biraz bekleyin. (${fbErr.message})` });
-      }
+    // Rate limit veya herhangi bir hata → ASLA tool'suz fallback yapma
+    // Tool kullanamadan model çağırmak sahte veri üretmeye yol açar
+    if (err.status === 429 || err.message?.includes('rate_limit')) {
+      return res.json({
+        message: '⚠️ AI servisi şu an yoğun. Lütfen birkaç saniye bekleyip tekrar deneyin. Eğer sorun devam ederse teknik destek ile iletişime geçin.',
+        toolsUsed: [],
+        model: PRIMARY_MODEL,
+        rateLimited: true,
+      });
     }
 
     return res.status(500).json({ error: err.message || 'Bilinmeyen hata' });

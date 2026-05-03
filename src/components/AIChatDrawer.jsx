@@ -296,7 +296,7 @@ export default function AIChatDrawer() {
     <div className="fixed inset-0 z-[300] flex justify-end" style={{ pointerEvents: 'none' }}>
       {/* Backdrop */}
       {!isFullscreen && (
-        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        <div className="absolute inset-0 bg-black/30"
           style={{ pointerEvents: 'auto' }} onClick={closeDrawer} />
       )}
 
@@ -477,25 +477,69 @@ export function AIFloatingButton() {
   const { toggleDrawer, isDrawerOpen, canUseAI } = useAIChat();
   const { currentColor, effectiveMode } = useTheme();
   const isDark = effectiveMode === 'dark';
+  const [hovered, setHovered] = useState(false);
 
   if (!canUseAI || isDrawerOpen) return null;
 
   return (
-    <button
-      onClick={toggleDrawer}
-      className="fixed z-[250] flex items-center justify-center rounded-2xl shadow-lg transition-all hover:scale-110 active:scale-95"
+    <div
       style={{
-        bottom: 'calc(80px + env(safe-area-inset-bottom, 0px))',
-        right: 20,
-        width: 52,
-        height: 52,
-        background: `linear-gradient(135deg, ${currentColor}, ${currentColor}dd)`,
-        color: '#fff',
-        boxShadow: `0 4px 20px ${currentColor}40`,
+        position: 'fixed',
+        bottom: 'calc(72px + env(safe-area-inset-bottom, 0px))',
+        right: 0,
+        zIndex: 250,
+        display: 'flex',
+        alignItems: 'center',
+        transition: 'transform 0.35s cubic-bezier(0.4,0,0.2,1)',
+        transform: hovered ? 'translateX(0)' : 'translateX(calc(100% - 42px))',
       }}
-      title="AI Asistan"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
-      <Sparkles size={22} />
-    </button>
+      {/* Toggle tab */}
+      <button
+        onClick={toggleDrawer}
+        aria-label="AI Asistan"
+        style={{
+          width: 42,
+          height: 42,
+          borderRadius: '12px 0 0 12px',
+          border: 'none',
+          background: `linear-gradient(135deg, ${currentColor}, ${currentColor}dd)`,
+          color: '#fff',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          boxShadow: `-2px 2px 12px ${currentColor}40`,
+          flexShrink: 0,
+        }}
+      >
+        <Sparkles size={20} />
+      </button>
+
+      {/* Expanded label */}
+      <button
+        onClick={toggleDrawer}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '8px 14px 8px 10px',
+          background: `linear-gradient(135deg, ${currentColor}, ${currentColor}dd)`,
+          color: '#fff',
+          border: 'none',
+          cursor: 'pointer',
+          fontSize: 13,
+          fontWeight: 700,
+          fontFamily: "'Inter', system-ui, sans-serif",
+          whiteSpace: 'nowrap',
+          boxShadow: `-2px 2px 12px ${currentColor}40`,
+          letterSpacing: '0.01em',
+        }}
+      >
+        <span>AI Asistan</span>
+      </button>
+    </div>
   );
 }
