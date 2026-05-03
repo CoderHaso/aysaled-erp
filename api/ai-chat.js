@@ -411,6 +411,68 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'batch_create_products',
+      description: `Birden fazla ürünü reçeteleriyle birlikte TEK SEFERDE toplu olarak oluşturur. 
+Bu fonksiyon TÜM işlemleri (ürün oluşturma → reçete oluşturma → reçete kalemleri ekleme) otomatik olarak sırayla yapar.
+AI sadece 1 kez bu fonksiyonu çağırır, gerisini backend halleder. Rate limit riski SIFIR.
+Kullanıcıdan ONAY aldıktan sonra çağır. Planı göster, onay al, sonra bu fonksiyonu TEK SEFERDE çağır.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          products: {
+            type: 'array',
+            description: 'Oluşturulacak ürün listesi (her biri reçetesiyle birlikte)',
+            items: {
+              type: 'object',
+              properties: {
+                name:           { type: 'string', description: 'Ürün adı' },
+                sku:            { type: 'string', description: 'Stok kodu' },
+                unit:           { type: 'string', default: 'Adet' },
+                purchase_price: { type: 'number' },
+                sale_price:     { type: 'number' },
+                base_currency:  { type: 'string', default: 'USD' },
+                sale_currency:  { type: 'string', default: 'USD' },
+                stock_count:    { type: 'number', default: 0 },
+                critical_limit: { type: 'number', default: 0 },
+                vat_rate:       { type: 'number', default: 20 },
+                category:       { type: 'string' },
+                location:       { type: 'string' },
+                recipe: {
+                  type: 'object',
+                  description: 'Ürünün reçetesi',
+                  properties: {
+                    name: { type: 'string', description: 'Reçete adı' },
+                    tags: { type: 'array', items: { type: 'string' } },
+                    other_costs: { type: 'array', items: { type: 'object', properties: { type: { type: 'string' }, amount: { type: 'number' }, currency: { type: 'string', default: 'USD' } } } },
+                    items: {
+                      type: 'array',
+                      description: 'Reçete kalemleri',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          item_id:   { type: 'string', description: 'Hammadde ID (opsiyonel)' },
+                          item_name: { type: 'string', description: 'Malzeme adı' },
+                          quantity:  { type: 'number' },
+                          unit:      { type: 'string', default: 'Adet' },
+                        },
+                        required: ['item_name', 'quantity'],
+                      },
+                    },
+                  },
+                  required: ['name', 'items'],
+                },
+              },
+              required: ['name'],
+            },
+          },
+        },
+        required: ['products'],
+      },
+    },
+  },
 ];
 
 // ── Argüman tip dönüştürme (Groq bazen integer'ları string gönderir) ──────────
@@ -852,6 +914,104 @@ async function executeTool(name, rawArgs) {
         return { success: true, message: `✅ Tedarikçi "${data.name}" oluşturuldu.`, data };
       }
 
+      case 'batch_create_products': {
+        if (!args.products || !Array.isArray(args.products) || args.products.length === 0) {
+          return { error: 'products array gereklidir ve boş olamaz.' };
+        }
+        if (args.products.length > 20) {
+          return { error: 'Tek seferde maksimum 20 ürün oluşturulabilir.' };
+        }
+
+        const results = [];
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (const product of args.products) {
+          const productResult = { name: product.name, steps: [] };
+
+          try {
+            // ── ADIM 1: Ürün oluştur ──
+            const itemPayload = {
+              name: product.name,
+              item_type: 'product',
+              unit: product.unit || 'Adet',
+              is_draft: false,
+            };
+            if (product.sku) itemPayload.sku = product.sku;
+            if (product.purchase_price != null) itemPayload.purchase_price = product.purchase_price;
+            if (product.sale_price != null) itemPayload.sale_price = product.sale_price;
+            if (product.base_currency) itemPayload.base_currency = product.base_currency;
+            if (product.sale_currency) itemPayload.sale_currency = product.sale_currency;
+            if (product.stock_count != null) itemPayload.stock_count = product.stock_count;
+            if (product.critical_limit != null) itemPayload.critical_limit = product.critical_limit;
+            if (product.vat_rate != null) itemPayload.vat_rate = product.vat_rate;
+            if (product.category) itemPayload.category = product.category;
+            if (product.location) itemPayload.location = product.location;
+
+            const { data: itemData, error: itemErr } = await supabase
+              .from('items').insert(itemPayload).select('id, name, sku').single();
+            if (itemErr) throw new Error(`Ürün oluşturma hatası: ${itemErr.message}`);
+            productResult.item_id = itemData.id;
+            productResult.steps.push(`✅ Ürün oluşturuldu (ID: ${itemData.id})`);
+
+            // ── ADIM 2: Reçete oluştur (varsa) ──
+            if (product.recipe) {
+              const recipePayload = {
+                product_id: itemData.id,
+                name: product.recipe.name || `${product.name} - Reçete`,
+                tags: product.recipe.tags || [],
+              };
+              if (product.recipe.other_costs) recipePayload.other_costs = product.recipe.other_costs;
+
+              const { data: recipeData, error: recipeErr } = await supabase
+                .from('product_recipes').insert(recipePayload).select('id, name').single();
+              if (recipeErr) throw new Error(`Reçete oluşturma hatası: ${recipeErr.message}`);
+              productResult.recipe_id = recipeData.id;
+              productResult.steps.push(`✅ Reçete oluşturuldu (ID: ${recipeData.id})`);
+
+              // ── ADIM 3: Reçete kalemlerini ekle ──
+              if (product.recipe.items && product.recipe.items.length > 0) {
+                const insertItems = product.recipe.items.map((item, idx) => ({
+                  recipe_id: recipeData.id,
+                  item_id: item.item_id || null,
+                  item_name: item.item_name,
+                  quantity: item.quantity || 1,
+                  unit: item.unit || 'Adet',
+                  order_index: idx + 1,
+                }));
+
+                const { data: riData, error: riErr } = await supabase
+                  .from('recipe_items').insert(insertItems).select('id');
+                if (riErr) throw new Error(`Reçete kalemleri hatası: ${riErr.message}`);
+                productResult.steps.push(`✅ ${riData.length} reçete kalemi eklendi`);
+                productResult.recipe_item_count = riData.length;
+              }
+            }
+
+            productResult.success = true;
+            successCount++;
+          } catch (err) {
+            productResult.success = false;
+            productResult.error = err.message;
+            productResult.steps.push(`❌ Hata: ${err.message}`);
+            errorCount++;
+          }
+
+          results.push(productResult);
+        }
+
+        return {
+          success: errorCount === 0,
+          message: errorCount === 0
+            ? `✅ Tüm ${successCount} ürün başarıyla oluşturuldu (reçeteleriyle birlikte).`
+            : `⚠️ ${successCount} ürün başarılı, ${errorCount} ürün hatalı.`,
+          total: args.products.length,
+          success_count: successCount,
+          error_count: errorCount,
+          results,
+        };
+      }
+
       default:
         return { error: `Bilinmeyen fonksiyon: ${name}` };
     }
@@ -901,28 +1061,31 @@ YAZMA İŞLEMLERİ KURALLARI (ÇOK ÖNEMLİ):
    - Her kalem için: ad, miktar, birim, fiyat, para birimi vb.
    - Toplam kaç kayıt oluşturulacak
 2. Planı gösterdikten sonra kullanıcıdan AÇIKÇA ONAY iste: "Bu işlemleri gerçekleştirmemi ister misiniz?"
-3. Kullanıcı "evet", "onay", "tamam", "yap", "başla" gibi olumlu yanıt verene KADAR yazma tool'larını ÇAĞIRMA.
-4. Onay aldıktan sonra adım adım yaz. Her adımın sonucunu raporla.
-5. Toplu işlemlerde (birden fazla ürün/reçete) sırayla ilerle, her birini ayrı ayrı yaz.
+3. Kullanıcı "evet", "onay", "tamam", "yap", "başla", "devam et" gibi olumlu yanıt verene KADAR yazma tool'larını ÇAĞIRMA.
+4. Onay aldıktan sonra tool'u çağır. Tek seferde.
 
 ⚠️ GÜVENLİK SINIRLARI:
 - Tek seferde maksimum 30 reçete kalemi eklenebilir (create_recipe_items limiti)
-- Tek seferde maksimum 10 ürün oluşturulabilir — daha fazlası varsa gruplara böl
-- Sonsuz döngü oluşturma — her işlemde sonuç kontrol et
+- Tek seferde maksimum 20 ürün oluşturulabilir (batch_create_products limiti)
 - Hata alırsan dur, kullanıcıya bildir, devam etme
 
-💡 REÇETE OLUŞTURMA AKIŞI:
-1. Önce ürün (mamül) oluştur → create_item (item_type: product)
-2. Ürünün dönen ID'siyle reçete oluştur → create_recipe (product_id: <ürün_id>)
-3. Reçetenin dönen ID'siyle kalemleri ekle → create_recipe_items (recipe_id: <reçete_id>)
-4. Her adımda dönen ID'leri bir sonraki adımda kullan
-5. Hammaddelerin item_id'lerini bulmak için önce query_items ile ara
+🚀 TOPLU ÜRÜN + REÇETE OLUŞTURMA (KRİTİK — HER ZAMAN BU YÖNTEMİ KULLAN):
+Birden fazla ürün oluşturulacaksa veya ürün + reçete birlikte oluşturulacaksa:
+→ HER ZAMAN "batch_create_products" fonksiyonunu TEK SEFERDE çağır.
+→ create_item, create_recipe, create_recipe_items'ı TEK TEK ÇAĞIRMA.
+→ batch_create_products tüm adımları (ürün → reçete → kalemler) backend'de sırayla yapar.
+→ AI sadece 1 kez fonksiyon çağırır, rate limit riski sıfır, işlem çok hızlı.
 
-💡 TOPLU ÜRÜN OLUŞTURMA (ör: "L100, L120, L150, L200 ekle"):
-- Her ürün için ayrı create_item çağrısı yap
-- Her ürün için ayrı create_recipe çağrısı yap
-- Her reçete için ayrı create_recipe_items çağrısı yap
-- Tüm planı bir tabloda göster, onay al, sonra sırayla yap
+Örnek akış:
+1. Kullanıcı: "L100, L120, L150, L200 ürünlerini reçeteleriyle ekle"
+2. AI: Planı tablo olarak gösterir, onay ister
+3. Kullanıcı: "onay" / "yap" / "devam et"
+4. AI: batch_create_products({ products: [...] }) → TEK ÇAĞRI
+5. Backend: 4 ürün + 4 reçete + tüm kalemleri otomatik oluşturur
+6. AI: Sonucu raporlar
+
+Tek ürün oluşturmak için de batch_create_products kullanabilirsin (products: [tek ürün]).
+create_item/create_recipe/create_recipe_items sadece spesifik tek bir işlem gerektiğinde kullan.
 
 TEKRAR: HİÇBİR KOŞULDA sahte veya uydurma veri gösterme. Sadece veritabanından gelen gerçek verileri kullan.
 
