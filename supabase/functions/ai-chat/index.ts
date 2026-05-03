@@ -31,7 +31,7 @@ serve(async (req) => {
     const model = modelMode || 'deepseek-v4-pro'
     let toolsUsed = []
 
-    for (let round = 0; round < 15; round++) { // Increased rounds for complex tool sequences
+    for (let round = 0; round < 15; round++) {
       const apiOptions: any = {
         model,
         messages: currentMessages,
@@ -72,19 +72,13 @@ serve(async (req) => {
 
 // --- HELPERS ---
 
-function sanitizeArgs(args: any) {
-  const cleaned = { ...args }
-  if (cleaned.limit !== undefined) cleaned.limit = parseInt(cleaned.limit, 10) || 20
-  if (cleaned.critical_only !== undefined) cleaned.critical_only = cleaned.critical_only === true || cleaned.critical_only === 'true'
-  return cleaned
-}
-
 const evalMath = (val: any) => {
   if (val == null) return val;
   if (typeof val === 'number') return val;
   if (typeof val === 'string') {
     const str = val.replace(/,/g, '.').replace(/[^0-9.\-*\/+() ]/g, ''); 
     try {
+      // Deno evaluates this in a sandbox, but be careful.
       const res = Number(Function(`"use strict"; return (${str})`)());
       return isNaN(res) ? 0 : res;
     } catch {
@@ -94,22 +88,14 @@ const evalMath = (val: any) => {
   return 0;
 };
 
-async function executeTool(supabase: any, name: string, rawArgs: any) {
-  const args = sanitizeArgs(rawArgs)
+const normalizeName = (name: string) => {
+  if (!name) return '';
+  return name.replace(/[\u2010-\u2015]/g, '-').trim().toLowerCase();
+};
+
+async function executeTool(supabase: any, name: string, args: any) {
   try {
     switch (name) {
-      case 'query_customers': {
-        let q = supabase.from('customers').select('id,name,vkntckn,phone,email,city,balance,total_sales').order('name').limit(args.limit || 20);
-        if (args.search) q = q.or(`name.ilike.%${args.search}%,vkntckn.ilike.%${args.search}%,phone.ilike.%${args.search}%`);
-        const { data, error } = await q;
-        return error ? { error: error.message } : { count: data?.length || 0, data: data || [] };
-      }
-      case 'query_suppliers': {
-        let q = supabase.from('suppliers').select('id,name,vkntckn,phone,email,city').order('name').limit(args.limit || 20);
-        if (args.search) q = q.or(`name.ilike.%${args.search}%,vkntckn.ilike.%${args.search}%`);
-        const { data, error } = await q;
-        return error ? { error: error.message } : { count: data?.length || 0, data: data || [] };
-      }
       case 'query_items': {
         let q = supabase.from('items').select('*').eq('is_draft', false).order('name').limit(args.limit || 50);
         if (args.type === 'product') q = q.eq('item_type', 'product');
@@ -117,31 +103,9 @@ async function executeTool(supabase: any, name: string, rawArgs: any) {
         if (args.search) q = q.or(`name.ilike.%${args.search}%,sku.ilike.%${args.search}%`);
         const { data, error } = await q;
         if (error) throw error;
-        let items = data || [];
-        if (args.critical_only) items = items.filter((i: any) => i.critical_limit > 0 && i.stock_count <= i.critical_limit);
-        return { count: items.length, data: items };
+        return { count: data?.length || 0, data: data || [] };
       }
-      case 'query_invoices': {
-        let q = supabase.from('invoices').select('*').order('invoice_date', { ascending: false }).limit(args.limit || 100);
-        if (args.direction && args.direction !== 'all') q = q.eq('direction', args.direction);
-        if (args.date_from) q = q.gte('invoice_date', args.date_from);
-        if (args.date_to) q = q.lte('invoice_date', args.date_to);
-        const { data, error } = await q;
-        if (error) throw error;
-        const invoices = data || [];
-        const inbound = invoices.filter((i: any) => i.direction === 'inbound');
-        const outbound = invoices.filter((i: any) => i.direction === 'outbound');
-        const sumAmount = (arr: any[]) => arr.reduce((s, i) => s + (Number(i.total_amount) || 0), 0);
-        return {
-          count: invoices.length,
-          summary: {
-            total_invoices: invoices.length,
-            inbound_total: sumAmount(inbound).toFixed(2),
-            outbound_total: sumAmount(outbound).toFixed(2),
-          },
-          data: invoices,
-        };
-      }
+      
       case 'query_recipes': {
         let productId = args.product_id;
         if (!productId && args.search) {
@@ -164,62 +128,104 @@ async function executeTool(supabase: any, name: string, rawArgs: any) {
         });
         return { count: enriched.length, data: enriched };
       }
+
       case 'batch_create_products': {
-        const results = []
+        if (!args.products || !Array.isArray(args.products)) return { error: 'products array required' };
+        
+        const results = [];
+        let successCount = 0;
+        let errorCount = 0;
+
+        // 1. Find missing item_ids by name
+        const missingNames = new Set();
+        args.products.forEach((p: any) => {
+          if (p.recipe && p.recipe.items) {
+            p.recipe.items.forEach((i: any) => {
+              if (!i.item_id && i.item_name) missingNames.add(i.item_name);
+            });
+          }
+        });
+
+        const nameToIdMap: Record<string, string> = {};
+        if (missingNames.size > 0) {
+          const searchNames = Array.from(missingNames) as string[];
+          const { data: foundItems } = await supabase.from('items')
+            .select('id, name')
+            .in('name', [...searchNames, ...searchNames.map(n => n.replace(/-/g, '‑'))]);
+          
+          (foundItems || []).forEach((fi: any) => {
+            nameToIdMap[fi.name] = fi.id;
+            nameToIdMap[normalizeName(fi.name)] = fi.id;
+          });
+        }
+
+        // 2. Create products one by one
         for (const product of args.products) {
+          const productResult: any = { name: product.name, steps: [] };
           try {
-            const { data: item, error: itemErr } = await supabase.from('items').insert({
+            const itemPayload: any = {
               name: product.name,
-              sku: product.sku,
               item_type: 'product',
               unit: product.unit || 'Adet',
+              is_draft: false,
+              sku: product.sku,
               purchase_price: evalMath(product.purchase_price),
               sale_price: evalMath(product.sale_price),
               base_currency: product.base_currency || 'TRY',
               stock_count: evalMath(product.stock_count) || 0,
-              is_draft: false
-            }).select('id').single()
-            if (itemErr) throw itemErr
-            
+              critical_limit: evalMath(product.critical_limit),
+              vat_rate: product.vat_rate,
+              category: product.category,
+              location: product.location
+            };
+
+            const { data: itemData, error: itemErr } = await supabase.from('items').insert(itemPayload).select('id').single();
+            if (itemErr) throw itemErr;
+            productResult.item_id = itemData.id;
+            productResult.steps.push(`✅ Ürün oluşturuldu`);
+
             if (product.recipe) {
-              const { data: recipe, error: recErr } = await supabase.from('product_recipes').insert({
-                product_id: item.id,
-                name: product.recipe.name || `${product.name} Reçete`
-              }).select('id').single()
-              if (recErr) throw recErr
-              
+              const recipePayload: any = {
+                product_id: itemData.id,
+                name: product.recipe.name || `${product.name} Reçete`,
+                tags: product.recipe.tags || []
+              };
+              if (product.recipe.other_costs) {
+                recipePayload.other_costs = product.recipe.other_costs.map((oc: any) => ({
+                  ...oc,
+                  amount: evalMath(oc.amount)
+                }));
+              }
+
+              const { data: recipeData, error: recErr } = await supabase.from('product_recipes').insert(recipePayload).select('id').single();
+              if (recErr) throw recErr;
+              productResult.steps.push(`✅ Reçete oluşturuldu`);
+
               if (product.recipe.items) {
                 const recipeItems = product.recipe.items.map((ri: any, idx: number) => ({
-                  recipe_id: recipe.id,
-                  item_id: ri.item_id || null,
+                  recipe_id: recipeData.id,
+                  item_id: ri.item_id || nameToIdMap[normalizeName(ri.item_name)] || nameToIdMap[ri.item_name] || null,
                   item_name: ri.item_name,
                   quantity: evalMath(ri.quantity),
                   unit: ri.unit || 'Adet',
                   order_index: idx + 1
-                }))
-                await supabase.from('recipe_items').insert(recipeItems)
+                }));
+                await supabase.from('recipe_items').insert(recipeItems);
+                productResult.steps.push(`✅ ${recipeItems.length} kalem eklendi`);
               }
             }
-            results.push({ name: product.name, success: true, id: item.id })
+            productResult.success = true;
+            successCount++;
           } catch (e: any) {
-            results.push({ name: product.name, success: false, error: e.message })
+            productResult.success = false;
+            productResult.error = e.message;
+            errorCount++;
           }
+          results.push(productResult);
         }
-        return { results }
+        return { success: errorCount === 0, results, successCount, errorCount };
       }
-      case 'create_stock_movement': {
-        const { error } = await supabase.from('stock_movements').insert({
-          item_id: args.item_id,
-          delta: args.delta,
-          source: args.source || 'AI Asistan',
-          note: args.note || ''
-        })
-        if (error) throw error
-        const { data: item } = await supabase.from('items').select('stock_count').eq('id', args.item_id).single()
-        const newStock = (item?.stock_count || 0) + args.delta
-        await supabase.from('items').update({ stock_count: newStock }).eq('id', args.item_id)
-        return { success: true, new_stock: newStock }
-      }
+      
       default: return { error: `Bilinmeyen fonksiyon: ${name}` }
     }
   } catch (err: any) { return { error: err.message } }
@@ -241,36 +247,11 @@ Görevin: Kullanıcının ERP verilerini sorgulamasına, analiz etmesine ve VER�
 
 BUGÜNÜN TARİHİ: {{TODAY_DATE}}
 
-KRİTİK KURALLAR:
-1. Her zaman Türkçe yanıt ver. Profesyonel ama samimi bir üslup kullan.
-2. KESİNLİKLE VERİ UYDURMA. Sadece tool fonksiyonlarından aldığın gerçek verileri kullan.
-3. Eğer bir bilgiyi sorgulayamıyorsan, açıkça "Bu bilgiye erişemiyorum" de. ASLA tahmin etme.
-4. Okuma işlemlerini direkt yap — onay gerektirmez.
-5. Sayısal verilerde para birimi (₺, $, €) ve birim kullan.
-6. Belirsiz durumlarda kullanıcıya sor — tahmin etme.
-7. Tabloları markdown formatında göster.
-8. Büyük veri setlerinde özet ver, en önemli kalemlerden bahset.
-
-══════════════════════════════════════════════════════════════════
-YAZMA İŞLEMLERİ KURALLARI (ÇOK ÖNEMLİ):
-══════════════════════════════════════════════════════════════════
-
-✅ YAPABİLECEKLERİN:
-- Yeni ürün/hammadde oluşturma (create_item)
-- Yeni reçete oluşturma (create_recipe)
-- Reçeteye kalem ekleme (create_recipe_items)
-- Stok hareketi kaydetme (create_stock_movement)
-- Ürün bilgilerini güncelleme (update_item)
-- Yeni müşteri/tedarikçi oluşturma (create_customer, create_supplier)
-- Toplu ürün+reçete oluşturma (batch_create_products)
-
-🚫 ASLA YAPAMADIĞIN İŞLEMLER:
-- SİLME işlemi (DELETE) — hiçbir tabloyu silme
-
-📋 YAZMA ADIMI İÇİN ZORUNLU AKIŞ:
-1. Önce yapacağın işlemleri detaylı bir tablo olarak açıkla.
-2. Kullanıcıdan ONAY iste.
-3. Onay aldıktan sonra tool'u çağır.`
+🚀 TOPLU ÜRÜN + REÇETE OLUŞTURMA:
+HER ZAMAN "batch_create_products" fonksiyonunu TEK SEFERDE çağır.
+Hammaddeleri eşleştirmek için "item_name" alanını tam ve doğru yaz.
+Giderleri "recipe.other_costs" içine {type, amount, currency} formatında ekle.
+Miktarları (quantity) ve tutarları (amount) hesaplarken matematiksel ifadeler (örn: "1.2 * 2") kullanabilirsin, sistem bunları hesaplayacaktır.`
 
 const TOOLS = [
   {
@@ -283,52 +264,7 @@ const TOOLS = [
         properties: {
           search: { type: 'string' },
           type: { type: 'string', enum: ['product', 'raw', 'all'], default: 'all' },
-          limit: { type: 'integer', default: 50 },
-          critical_only: { type: 'boolean' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'query_customers',
-      description: 'Müşterileri (carileri) arar.',
-      parameters: {
-        type: 'object',
-        properties: {
-          search: { type: 'string' },
-          limit: { type: 'integer', default: 20 }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'query_suppliers',
-      description: 'Tedarikçileri arar.',
-      parameters: {
-        type: 'object',
-        properties: {
-          search: { type: 'string' },
-          limit: { type: 'integer', default: 20 }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'query_invoices',
-      description: 'Faturaları sorgular.',
-      parameters: {
-        type: 'object',
-        properties: {
-          direction: { type: 'string', enum: ['inbound', 'outbound', 'all'], default: 'all' },
-          date_from: { type: 'string' },
-          date_to: { type: 'string' },
-          limit: { type: 'integer', default: 100 }
+          limit: { type: 'integer', default: 50 }
         }
       }
     }
@@ -337,13 +273,12 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'query_recipes',
-      description: 'Reçeteleri sorgular. Ürün reçetelerini ve kalemlerini maliyetleriyle listeler.',
+      description: 'Reçeteleri sorgular.',
       parameters: {
         type: 'object',
         properties: {
           product_id: { type: 'string' },
-          search: { type: 'string' },
-          limit: { type: 'integer', default: 50 }
+          search: { type: 'string' }
         }
       }
     }
@@ -364,19 +299,20 @@ const TOOLS = [
                 name: { type: 'string' },
                 sku: { type: 'string' },
                 unit: { type: 'string' },
-                purchase_price: { type: 'number' },
-                sale_price: { type: 'number' },
+                purchase_price: { type: ['number', 'string'] },
+                sale_price: { type: ['number', 'string'] },
                 recipe: {
                   type: 'object',
                   properties: {
                     name: { type: 'string' },
+                    other_costs: { type: 'array', items: { type: 'object', properties: { type: { type: 'string' }, amount: { type: ['number', 'string'] }, currency: { type: 'string' } } } },
                     items: {
                       type: 'array',
                       items: {
                         type: 'object',
                         properties: {
                           item_name: { type: 'string' },
-                          quantity: { type: 'number' }
+                          quantity: { type: ['number', 'string'] }
                         },
                         required: ['item_name', 'quantity']
                       }
@@ -389,23 +325,6 @@ const TOOLS = [
           }
         },
         required: ['products']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'create_stock_movement',
-      description: 'Stok hareketi kaydı oluşturur.',
-      parameters: {
-        type: 'object',
-        properties: {
-          item_id: { type: 'string' },
-          delta: { type: 'number' },
-          source: { type: 'string' },
-          note: { type: 'string' }
-        },
-        required: ['item_id', 'delta']
       }
     }
   }
