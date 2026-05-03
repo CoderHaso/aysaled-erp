@@ -4,6 +4,7 @@
  * Groq Cloud + Tool Use + Supabase veritabanı sorguları
  */
 import { Groq } from 'groq-sdk';
+import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
 
 export const maxDuration = 60; // Vercel timeout limitini 60 saniyeye çıkar (Hobby plan max)
@@ -1217,8 +1218,8 @@ export default async function handler(req, res) {
 
   if (isDeepSeekAPI) {
     const dsKey = process.env.DEEPSEEK_API_KEY;
-    if (!dsKey) return res.status(500).json({ error: 'DEEPSEEK_API_KEY is not configured in Vercel' });
-    groq = new Groq({ apiKey: dsKey, baseURL: 'https://api.deepseek.com' });
+    if (!dsKey) return res.status(500).json({ error: 'DEEPSEEK_API_KEY is not configured in Vercel. Settings > Environment Variables > DEEPSEEK_API_KEY ekleyin.' });
+    groq = new OpenAI({ apiKey: dsKey, baseURL: 'https://api.deepseek.com' });
   } else {
     const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) return res.status(500).json({ error: 'GROQ_API_KEY is not configured in Vercel' });
