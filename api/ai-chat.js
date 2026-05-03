@@ -430,14 +430,14 @@ Kullanıcıdan ONAY aldıktan sonra çağır. Planı göster, onay al, sonra bu 
               properties: {
                 name:           { type: 'string', description: 'Ürün adı' },
                 sku:            { type: 'string', description: 'Stok kodu' },
-                unit:           { type: 'string', default: 'Adet' },
+                unit:           { type: 'string', description: 'Adet, Metre vb.' },
                 purchase_price: { type: 'number' },
                 sale_price:     { type: 'number' },
-                base_currency:  { type: 'string', default: 'USD' },
-                sale_currency:  { type: 'string', default: 'USD' },
-                stock_count:    { type: 'number', default: 0 },
-                critical_limit: { type: 'number', default: 0 },
-                vat_rate:       { type: 'number', default: 20 },
+                base_currency:  { type: 'string', description: 'USD, TRY vb.' },
+                sale_currency:  { type: 'string', description: 'USD, TRY vb.' },
+                stock_count:    { type: 'number' },
+                critical_limit: { type: 'number' },
+                vat_rate:       { type: 'number' },
                 category:       { type: 'string' },
                 location:       { type: 'string' },
                 recipe: {
@@ -446,7 +446,7 @@ Kullanıcıdan ONAY aldıktan sonra çağır. Planı göster, onay al, sonra bu 
                   properties: {
                     name: { type: 'string', description: 'Reçete adı' },
                     tags: { type: 'array', items: { type: 'string' } },
-                    other_costs: { type: 'array', items: { type: 'object', properties: { type: { type: 'string' }, amount: { type: 'number' }, currency: { type: 'string', default: 'USD' } } } },
+                    other_costs: { type: 'array', items: { type: 'object', properties: { type: { type: 'string' }, amount: { type: 'number' }, currency: { type: 'string' } } } },
                     items: {
                       type: 'array',
                       description: 'Reçete kalemleri',
@@ -456,7 +456,7 @@ Kullanıcıdan ONAY aldıktan sonra çağır. Planı göster, onay al, sonra bu 
                           item_id:   { type: 'string', description: 'Hammadde ID (opsiyonel)' },
                           item_name: { type: 'string', description: 'Malzeme adı' },
                           quantity:  { type: 'number' },
-                          unit:      { type: 'string', default: 'Adet' },
+                          unit:      { type: 'string', description: 'Adet, Metre vb.' },
                         },
                         required: ['item_name', 'quantity'],
                       },
