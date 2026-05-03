@@ -448,7 +448,7 @@ Kullanıcıdan ONAY aldıktan sonra çağır. Planı göster, onay al, sonra bu 
                   properties: {
                     name: { type: 'string', description: 'Reçete adı' },
                     tags: { type: 'array', items: { type: 'string' } },
-                    other_costs: { type: 'array', items: { type: 'object', properties: { type: { type: 'string' }, amount: { type: 'number', description: 'Tutar (sadece sayı)' }, currency: { type: 'string' } } } },
+                    other_costs: { type: 'array', items: { type: 'object', properties: { type: { type: 'string' }, amount: { type: 'number', description: 'Tutar (ASLA 1.4*2 gibi işlem yazma, sonucu hesaplayıp tek sayı yaz)' }, currency: { type: 'string' } } } },
                     items: {
                       type: 'array',
                       description: 'Reçete kalemleri',
@@ -457,7 +457,7 @@ Kullanıcıdan ONAY aldıktan sonra çağır. Planı göster, onay al, sonra bu 
                         properties: {
                           item_id:   { type: 'string', description: 'Hammadde ID (opsiyonel)' },
                           item_name: { type: 'string', description: 'Malzeme adı' },
-                          quantity:  { type: 'number', description: 'Miktar (sadece sayı)' },
+                          quantity:  { type: 'number', description: 'Miktar (ASLA 1.4*2 gibi işlem yazma, sonucu hesaplayıp tek sayı yaz)' },
                           unit:      { type: 'string', description: 'Adet, Metre vb.' },
                         },
                         required: ['item_name', 'quantity'],
