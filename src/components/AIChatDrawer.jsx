@@ -310,7 +310,7 @@ export default function AIChatDrawer() {
     <div className="fixed inset-0 z-[300] flex justify-end" style={{ pointerEvents: 'none' }}>
       {/* Backdrop */}
       {!isFullscreen && (
-        <div className="absolute inset-0 bg-black/30"
+        <div className="absolute inset-0 bg-transparent"
           style={{ pointerEvents: 'auto' }} onClick={closeDrawer} />
       )}
 
@@ -545,7 +545,7 @@ export function AIFloatingButton() {
   const { toggleDrawer, isDrawerOpen, canUseAI } = useAIChat();
   const { currentColor, effectiveMode } = useTheme();
   const isDark = effectiveMode === 'dark';
-  const [hovered, setHovered] = useState(false);
+  const [open, setOpen] = useState(false);
 
   if (!canUseAI || isDrawerOpen) return null;
 
@@ -559,14 +559,12 @@ export function AIFloatingButton() {
         display: 'flex',
         alignItems: 'center',
         transition: 'transform 0.35s cubic-bezier(0.4,0,0.2,1)',
-        transform: hovered ? 'translateX(0)' : 'translateX(calc(100% - 42px))',
+        transform: open ? 'translateX(0)' : 'translateX(calc(100% - 42px))',
       }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
     >
       {/* Toggle tab */}
       <button
-        onClick={toggleDrawer}
+        onClick={() => setOpen(v => !v)}
         aria-label="AI Asistan"
         style={{
           width: 42,
@@ -604,9 +602,10 @@ export function AIFloatingButton() {
           whiteSpace: 'nowrap',
           boxShadow: `-2px 2px 12px ${currentColor}40`,
           letterSpacing: '0.01em',
+          borderRadius: '0 0 0 0',
         }}
       >
-        <span>AI Asistan</span>
+        <span>AI Asistan'ı Aç</span>
       </button>
     </div>
   );

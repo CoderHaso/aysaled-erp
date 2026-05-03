@@ -325,9 +325,12 @@ function ComingSoon({ title, icon = '🚧' }) {
 // ─── WhatsApp İletişim Butonu ──────────────────────────────────────────────────
 function WhatsAppFab() {
   const [open, setOpen] = useState(false);
+  const { isDrawerOpen } = useAIChat();
 
   const WA_NUMBER = '905512429300';
   const WA_URL = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('Merhaba, bilgi almak istiyorum.')}`;
+
+  if (isDrawerOpen) return null;
 
   return (
     <div

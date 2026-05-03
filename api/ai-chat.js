@@ -98,16 +98,16 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'query_invoices',
-      description: 'Faturaları sorgular. Gelen (alış) veya giden (satış) faturalarını filtreler.',
+      description: 'Faturaları sorgular. Gelen (alış) veya giden (satış) faturalarını filtreler. Belirli bir ay (ör: Nisan) istenirse date_from ve date_to ile (invoice_date sütunu üzerinden) filtreleyin.',
       parameters: {
         type: 'object',
         properties: {
           direction:   { type: 'string', enum: ['inbound', 'outbound', 'all'], description: 'inbound=gelen/alış, outbound=giden/satış', default: 'all' },
-          date_from:   { type: 'string', description: 'Başlangıç tarihi (YYYY-MM-DD)' },
-          date_to:     { type: 'string', description: 'Bitiş tarihi (YYYY-MM-DD)' },
+          date_from:   { type: 'string', description: 'Başlangıç tarihi (YYYY-MM-DD). Fatura tarihi (invoice_date) bu tarihten büyük/eşit olanları getirir.' },
+          date_to:     { type: 'string', description: 'Bitiş tarihi (YYYY-MM-DD). Fatura tarihi (invoice_date) bu tarihten küçük/eşit olanları getirir.' },
           customer_id: { type: 'string', description: 'Cari ID filtresi' },
           search:      { type: 'string', description: 'Fatura numarası veya cari adı ile ara' },
-          limit:       { type: 'integer', description: 'Sonuç limiti', default: 50 },
+          limit:       { type: 'integer', description: 'Sonuç limiti', default: 100 },
         },
       },
     },
@@ -116,15 +116,30 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'query_orders',
-      description: 'Siparişleri sorgular.',
+      description: 'Siparişleri sorgular. Belirli bir ay veya tarih istenirse date_from ve date_to ile (order_date sütunu üzerinden) filtreleyin.',
       parameters: {
         type: 'object',
         properties: {
           customer_id: { type: 'string', description: 'Cari ID' },
           status:      { type: 'string', description: 'Sipariş durumu filtresi' },
-          date_from:   { type: 'string', description: 'Başlangıç tarihi' },
-          date_to:     { type: 'string', description: 'Bitiş tarihi' },
-          limit:       { type: 'integer', default: 30 },
+          date_from:   { type: 'string', description: 'Başlangıç tarihi (YYYY-MM-DD)' },
+          date_to:     { type: 'string', description: 'Bitiş tarihi (YYYY-MM-DD)' },
+          limit:       { type: 'integer', default: 100 },
+        },
+      },
+    },
+  {
+    type: 'function',
+    function: {
+      name: 'query_order_items',
+      description: 'Satış siparişlerindeki satır kalemlerini (hangi üründen ne kadar satılmış) sorgular. Tarihe göre (orders tablosundan) filtreleyerek en çok satılan ürünleri vs. bulabilirsiniz.',
+      parameters: {
+        type: 'object',
+        properties: {
+          date_from:   { type: 'string', description: 'Başlangıç tarihi (YYYY-MM-DD)' },
+          date_to:     { type: 'string', description: 'Bitiş tarihi (YYYY-MM-DD)' },
+          item_id:     { type: 'string', description: 'Ürün ID filtresi' },
+          limit:       { type: 'integer', default: 100 },
         },
       },
     },
@@ -155,8 +170,8 @@ const TOOLS = [
         properties: {
           customer_id:  { type: 'string', description: 'Cari ID' },
           supplier_id:  { type: 'string', description: 'Tedarikçi ID' },
-          date_from:    { type: 'string' },
-          date_to:      { type: 'string' },
+          date_from:    { type: 'string', description: 'Başlangıç tarihi (YYYY-MM-DD)' },
+          date_to:      { type: 'string', description: 'Bitiş tarihi (YYYY-MM-DD)' },
           limit:        { type: 'integer', default: 30 },
         },
       },
@@ -200,8 +215,8 @@ const TOOLS = [
         type: 'object',
         properties: {
           item_id:   { type: 'string', description: 'Ürün/hammadde ID' },
-          date_from: { type: 'string' },
-          date_to:   { type: 'string' },
+          date_from: { type: 'string', description: 'Başlangıç tarihi (YYYY-MM-DD)' },
+          date_to:   { type: 'string', description: 'Bitiş tarihi (YYYY-MM-DD)' },
           limit:     { type: 'integer', default: 30 },
         },
       },
@@ -216,8 +231,8 @@ const TOOLS = [
         type: 'object',
         properties: {
           status:    { type: 'string', description: 'Çek durumu' },
-          date_from: { type: 'string' },
-          date_to:   { type: 'string' },
+          date_from: { type: 'string', description: 'Başlangıç tarihi (YYYY-MM-DD)' },
+          date_to:   { type: 'string', description: 'Bitiş tarihi (YYYY-MM-DD)' },
           limit:     { type: 'integer', default: 20 },
         },
       },
@@ -288,11 +303,23 @@ async function executeTool(name, rawArgs) {
       }
 
       case 'query_orders': {
-        let q = supabase.from('orders').select('id,order_number,customer_name,customer_vkn,status,total,vat_total,grand_total,currency,order_date,delivery_date,notes').order('order_date', { ascending: false }).limit(args.limit || 30);
+        let q = supabase.from('orders').select('id,order_number,customer_name,customer_vkn,status,total,vat_total,grand_total,currency,order_date,delivery_date,notes').order('order_date', { ascending: false }).limit(args.limit || 100);
         if (args.customer_id) q = q.eq('customer_id', args.customer_id);
         if (args.status) q = q.eq('status', args.status);
         if (args.date_from) q = q.gte('order_date', args.date_from);
         if (args.date_to) q = q.lte('order_date', args.date_to);
+        const { data, error } = await q;
+        if (error) throw error;
+        return { count: data?.length || 0, data: data || [] };
+      }
+
+      case 'query_order_items': {
+        // Sipariş satırları (order_items) ve ilgili sipariş tarihi (orders.order_date)
+        let q = supabase.from('order_items').select('id, order_id, item_id, item_name, quantity, unit, unit_price, line_total, orders!inner(order_date, status)');
+        if (args.item_id) q = q.eq('item_id', args.item_id);
+        if (args.date_from) q = q.gte('orders.order_date', args.date_from);
+        if (args.date_to) q = q.lte('orders.order_date', args.date_to);
+        q = q.limit(args.limit || 100);
         const { data, error } = await q;
         if (error) throw error;
         return { count: data?.length || 0, data: data || [] };
@@ -422,8 +449,9 @@ VERİTABANI TABLOLARI:
 - customers: Cariler (müşteriler) — name, vkntckn, phone, email, balance
 - suppliers: Tedarikçiler — name, vkntckn, phone, email
 - items: Ürünler ve hammaddeler — name, sku, item_type (product/rawmaterial), stock_count, purchase_price, sale_price, base_currency, critical_limit
-- invoices: Faturalar — direction (inbound=gelen/alış, outbound=giden/satış), total_amount, vat_amount, customer_name
-- orders: Siparişler — order_number, customer_name, status, grand_total, currency
+- invoices: Faturalar — direction (inbound/outbound), total_amount, vat_amount, customer_name, invoice_date (Tarih filtresi için date_from/date_to argümanlarını kullan)
+- orders: Siparişler — order_number, customer_name, status, grand_total, currency, order_date (Tarih filtresi için date_from/date_to argümanlarını kullan)
+- order_items: Sipariş satırları — order_id, item_id, item_name, quantity, unit_price, line_total (Hangi üründen ne kadar satıldığını bulmak için kullanılır)
 - quotes: Teklifler — quote_number, customer_name, status, total
 - payments: Ödemeler — amount, payment_date, customer_id, supplier_id
 - work_orders: İş emirleri — product_id, status, quantity
