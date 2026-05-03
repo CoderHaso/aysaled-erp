@@ -12,9 +12,41 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY
 );
 
-// ── Groq client ──────────────────────────────────────────────────────────────
-const PRIMARY_MODEL   = 'llama-3.3-70b-versatile';
-const FALLBACK_MODEL  = 'llama-3.1-8b-instant';
+// ── Model Registry ───────────────────────────────────────────────────────────
+const MODEL_REGISTRY = {
+  // ── Tool-capable models (veritabanı sorgulayabilir) ──
+  'openai/gpt-oss-120b':   { label: 'GPT-OSS 120B',   tier: 1, toolUse: true,  speed: '~500 tps',  desc: 'En güçlü, tool use + reasoning' },
+  'llama-3.3-70b-versatile': { label: 'Llama 3.3 70B', tier: 2, toolUse: true,  speed: '~275 tps',  desc: 'Dengeli, güçlü tool use' },
+  'qwen/qwen3-32b':        { label: 'Qwen3 32B',      tier: 3, toolUse: true,  speed: '~400 tps',  desc: 'Hızlı, iyi tool use (preview)' },
+  'meta-llama/llama-4-scout-17b-16e-instruct': { label: 'Llama 4 Scout', tier: 4, toolUse: true, speed: '~580 tps', desc: 'Çok hızlı, hafif tool use (preview)' },
+  // ── Chat-only models (tool kullanamaz, sadece sohbet) ──
+  'openai/gpt-oss-20b':    { label: 'GPT-OSS 20B',    tier: 5, toolUse: false, speed: '~1050 tps', desc: 'Hızlı sohbet, tool use yok' },
+  'llama-3.1-8b-instant':  { label: 'Llama 3.1 8B',   tier: 6, toolUse: false, speed: '~1300 tps', desc: 'En hızlı, basit sohbet' },
+};
+
+// Auto mod sıralaması: tool gerektirende en iyiden en kötüye tool modeli dene
+const AUTO_TOOL_ORDER = ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile', 'qwen/qwen3-32b', 'meta-llama/llama-4-scout-17b-16e-instruct'];
+const AUTO_CHAT_ORDER = ['llama-3.1-8b-instant', 'openai/gpt-oss-20b'];
+
+// ── Basit intent sınıflandırma (LLM çağırmadan, heuristic) ───────────────────
+const DATA_KEYWORDS = [
+  'stok', 'ürün', 'hammadde', 'mamül', 'fatura', 'sipariş', 'teklif', 'müşteri',
+  'cari', 'tedarikçi', 'reçete', 'maliyet', 'ödeme', 'çek', 'senet', 'iş emri',
+  'rapor', 'özet', 'analiz', 'listele', 'göster', 'getir', 'sorgula', 'kaç tane',
+  'kaç adet', 'toplam', 'kritik', 'borç', 'alacak', 'bakiye', 'fiyat', 'kdv',
+  'satış', 'alış', 'gelen', 'giden', 'hareket', 'nisan', 'mart', 'şubat', 'ocak',
+  'mayıs', 'haziran', 'temmuz', 'ağustos', 'eylül', 'ekim', 'kasım', 'aralık',
+  'bu ay', 'geçen ay', 'bu hafta', 'bugün', 'dün', 'ay için', 'aylık',
+];
+
+function classifyIntent(text) {
+  const lower = (text || '').toLowerCase();
+  // Herhangi bir veri anahtar kelimesi varsa → tool gerekli
+  for (const kw of DATA_KEYWORDS) {
+    if (lower.includes(kw)) return 'data';
+  }
+  return 'chat';
+}
 
 // ── Tool tanımları ───────────────────────────────────────────────────────────
 const TOOLS = [
@@ -417,20 +449,22 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { messages, conversationId, pageContext } = req.body;
+  // GET /api/ai-chat?models=1 → model listesi döndür
+  if (req.query?.models) {
+    return res.json({ models: MODEL_REGISTRY });
+  }
+
+  const { messages, conversationId, pageContext, modelMode } = req.body;
   if (!messages || !Array.isArray(messages)) {
     return res.status(400).json({ error: 'messages array required' });
   }
 
-  // API key kontrolü
   const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: 'GROQ_API_KEY is not configured' });
-  }
+  if (!apiKey) return res.status(500).json({ error: 'GROQ_API_KEY is not configured' });
 
   const groq = new Groq({ apiKey });
 
-  // Sistem prompt'a sayfa bağlamı ekle
+  // Sistem prompt
   let systemPrompt = SYSTEM_PROMPT;
   if (pageContext) {
     systemPrompt += `\n\nKullanıcı şu anda "${pageContext}" sayfasında bulunuyor. Soruları bu bağlamda değerlendir.`;
@@ -438,16 +472,69 @@ export default async function handler(req, res) {
 
   const fullMessages = [
     { role: 'system', content: systemPrompt },
-    ...messages.slice(-20), // Son 20 mesaj (token limiti için)
+    ...messages.slice(-20),
   ];
 
-  let model = PRIMARY_MODEL;
+  // ── Model seçimi ─────────────────────────────────────────────────────────
+  const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || '';
+  const intent = classifyIntent(lastUserMsg);
+  const needsTools = intent === 'data';
+
+  let selectedModel;
+  let useTools = false;
+
+  if (!modelMode || modelMode === 'auto') {
+    // AUTO: veri sorgusu → tool modeli, sohbet → chat modeli
+    if (needsTools) {
+      selectedModel = AUTO_TOOL_ORDER[0]; // En iyi tool model ile başla
+      useTools = true;
+    } else {
+      selectedModel = AUTO_CHAT_ORDER[0]; // En ucuz chat model
+      useTools = false;
+    }
+  } else if (MODEL_REGISTRY[modelMode]) {
+    selectedModel = modelMode;
+    useTools = MODEL_REGISTRY[modelMode].toolUse;
+  } else {
+    selectedModel = 'llama-3.3-70b-versatile';
+    useTools = true;
+  }
+
+  let model = selectedModel;
   let toolsUsed = [];
-  let retryCount = 0;
   const MAX_TOOL_ROUNDS = 5;
 
+  // Chat-only model kullanıyorsak: NO TOOLS, ama sahte veri uyduramaz
+  if (!useTools) {
+    const chatPrompt = SYSTEM_PROMPT + '\n\nÖNEMLİ: Şu anda veritabanı araçlarına erişimin yok. Sadece genel sorulara yanıt verebilirsin. Eğer kullanıcı veri ile ilgili bir soru sorarsa (stok, fatura, müşteri vb.), ona "Bu soruyu yanıtlamak için veritabanına erişmem gerekiyor. Lütfen model olarak tool destekleyen bir model seçin veya Auto modunu kullanın." de. KESİNLİKLE veri uydurup gösterme.';
+    try {
+      const completion = await groq.chat.completions.create({
+        model,
+        messages: [{ role: 'system', content: chatPrompt }, ...messages.slice(-20)],
+        temperature: 0.7,
+        max_completion_tokens: 1024,
+        stream: false,
+      });
+      if (conversationId) {
+        await saveConversation(conversationId, messages, completion.choices[0]?.message?.content, [], pageContext);
+      }
+      return res.json({
+        message: completion.choices[0]?.message?.content || '',
+        toolsUsed: [],
+        model,
+        intent,
+      });
+    } catch (err) {
+      // Chat model de rate limit'e takılırsa
+      return res.json({
+        message: '⚠️ AI servisi şu an yoğun. Lütfen birkaç saniye bekleyip tekrar deneyin.',
+        toolsUsed: [], model, rateLimited: true,
+      });
+    }
+  }
+
+  // ── Tool-capable model ile çağrı ────────────────────────────────────────
   try {
-    // ── İteratif tool calling loop ─────────────────────────────────────
     let currentMessages = [...fullMessages];
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -456,40 +543,28 @@ export default async function handler(req, res) {
         messages: currentMessages,
         tools: TOOLS,
         tool_choice: 'auto',
-        temperature: 0.7,
+        temperature: 0.5,
         max_completion_tokens: 2048,
         stream: false,
       });
 
-      const choice = completion.choices[0];
-      const msg = choice.message;
+      const msg = completion.choices[0].message;
 
-      // Tool call yoksa — son yanıt
       if (!msg.tool_calls || msg.tool_calls.length === 0) {
-        // Konuşmayı Supabase'e kaydet
         if (conversationId) {
           await saveConversation(conversationId, messages, msg.content, toolsUsed, pageContext);
         }
-
-        return res.json({
-          message: msg.content,
-          toolsUsed,
-          model,
-        });
+        return res.json({ message: msg.content, toolsUsed, model, intent });
       }
 
-      // Tool call'ları çalıştır
-      currentMessages.push(msg); // assistant mesajını ekle
+      currentMessages.push(msg);
 
       for (const toolCall of msg.tool_calls) {
         const fnName = toolCall.function.name;
         let fnArgs = {};
         try { fnArgs = JSON.parse(toolCall.function.arguments); } catch (_) {}
-
         toolsUsed.push({ name: fnName, args: fnArgs });
-
         const result = await executeTool(fnName, fnArgs);
-
         currentMessages.push({
           role: 'tool',
           tool_call_id: toolCall.id,
@@ -498,24 +573,28 @@ export default async function handler(req, res) {
       }
     }
 
-    // Max rounds aşıldı, en son mesajla yanıt ver
     return res.json({
       message: 'Çok fazla araç çağrısı yapıldı, lütfen sorunuzu daraltın.',
-      toolsUsed,
-      model,
+      toolsUsed, model, intent,
     });
 
   } catch (err) {
     console.error('[ai-chat] Error:', err.message);
 
-    // Rate limit veya herhangi bir hata → ASLA tool'suz fallback yapma
-    // Tool kullanamadan model çağırmak sahte veri üretmeye yol açar
+    // Rate limit → Auto modda sıradaki modeli dene
     if (err.status === 429 || err.message?.includes('rate_limit')) {
+      if (!modelMode || modelMode === 'auto') {
+        const currentIdx = AUTO_TOOL_ORDER.indexOf(model);
+        const nextModel = AUTO_TOOL_ORDER[currentIdx + 1];
+        if (nextModel) {
+          // Sıradaki tool modeli ile recursive dene
+          req.body.modelMode = nextModel;
+          return handler(req, res);
+        }
+      }
       return res.json({
-        message: '⚠️ AI servisi şu an yoğun. Lütfen birkaç saniye bekleyip tekrar deneyin. Eğer sorun devam ederse teknik destek ile iletişime geçin.',
-        toolsUsed: [],
-        model: PRIMARY_MODEL,
-        rateLimited: true,
+        message: '⚠️ AI servisi şu an yoğun. Lütfen birkaç saniye bekleyip tekrar deneyin.',
+        toolsUsed: [], model, rateLimited: true,
       });
     }
 

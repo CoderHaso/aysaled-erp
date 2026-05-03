@@ -5,13 +5,13 @@
  */
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { useAIChat } from '../contexts/AIChatContext';
+import { useAIChat, MODEL_OPTIONS } from '../contexts/AIChatContext';
 import { useTheme } from '../contexts/ThemeContext';
 import {
   X, Send, Maximize2, Minimize2, MessageSquare, Plus,
   Loader2, Bot, User, Wrench, ChevronDown, ChevronRight,
   Trash2, History, ToggleLeft, ToggleRight, Sparkles,
-  AlertCircle, Copy, Check, ArrowLeft,
+  AlertCircle, Copy, Check, ArrowLeft, Settings, Cpu,
 } from 'lucide-react';
 
 // ── Markdown-light renderer ──────────────────────────────────────────────────
@@ -153,6 +153,18 @@ function MessageBubble({ msg, c, currentColor, isDark }) {
               fallback
             </span>
           )}
+          {msg.rateLimited && (
+            <span className="text-[8px] font-bold px-1.5 py-0.5 rounded"
+              style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444' }}>
+              rate limit
+            </span>
+          )}
+          {msg.intent === 'chat' && !msg.rateLimited && (
+            <span className="text-[8px] font-bold px-1.5 py-0.5 rounded"
+              style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981' }}>
+              fast chat
+            </span>
+          )}
         </div>
       </div>
 
@@ -242,6 +254,7 @@ export default function AIChatDrawer() {
     isDrawerOpen, isFullscreen,
     closeDrawer, toggleFullscreen,
     usePageContext, setUsePageContext,
+    modelMode, setModelMode,
     messages, isLoading, error,
     sendMessage, cancelRequest, startNewConversation,
     canUseAI,
@@ -252,6 +265,7 @@ export default function AIChatDrawer() {
 
   const [input, setInput] = useState('');
   const [showHistory, setShowHistory] = useState(false);
+  const [showModelSelector, setShowModelSelector] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -334,6 +348,11 @@ export default function AIChatDrawer() {
               style={{ color: usePageContext ? currentColor : c.muted }}>
               {usePageContext ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
             </button>
+            {/* Model Selector Toggle */}
+            <button onClick={() => setShowModelSelector(p => !p)}
+              className="p-1.5 rounded-lg" style={{ color: showModelSelector ? currentColor : c.muted }} title="Model Seçimi">
+              <Cpu size={16} />
+            </button>
             {/* History */}
             <button onClick={() => setShowHistory(true)}
               className="p-1.5 rounded-lg" style={{ color: c.muted }} title="Geçmiş">
@@ -356,6 +375,55 @@ export default function AIChatDrawer() {
             </button>
           </div>
         </div>
+
+        {/* ── Model Selector Panel ── */}
+        {showModelSelector && (
+          <div className="absolute top-[53px] left-0 right-0 z-[40] shadow-xl animate-in slide-in-from-top-2"
+            style={{ background: c.card, borderBottom: `1px solid ${c.border}`, padding: 12 }}>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-xs font-bold" style={{ color: c.text }}>Yapay Zeka Modeli Seçin</h4>
+              <button onClick={() => setShowModelSelector(false)} className="p-1"><X size={14} style={{ color: c.muted }}/></button>
+            </div>
+            
+            <div className="space-y-1 max-h-[40vh] overflow-y-auto pr-1 custom-scrollbar">
+              {MODEL_OPTIONS.map((opt) => (
+                <div key={opt.id}
+                  onClick={() => { setModelMode(opt.id); setShowModelSelector(false); }}
+                  className="flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-all border group"
+                  style={{ 
+                    background: modelMode === opt.id ? `${currentColor}10` : 'transparent',
+                    borderColor: modelMode === opt.id ? currentColor : c.border,
+                  }}>
+                  <div className="flex gap-2.5">
+                    <div className="text-base mt-0.5">{opt.icon}</div>
+                    <div className="flex flex-col">
+                      <span className="text-[12px] font-bold" style={{ color: modelMode === opt.id ? currentColor : c.text }}>
+                        {opt.label}
+                      </span>
+                      <span className="text-[10px]" style={{ color: c.muted }}>{opt.desc}</span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-col items-end gap-1">
+                    {opt.group === 'tool' && (
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: 'rgba(139,92,246,0.1)', color: '#8b5cf6' }}>
+                        Tools
+                      </span>
+                    )}
+                    {opt.group === 'chat' && (
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981' }}>
+                        Chat
+                      </span>
+                    )}
+                    {opt.speed && (
+                      <span className="text-[9px]" style={{ color: c.muted }}>{opt.speed}</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* ── History overlay ── */}
         {showHistory && (

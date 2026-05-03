@@ -12,6 +12,17 @@ function generateId() {
   return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+// Frontend model seçenekleri (API'deki MODEL_REGISTRY'nin aynası)
+export const MODEL_OPTIONS = [
+  { id: 'auto', label: 'Auto', desc: 'Otomatik yönlendirme', icon: '🤖', group: 'auto' },
+  { id: 'openai/gpt-oss-120b', label: 'GPT-OSS 120B', desc: 'En güçlü, tool use + reasoning', icon: '🏆', group: 'tool', speed: '~500 tps' },
+  { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B', desc: 'Dengeli, güçlü tool use', icon: '🦙', group: 'tool', speed: '~275 tps' },
+  { id: 'qwen/qwen3-32b', label: 'Qwen3 32B', desc: 'Hızlı tool use (preview)', icon: '🔮', group: 'tool', speed: '~400 tps' },
+  { id: 'meta-llama/llama-4-scout-17b-16e-instruct', label: 'Llama 4 Scout', desc: 'Çok hızlı, hafif (preview)', icon: '⚡', group: 'tool', speed: '~580 tps' },
+  { id: 'openai/gpt-oss-20b', label: 'GPT-OSS 20B', desc: 'Hızlı sohbet, tool yok', icon: '💬', group: 'chat', speed: '~1050 tps' },
+  { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B', desc: 'En hızlı, basit sohbet', icon: '💨', group: 'chat', speed: '~1300 tps' },
+];
+
 export function AIChatProvider({ children }) {
   const { profile } = useAuth();
 
@@ -22,6 +33,9 @@ export function AIChatProvider({ children }) {
   // Sayfa bağlamı toggle
   const [usePageContext, setUsePageContext] = useState(true);
   const [currentPage, setCurrentPage] = useState('');
+
+  // Model seçimi
+  const [modelMode, setModelMode] = useState('auto');
 
   // Konuşma durumu
   const [conversationId, setConversationId] = useState(() => generateId());
@@ -64,6 +78,7 @@ export function AIChatProvider({ children }) {
           messages: apiMessages,
           conversationId,
           pageContext: usePageContext ? currentPage : null,
+          modelMode,
         }),
         signal: abortRef.current.signal,
       });
@@ -81,7 +96,9 @@ export function AIChatProvider({ children }) {
         content: data.message || '',
         toolsUsed: data.toolsUsed || [],
         model: data.model,
+        intent: data.intent,
         fallback: data.fallback || false,
+        rateLimited: data.rateLimited || false,
         timestamp: new Date().toISOString(),
       };
 
@@ -103,7 +120,7 @@ export function AIChatProvider({ children }) {
       setIsLoading(false);
       abortRef.current = null;
     }
-  }, [messages, conversationId, usePageContext, currentPage, isLoading]);
+  }, [messages, conversationId, usePageContext, currentPage, isLoading, modelMode]);
 
   // ── İptal et ────────────────────────────────────────────────────────────────
   const cancelRequest = useCallback(() => {
@@ -203,6 +220,9 @@ export function AIChatProvider({ children }) {
     // Page context
     usePageContext, setUsePageContext,
     currentPage, setCurrentPage,
+
+    // Model
+    modelMode, setModelMode,
 
     // Chat state
     conversationId, messages, isLoading, error,
