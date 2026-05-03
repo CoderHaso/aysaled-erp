@@ -1024,7 +1024,7 @@ export default async function handler(req, res) {
         model,
         messages: [{ role: 'system', content: chatPrompt }, ...messages.slice(-20)],
         temperature: 0.7,
-        max_completion_tokens: 1024,
+        max_completion_tokens: 2048,
         stream: false,
       });
       if (conversationId) {
@@ -1056,17 +1056,30 @@ export default async function handler(req, res) {
         tools: TOOLS,
         tool_choice: 'auto',
         temperature: 0.5,
-        max_completion_tokens: 2048,
+        max_completion_tokens: 4096,
         stream: false,
       });
 
       const msg = completion.choices[0].message;
+      const finishReason = completion.choices[0].finish_reason;
 
       if (!msg.tool_calls || msg.tool_calls.length === 0) {
-        if (conversationId) {
-          await saveConversation(conversationId, messages, msg.content, toolsUsed, pageContext);
+        let content = msg.content || '';
+
+        // Boş yanıt kontrolü — model bazen content:null döner
+        if (!content.trim()) {
+          content = '⏳ İşleniyor... Lütfen mesajınızı tekrar gönderebilir misiniz?';
         }
-        return res.json({ message: msg.content, toolsUsed, model, intent });
+
+        // Token limiti aşıldıysa uyar
+        if (finishReason === 'length') {
+          content += '\n\n⚠️ *Yanıt çok uzun olduğu için kesildi. Lütfen daha küçük parçalar halinde isteyin.*';
+        }
+
+        if (conversationId) {
+          await saveConversation(conversationId, messages, content, toolsUsed, pageContext);
+        }
+        return res.json({ message: content, toolsUsed, model, intent });
       }
 
       currentMessages.push(msg);
