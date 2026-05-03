@@ -1084,6 +1084,11 @@ DOĞRU: {"item_name": "Kablo", "quantity": 2, "unit": "Metre"}
 YANLIŞ: {"hammadde": "Kablo", "miktar": 2, "birim": "Metre"}
 Diğer giderler için de 'giderler', 'gider', 'para birimi' yerine KESİNLİKLE 'other_costs', 'type', 'amount', 'currency' kullan.
 
+🚨 İKİNCİ KRİTİK UYARI: JSON değerlerinin içine ASLA matematiksel işlem yazma!
+JSON formatında matematiksel ifadeler (örneğin "amount": 1.4 * 1.2) KESİNLİKLE GEÇERSİZDİR ve sistemi çökertir. İşlemi kafanda hesapla ve SADECE SONUCU sayı olarak yaz.
+DOĞRU: {"amount": 1.68}
+YANLIŞ: {"amount": 1.4 * 1.2}
+
 Örnek akış:
 1. Kullanıcı: "L100, L120, L150, L200 ürünlerini reçeteleriyle ekle"
 2. AI: Planı tablo olarak gösterir, onay ister
