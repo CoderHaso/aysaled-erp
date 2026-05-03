@@ -433,12 +433,12 @@ Kullanıcıdan ONAY aldıktan sonra çağır. Planı göster, onay al, sonra bu 
                 name:           { type: 'string', description: 'Ürün adı' },
                 sku:            { type: 'string', description: 'Stok kodu' },
                 unit:           { type: 'string', description: 'Adet, Metre vb.' },
-                purchase_price: { type: 'number' },
-                sale_price:     { type: 'number' },
+                purchase_price: { type: 'string', description: 'Fiyat veya formül (örnek: "10" veya "5 * 2")' },
+                sale_price:     { type: 'string', description: 'Fiyat veya formül' },
                 base_currency:  { type: 'string', description: 'USD, TRY vb.' },
                 sale_currency:  { type: 'string', description: 'USD, TRY vb.' },
-                stock_count:    { type: 'number' },
-                critical_limit: { type: 'number' },
+                stock_count:    { type: 'string', description: 'Miktar' },
+                critical_limit: { type: 'string' },
                 vat_rate:       { type: 'number' },
                 category:       { type: 'string' },
                 location:       { type: 'string' },
@@ -448,7 +448,7 @@ Kullanıcıdan ONAY aldıktan sonra çağır. Planı göster, onay al, sonra bu 
                   properties: {
                     name: { type: 'string', description: 'Reçete adı' },
                     tags: { type: 'array', items: { type: 'string' } },
-                    other_costs: { type: 'array', items: { type: 'object', properties: { type: { type: 'string' }, amount: { type: 'number' }, currency: { type: 'string' } } } },
+                    other_costs: { type: 'array', items: { type: 'object', properties: { type: { type: 'string' }, amount: { type: 'string', description: 'Tutar veya formül (örnek: "1.4 * 2" veya "2.8")' }, currency: { type: 'string' } } } },
                     items: {
                       type: 'array',
                       description: 'Reçete kalemleri',
@@ -457,7 +457,7 @@ Kullanıcıdan ONAY aldıktan sonra çağır. Planı göster, onay al, sonra bu 
                         properties: {
                           item_id:   { type: 'string', description: 'Hammadde ID (opsiyonel)' },
                           item_name: { type: 'string', description: 'Malzeme adı' },
-                          quantity:  { type: 'number' },
+                          quantity:  { type: 'string', description: 'Miktar veya formül (örnek: "1.5" veya "1.2 * 3")' },
                           unit:      { type: 'string', description: 'Adet, Metre vb.' },
                         },
                         required: ['item_name', 'quantity'],
@@ -928,6 +928,21 @@ async function executeTool(name, rawArgs) {
         let successCount = 0;
         let errorCount = 0;
 
+        const evalMath = (val) => {
+          if (val == null) return val;
+          if (typeof val === 'number') return val;
+          if (typeof val === 'string') {
+            const str = val.replace(/,/g, '.').replace(/[^0-9.\-*\/+() ]/g, ''); // Temel güvenlik
+            try {
+              const res = Number(Function(`"use strict"; return (${str})`)());
+              return isNaN(res) ? 0 : res;
+            } catch {
+              return parseFloat(str) || 0;
+            }
+          }
+          return 0;
+        };
+
         for (const product of args.products) {
           const productResult = { name: product.name, steps: [] };
 
@@ -940,12 +955,12 @@ async function executeTool(name, rawArgs) {
               is_draft: false,
             };
             if (product.sku) itemPayload.sku = product.sku;
-            if (product.purchase_price != null) itemPayload.purchase_price = product.purchase_price;
-            if (product.sale_price != null) itemPayload.sale_price = product.sale_price;
+            if (product.purchase_price != null) itemPayload.purchase_price = evalMath(product.purchase_price);
+            if (product.sale_price != null) itemPayload.sale_price = evalMath(product.sale_price);
             if (product.base_currency) itemPayload.base_currency = product.base_currency;
             if (product.sale_currency) itemPayload.sale_currency = product.sale_currency;
-            if (product.stock_count != null) itemPayload.stock_count = product.stock_count;
-            if (product.critical_limit != null) itemPayload.critical_limit = product.critical_limit;
+            if (product.stock_count != null) itemPayload.stock_count = evalMath(product.stock_count);
+            if (product.critical_limit != null) itemPayload.critical_limit = evalMath(product.critical_limit);
             if (product.vat_rate != null) itemPayload.vat_rate = product.vat_rate;
             if (product.category) itemPayload.category = product.category;
             if (product.location) itemPayload.location = product.location;
@@ -963,7 +978,12 @@ async function executeTool(name, rawArgs) {
                 name: product.recipe.name || `${product.name} - Reçete`,
                 tags: product.recipe.tags || [],
               };
-              if (product.recipe.other_costs) recipePayload.other_costs = product.recipe.other_costs;
+              if (product.recipe.other_costs) {
+                recipePayload.other_costs = product.recipe.other_costs.map(oc => ({
+                  ...oc,
+                  amount: evalMath(oc.amount)
+                }));
+              }
 
               const { data: recipeData, error: recipeErr } = await supabase
                 .from('product_recipes').insert(recipePayload).select('id, name').single();
@@ -977,7 +997,7 @@ async function executeTool(name, rawArgs) {
                   recipe_id: recipeData.id,
                   item_id: item.item_id || null,
                   item_name: item.item_name,
-                  quantity: item.quantity || 1,
+                  quantity: evalMath(item.quantity) || 1,
                   unit: item.unit || 'Adet',
                   order_index: idx + 1,
                 }));
