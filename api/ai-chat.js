@@ -944,6 +944,11 @@ async function executeTool(name, rawArgs) {
         };
 
         // ── ADIM 0: Yapay zekanın unuttuğu item_id'leri isimden otomatik bul ──
+        const normalizeName = (name) => {
+          if (!name) return '';
+          return name.replace(/[\u2010-\u2015]/g, '-').trim().toLowerCase();
+        };
+        
         const missingNames = new Set();
         args.products.forEach(p => {
           if (p.recipe && p.recipe.items) {
@@ -955,11 +960,19 @@ async function executeTool(name, rawArgs) {
         
         const nameToIdMap = {};
         if (missingNames.size > 0) {
+          // İsimleri orijinal haliyle veya normalize edilmiş halleriyle aramak için
+          // Önce orijinal isimlerle arayalım:
+          const searchNames = Array.from(missingNames);
           const { data: foundItems } = await supabase.from('items')
              .select('id, name')
-             .in('name', Array.from(missingNames));
+             // ilike veya regex olmadığı için, tüm raw material'ları çekip JS'de normalize etmek en güvenlisi olabilir
+             // ancak şimdilik isimlerin orijinal hallerini ve düzeltilmiş tireli hallerini in() ile arayalım
+             .in('name', [...searchNames, ...searchNames.map(n => n.replace(/‑/g, '-')), ...searchNames.map(n => n.replace(/-/g, '‑'))]);
+             
           (foundItems || []).forEach(fi => {
+             // Hem veritabanı adının orjinal halini, hem de normalize halini haritaya ekleyelim
              nameToIdMap[fi.name] = fi.id;
+             nameToIdMap[normalizeName(fi.name)] = fi.id;
           });
         }
 
@@ -1015,7 +1028,7 @@ async function executeTool(name, rawArgs) {
               if (product.recipe.items && product.recipe.items.length > 0) {
                 const insertItems = product.recipe.items.map((item, idx) => ({
                   recipe_id: recipeData.id,
-                  item_id: item.item_id || nameToIdMap[item.item_name] || null,
+                  item_id: item.item_id || nameToIdMap[normalizeName(item.item_name)] || nameToIdMap[item.item_name] || null,
                   item_name: item.item_name,
                   quantity: evalMath(item.quantity) || 1,
                   unit: item.unit || 'Adet',
@@ -1131,6 +1144,12 @@ YANLIŞ: {"amount": 1.4 * 1.2}
 
 🚨 ÜÇÜNCÜ KRİTİK UYARI: Fonksiyon parametrelerini ASLA sohbet metni içinde [json kod bloğu] formatında yazarak iletme!
 Bu sistemde fonksiyonları çalıştırmak için Native Tool Calling altyapısını KULLANMAK ZORUNDASIN. Kullanıcıya uzun uzun JSON kodu GÖSTERME, doğrudan fonksiyonu arka planda ÇAĞIR.
+
+🚨 DÖRDÜNCÜ KRİTİK UYARI: KULLANICIDAN AÇIKÇA ONAY ALMADAN ASLA VERİTABANINA YAZMA İŞLEMİ YAPMA! (DO NOT AUTO-EXECUTE)
+Kullanıcı sana "Şu ürünleri ekle" veya "Bunu oluştur" dediğinde HEMEN FONKSİYON ÇAĞIRMA!
+Önce kullanıcının ne istediğini anladığını gösteren detaylı bir tablo veya plan sun (hangi ürün, hangi fiyat, hangi malzemeler).
+Sonra "Bu işlemleri gerçekleştirmemi onaylıyor musunuz?" diye sor ve BEKLE.
+Kullanıcı "Evet", "Onaylıyorum", "Yap", "Devam et" diyene kadar ASLA batch_create_products veya başka bir YAZMA fonksiyonu çağırma!
 
 Örnek akış:
 1. Kullanıcı: "L100, L120, L150, L200 ürünlerini reçeteleriyle ekle"
