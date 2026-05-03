@@ -73,25 +73,46 @@ export function AIChatProvider({ children }) {
 
     try {
       abortRef.current = new AbortController();
+      const isDeepSeek = modelMode?.startsWith('deepseek-');
+      let data;
 
-      const res = await fetch('/api/ai-chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: apiMessages,
-          conversationId,
-          pageContext: usePageContext ? currentPage : null,
-          modelMode,
-        }),
-        signal: abortRef.current.signal,
-      });
+      if (isDeepSeek) {
+        // DeepSeek modelleri için Supabase Edge Function kullan (150 sn limit)
+        const { data: edgeData, error: edgeErr } = await supabase.functions.invoke('ai-chat', {
+          body: {
+            messages: apiMessages,
+            conversationId,
+            pageContext: usePageContext ? currentPage : null,
+            modelMode,
+          },
+          signal: abortRef.current.signal,
+        });
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `Sunucu hatası (${res.status})`);
+        if (edgeErr) {
+          // Edge function hatası veya timeout
+          throw new Error(edgeErr.message || `Supabase Edge Function hatası`);
+        }
+        data = edgeData;
+      } else {
+        // Diğer modeller için mevcut Vercel API
+        const res = await fetch('/api/ai-chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: apiMessages,
+            conversationId,
+            pageContext: usePageContext ? currentPage : null,
+            modelMode,
+          }),
+          signal: abortRef.current.signal,
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `Sunucu hatası (${res.status})`);
+        }
+        data = await res.json();
       }
-
-      const data = await res.json();
 
       const assistantMsg = {
         id: generateId(),
@@ -142,25 +163,41 @@ export function AIChatProvider({ children }) {
 
     try {
       abortRef.current = new AbortController();
+      const isDeepSeek = modelMode?.startsWith('deepseek-');
+      let data;
 
-      const res = await fetch('/api/ai-chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: apiMessages,
-          conversationId,
-          pageContext: usePageContext ? currentPage : null,
-          modelMode,
-        }),
-        signal: abortRef.current.signal,
-      });
+      if (isDeepSeek) {
+        const { data: edgeData, error: edgeErr } = await supabase.functions.invoke('ai-chat', {
+          body: {
+            messages: apiMessages,
+            conversationId,
+            pageContext: usePageContext ? currentPage : null,
+            modelMode,
+          },
+          signal: abortRef.current.signal,
+        });
+        if (edgeErr) throw new Error(edgeErr.message || `Supabase Edge Function hatası`);
+        data = edgeData;
+      } else {
+        const res = await fetch('/api/ai-chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: apiMessages,
+            conversationId,
+            pageContext: usePageContext ? currentPage : null,
+            modelMode,
+          }),
+          signal: abortRef.current.signal,
+        });
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `Sunucu hatası (${res.status})`);
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `Sunucu hatası (${res.status})`);
+        }
+        data = await res.json();
       }
-
-      const data = await res.json();
+      
       const continuedContent = data.message || '';
 
       // Son assistant mesajına ekleme yap (aynı bubble)

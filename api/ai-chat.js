@@ -1320,19 +1320,15 @@ export default async function handler(req, res) {
             tools: TOOLS,
             tool_choice: 'auto',
             temperature: 0.5,
-            max_completion_tokens: isDeepSeekAPI ? 2048 : 4096,
+            max_completion_tokens: 4096,
             stream: false,
           };
           
           if (isDeepSeekAPI) {
-            // DeepSeek V4 Pro: thinking + low effort (Vercel 60s limit yüzünden)
+            // DeepSeek specific options
             if (activeModel === 'deepseek-v4-pro') {
-              apiOptions.thinking = { type: 'enabled', budget_tokens: 2048 };
-              apiOptions.reasoning_effort = 'low';
-            }
-            // DeepSeek V4 Flash: thinking kapalı = en hızlı
-            if (activeModel === 'deepseek-v4-flash') {
-              apiOptions.thinking = { type: 'disabled' };
+              apiOptions.thinking = { type: 'enabled' };
+              apiOptions.reasoning_effort = 'high';
             }
           }
 
