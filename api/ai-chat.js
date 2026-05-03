@@ -18,12 +18,14 @@ const supabase = createClient(
 const MODEL_REGISTRY = {
   // ── Tool-capable models (veritabanı sorgulayabilir) ──
   'openai/gpt-oss-120b':   { label: 'GPT-OSS 120B',   tier: 1, toolUse: true,  speed: '~500 tps',  desc: 'En güçlü, tool use + reasoning' },
-  'llama-3.3-70b-versatile': { label: 'Llama 3.3 70B', tier: 2, toolUse: true,  speed: '~275 tps',  desc: 'Dengeli, güçlü tool use' },
+  'deepseek-r1-distill-llama-70b': { label: 'DeepSeek R1 70B', tier: 1, toolUse: true, speed: '~250 tps', desc: 'Güçlü Mantık (Fiyat: $0.70/1M)' },
+  'llama-3.3-70b-versatile': { label: 'Llama 3.3 70B', tier: 2, toolUse: true,  speed: '~275 tps',  desc: 'Dengeli, güçlü tool (Fiyat: $0.59/1M)' },
+  'deepseek-r1-distill-qwen-32b': { label: 'DeepSeek R1 32B', tier: 3, toolUse: true, speed: '~400 tps', desc: 'Hızlı Mantık (Fiyat: $0.18/1M)' },
   'qwen/qwen3-32b':        { label: 'Qwen3 32B',      tier: 3, toolUse: true,  speed: '~400 tps',  desc: 'Hızlı, iyi tool use (preview)' },
   'meta-llama/llama-4-scout-17b-16e-instruct': { label: 'Llama 4 Scout', tier: 4, toolUse: true, speed: '~580 tps', desc: 'Çok hızlı, hafif tool use (preview)' },
   // ── Chat-only models (tool kullanamaz, sadece sohbet) ──
   'openai/gpt-oss-20b':    { label: 'GPT-OSS 20B',    tier: 5, toolUse: false, speed: '~1050 tps', desc: 'Hızlı sohbet, tool use yok' },
-  'llama-3.1-8b-instant':  { label: 'Llama 3.1 8B',   tier: 6, toolUse: false, speed: '~1300 tps', desc: 'En hızlı, basit sohbet' },
+  'llama-3.1-8b-instant':  { label: 'Llama 3.1 8B',   tier: 6, toolUse: false, speed: '~1300 tps', desc: 'En hızlı, basit sohbet (Fiyat: $0.05/1M)' },
 };
 
 // Auto mod sıralaması: tool gerektirende en iyiden en kötüye tool modeli dene
