@@ -128,6 +128,7 @@ const TOOLS = [
         },
       },
     },
+  },
   {
     type: 'function',
     function: {
