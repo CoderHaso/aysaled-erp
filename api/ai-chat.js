@@ -1048,17 +1048,52 @@ export default async function handler(req, res) {
   // ── Tool-capable model ile çağrı ────────────────────────────────────────
   try {
     let currentMessages = [...fullMessages];
+    // Auto modda kullanılabilecek modeller listesi (mevcut modelden başlayarak)
+    const fallbackModels = (!modelMode || modelMode === 'auto')
+      ? AUTO_TOOL_ORDER.slice(AUTO_TOOL_ORDER.indexOf(model))
+      : [model];
+    let currentModelIdx = 0;
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const completion = await groq.chat.completions.create({
-        model,
-        messages: currentMessages,
-        tools: TOOLS,
-        tool_choice: 'auto',
-        temperature: 0.5,
-        max_completion_tokens: 4096,
-        stream: false,
-      });
+      let completion;
+      let retried = false;
+
+      // Rate limit'e takılırsa sıradaki modelle dene
+      for (let modelAttempt = currentModelIdx; modelAttempt < fallbackModels.length; modelAttempt++) {
+        const activeModel = fallbackModels[modelAttempt];
+        try {
+          completion = await groq.chat.completions.create({
+            model: activeModel,
+            messages: currentMessages,
+            tools: TOOLS,
+            tool_choice: 'auto',
+            temperature: 0.5,
+            max_completion_tokens: 4096,
+            stream: false,
+          });
+          // Başarılı — bu modeli kullanmaya devam et
+          model = activeModel;
+          currentModelIdx = modelAttempt;
+          break;
+        } catch (rateLimitErr) {
+          if ((rateLimitErr.status === 429 || rateLimitErr.message?.includes('rate_limit')) && modelAttempt < fallbackModels.length - 1) {
+            console.log(`[ai-chat] Rate limit on ${activeModel}, switching to ${fallbackModels[modelAttempt + 1]}`);
+            retried = true;
+            // Kısa bekleme — rate limit penceresinin geçmesi için
+            await new Promise(r => setTimeout(r, 500));
+            continue;
+          }
+          throw rateLimitErr; // Başka hata veya son model — yukarı fırlat
+        }
+      }
+
+      if (!completion) {
+        // Tüm modeller rate limit'e takıldı
+        return res.json({
+          message: '⚠️ Tüm AI modelleri şu an yoğun. ' + (toolsUsed.length > 0 ? `Şu ana kadar ${toolsUsed.length} işlem yapıldı. Lütfen birkaç saniye bekleyip "devam et" yazın.` : 'Lütfen birkaç saniye bekleyip tekrar deneyin.'),
+          toolsUsed, model, rateLimited: true,
+        });
+      }
 
       const msg = completion.choices[0].message;
       const finishReason = completion.choices[0].finish_reason;
@@ -1066,12 +1101,17 @@ export default async function handler(req, res) {
       if (!msg.tool_calls || msg.tool_calls.length === 0) {
         let content = msg.content || '';
 
-        // Boş yanıt kontrolü — model bazen content:null döner
+        // Boş yanıt kontrolü
         if (!content.trim()) {
           content = '⏳ İşleniyor... Lütfen mesajınızı tekrar gönderebilir misiniz?';
         }
 
         const isTruncated = finishReason === 'length';
+
+        // Model değişimi olduysa bildir
+        if (retried && content) {
+          content = content; // Sessizce devam — kullanıcıyı rahatsız etme
+        }
 
         if (conversationId) {
           await saveConversation(conversationId, messages, content, toolsUsed, pageContext);
@@ -1095,28 +1135,32 @@ export default async function handler(req, res) {
       }
     }
 
+    // Max rounds aşıldı ama bir miktar iş yapıldı
+    const partialMsg = toolsUsed.length > 0
+      ? `⚠️ Çok fazla adım gerekti (${toolsUsed.length} araç çağrısı yapıldı). Lütfen kalan işlemler için tekrar isteyin.`
+      : 'Çok fazla araç çağrısı yapıldı, lütfen sorunuzu daraltın.';
+
     return res.json({
-      message: 'Çok fazla araç çağrısı yapıldı, lütfen sorunuzu daraltın.',
+      message: partialMsg,
       toolsUsed, model, intent,
     });
 
   } catch (err) {
     console.error('[ai-chat] Error:', err.message);
 
-    // Rate limit → Auto modda sıradaki modeli dene
+    // Rate limit → Auto modda sıradaki modeli dene (ilk çağrıda rate limit gelirse)
     if (err.status === 429 || err.message?.includes('rate_limit')) {
       if (!modelMode || modelMode === 'auto') {
         const currentIdx = AUTO_TOOL_ORDER.indexOf(model);
         const nextModel = AUTO_TOOL_ORDER[currentIdx + 1];
         if (nextModel) {
-          // Sıradaki tool modeli ile recursive dene
           req.body.modelMode = nextModel;
           return handler(req, res);
         }
       }
       return res.json({
         message: '⚠️ AI servisi şu an yoğun. Lütfen birkaç saniye bekleyip tekrar deneyin.',
-        toolsUsed: [], model, rateLimited: true,
+        toolsUsed: toolsUsed || [], model, rateLimited: true,
       });
     }
 
