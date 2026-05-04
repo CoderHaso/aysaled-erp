@@ -103,15 +103,15 @@ async function executeTool(supabase: any, name: string, args: any) {
   try {
     switch (name) {
       case 'query_customers': {
-        let q = supabase.from('customers').select('id,name,vkntckn,phone,email,city,balance,total_sales').order('name').limit(args.limit || 20);
-        if (args.search) q = q.or(`name.ilike.%${args.search}%,vkntckn.ilike.%${args.search}%,phone.ilike.%${args.search}%`);
+        let q = supabase.from('customers').select('*').order('name').limit(args.limit || 20);
+        if (args.search) q = q.or(`name.ilike.%${args.search}%,vkntckn.ilike.%${args.search}%`);
         const { data, error } = await q;
         if (error) throw error;
         return { count: data?.length || 0, data: data || [] };
       }
 
       case 'query_suppliers': {
-        let q = supabase.from('suppliers').select('id,name,vkntckn,phone,email,city').order('name').limit(args.limit || 20);
+        let q = supabase.from('suppliers').select('*').order('name').limit(args.limit || 20);
         if (args.search) q = q.or(`name.ilike.%${args.search}%,vkntckn.ilike.%${args.search}%`);
         const { data, error } = await q;
         if (error) throw error;
@@ -119,7 +119,7 @@ async function executeTool(supabase: any, name: string, args: any) {
       }
 
       case 'query_items': {
-        let q = supabase.from('items').select('id,name,sku,unit,item_type,stock_count,critical_limit,purchase_price,sale_price,base_currency,sale_currency,location,supplier_name,vat_rate,category').eq('is_draft', false).order('name').limit(args.limit || 50);
+        let q = supabase.from('items').select('*').eq('is_draft', false).order('name').limit(args.limit || 50);
         if (args.type === 'product') q = q.eq('item_type', 'product');
         else if (args.type === 'raw') q = q.neq('item_type', 'product');
         if (args.search) q = q.or(`name.ilike.%${args.search}%,sku.ilike.%${args.search}%`);
@@ -131,7 +131,8 @@ async function executeTool(supabase: any, name: string, args: any) {
       }
 
       case 'query_invoices': {
-        let q = supabase.from('invoices').select('id,invoice_number,direction,total_amount,vat_amount,currency,customer_name,invoice_date,status').order('invoice_date', { ascending: false }).limit(args.limit || 200);
+        // Kolon hatası riskine karşı '*' kullanarak tümünü çekiyoruz
+        let q = supabase.from('invoices').select('*').order('invoice_date', { ascending: false }).limit(args.limit || 200);
         if (args.direction && args.direction !== 'all') q = q.eq('direction', args.direction);
         if (args.date_from) q = q.gte('invoice_date', args.date_from);
         if (args.date_to) q = q.lte('invoice_date', args.date_to);
@@ -155,7 +156,7 @@ async function executeTool(supabase: any, name: string, args: any) {
       }
 
       case 'query_orders': {
-        let q = supabase.from('orders').select('id,order_number,customer_name,status,total,vat_total,grand_total,currency,order_date').order('order_date', { ascending: false }).limit(args.limit || 200);
+        let q = supabase.from('orders').select('*').order('order_date', { ascending: false }).limit(args.limit || 200);
         if (args.customer_id) q = q.eq('customer_id', args.customer_id);
         if (args.status) q = q.eq('status', args.status);
         if (args.date_from) q = q.gte('order_date', args.date_from);
@@ -166,38 +167,12 @@ async function executeTool(supabase: any, name: string, args: any) {
       }
 
       case 'query_order_items': {
-        let q = supabase.from('order_items').select('id, order_id, item_id, item_name, quantity, unit, unit_price, line_total, orders!inner(order_date, status, order_number)');
+        // İlişkisel sorguyu daha garanti hale getiriyoruz
+        let q = supabase.from('order_items').select('*, orders(*)');
         if (args.item_id) q = q.eq('item_id', args.item_id);
         if (args.date_from) q = q.gte('orders.order_date', args.date_from);
         if (args.date_to) q = q.lte('orders.order_date', args.date_to);
         const { data, error } = await q.limit(args.limit || 500);
-        if (error) throw error;
-        return { count: data?.length || 0, data: data || [] };
-      }
-
-      case 'query_quotes': {
-        let q = supabase.from('quotes').select('id,quote_number,customer_name,status,total,currency,created_at,valid_until').order('created_at', { ascending: false }).limit(args.limit || 20);
-        if (args.customer_id) q = q.eq('customer_id', args.customer_id);
-        if (args.status) q = q.eq('status', args.status);
-        const { data, error } = await q;
-        if (error) throw error;
-        return { count: data?.length || 0, data: data || [] };
-      }
-
-      case 'query_payments': {
-        let q = supabase.from('payments').select('id,amount,currency,payment_type,payment_date,description,customer_id,supplier_id').order('payment_date', { ascending: false }).limit(args.limit || 30);
-        if (args.customer_id) q = q.eq('customer_id', args.customer_id);
-        if (args.supplier_id) q = q.eq('supplier_id', args.supplier_id);
-        const { data, error } = await q;
-        if (error) throw error;
-        return { count: data?.length || 0, data: data || [] };
-      }
-
-      case 'query_work_orders': {
-        let q = supabase.from('work_orders').select('id,product_id,status,quantity,notes,created_at').order('created_at', { ascending: false }).limit(args.limit || 20);
-        if (args.status) q = q.eq('status', args.status);
-        if (args.product_id) q = q.eq('product_id', args.product_id);
-        const { data, error } = await q;
         if (error) throw error;
         return { count: data?.length || 0, data: data || [] };
       }
@@ -227,14 +202,6 @@ async function executeTool(supabase: any, name: string, args: any) {
           return { ...r, recipe_items: items, calculated_total_cost: (materialCost + otherCost).toFixed(2) };
         });
         return { count: enriched.length, data: enriched };
-      }
-
-      case 'query_stock_movements': {
-        let q = supabase.from('stock_movements').select('*').order('created_at', { ascending: false }).limit(args.limit || 30);
-        if (args.item_id) q = q.eq('item_id', args.item_id);
-        const { data, error } = await q;
-        if (error) throw error;
-        return { count: data?.length || 0, data: data || [] };
       }
 
       case 'get_summary_stats': {
@@ -333,9 +300,7 @@ async function saveConversation(supabase: any, conversationId: string, userMessa
 const SYSTEM_PROMPT = `Sen A-ERP sisteminin yapay zeka asistanısın. Adın "A-ERP Asistan".
 Görevin: Kullanıcının ERP verilerini sorgulamasına, analiz etmesine ve VERİTABANINA YAZMASINA yardımcı olmak.
 
-BUGÜNÜN TARİHİ: {{TODAY_DATE}}
-
-KRİTİK: Bir rapor (Nisan özeti vb.) istendiğinde 'query_invoices', 'query_orders' ve 'query_order_items' araçlarını kullanarak GERÇEK verileri çek. 'Erişimim yok' deme, araçları kullan.`
+BUGÜNÜN TARİHİ: {{TODAY_DATE}}`
 
 const TOOLS = [
   { type: 'function', function: { name: 'query_items', description: 'Ürün veya hammadde arar.', parameters: { type: 'object', properties: { search: { type: 'string' }, type: { type: 'string', enum: ['product', 'raw', 'all'], default: 'all' }, limit: { type: 'integer', default: 50 }, critical_only: { type: 'boolean' } } } } },
