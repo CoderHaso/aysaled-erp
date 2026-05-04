@@ -74,15 +74,16 @@ serve(async (req) => {
 
 const evalMath = (val: any) => {
   if (val == null) return val;
-  if (typeof val === 'number') return val;
+  if (typeof val === 'number') return parseFloat(val.toFixed(10));
   if (typeof val === 'string') {
     const str = val.replace(/,/g, '.').replace(/[^0-9.\-*\/+() ]/g, ''); 
     try {
-      // Deno evaluates this in a sandbox, but be careful.
-      const res = Number(Function(`"use strict"; return (${str})`)());
+      let res = Number(Function(`"use strict"; return (${str})`)());
+      res = parseFloat(res.toFixed(10));
       return isNaN(res) ? 0 : res;
     } catch {
-      return parseFloat(str) || 0;
+      const p = parseFloat(str);
+      return isNaN(p) ? 0 : parseFloat(p.toFixed(10));
     }
   }
   return 0;
@@ -90,7 +91,12 @@ const evalMath = (val: any) => {
 
 const normalizeName = (name: string) => {
   if (!name) return '';
-  return name.replace(/[\u2010-\u2015]/g, '-').trim().toLowerCase();
+  return name
+    .replace(/[\u2010-\u2015]/g, '-') // Unicode tireleri standartlaştır
+    .replace(/\//g, '-')             // Slaş karakterini tireye çevir (eşleşme kolaylığı için)
+    .replace(/\s+/g, ' ')            // Boşlukları temizle
+    .trim()
+    .toLowerCase();
 };
 
 async function executeTool(supabase: any, name: string, args: any) {
@@ -117,14 +123,32 @@ async function executeTool(supabase: any, name: string, args: any) {
           .select('*, recipe_items(*, item:item_id(id,name,unit,purchase_price,base_currency))')
           .eq('product_id', productId).order('created_at');
         if (error) throw error;
+
+        // --- GÜNCEL İSİM SENKRONİZASYONU ---
         const enriched = (data || []).map((r: any) => {
           let materialCost = 0;
-          (r.recipe_items || []).forEach((ri: any) => {
+          const items = (r.recipe_items || []).map((ri: any) => {
+            // Eğer hammadde bağlıysa, reçetedeki eski isim yerine items tablosundaki güncel ismi kullan
+            const currentName = ri.item?.name || ri.item_name;
+            const currentUnit = ri.item?.unit || ri.unit;
             materialCost += (Number(ri.item?.purchase_price) || 0) * (Number(ri.quantity) || 1);
+            
+            return {
+              ...ri,
+              item_name: currentName,
+              unit: currentUnit,
+              current_price: ri.item?.purchase_price || 0
+            };
           });
+
           let otherCost = 0;
           (r.other_costs || []).forEach((oc: any) => { otherCost += Number(oc.amount) || 0; });
-          return { ...r, calculated_total_cost: (materialCost + otherCost).toFixed(2) };
+          
+          return { 
+            ...r, 
+            recipe_items: items,
+            calculated_total_cost: (materialCost + otherCost).toFixed(2) 
+          };
         });
         return { count: enriched.length, data: enriched };
       }
@@ -136,7 +160,6 @@ async function executeTool(supabase: any, name: string, args: any) {
         let successCount = 0;
         let errorCount = 0;
 
-        // 1. Find missing item_ids by name
         const missingNames = new Set();
         args.products.forEach((p: any) => {
           if (p.recipe && p.recipe.items) {
@@ -149,9 +172,17 @@ async function executeTool(supabase: any, name: string, args: any) {
         const nameToIdMap: Record<string, string> = {};
         if (missingNames.size > 0) {
           const searchNames = Array.from(missingNames) as string[];
+          const variations = [
+            ...searchNames,
+            ...searchNames.map(n => n.replace(/-/g, '‑')), 
+            ...searchNames.map(n => n.replace(/-/g, '–')),
+            ...searchNames.map(n => n.replace(/\//g, '-')), // Slaş -> Tire varyasyonu
+            ...searchNames.map(n => n.replace(/-/g, '/')), // Tire -> Slaş varyasyonu
+          ];
+          
           const { data: foundItems } = await supabase.from('items')
             .select('id, name')
-            .in('name', [...searchNames, ...searchNames.map(n => n.replace(/-/g, '‑'))]);
+            .in('name', variations);
           
           (foundItems || []).forEach((fi: any) => {
             nameToIdMap[fi.name] = fi.id;
@@ -159,7 +190,6 @@ async function executeTool(supabase: any, name: string, args: any) {
           });
         }
 
-        // 2. Create products one by one
         for (const product of args.products) {
           const productResult: any = { name: product.name, steps: [] };
           try {
@@ -202,14 +232,20 @@ async function executeTool(supabase: any, name: string, args: any) {
               productResult.steps.push(`✅ Reçete oluşturuldu`);
 
               if (product.recipe.items) {
-                const recipeItems = product.recipe.items.map((ri: any, idx: number) => ({
-                  recipe_id: recipeData.id,
-                  item_id: ri.item_id || nameToIdMap[normalizeName(ri.item_name)] || nameToIdMap[ri.item_name] || null,
-                  item_name: ri.item_name,
-                  quantity: evalMath(ri.quantity),
-                  unit: ri.unit || 'Adet',
-                  order_index: idx + 1
-                }));
+                const recipeItems = product.recipe.items.map((ri: any, idx: number) => {
+                  const riName = ri.item_name;
+                  const normalizedRiName = normalizeName(riName);
+                  const foundId = ri.item_id || nameToIdMap[riName] || nameToIdMap[normalizedRiName] || null;
+                  
+                  return {
+                    recipe_id: recipeData.id,
+                    item_id: foundId,
+                    item_name: riName,
+                    quantity: evalMath(ri.quantity),
+                    unit: ri.unit || 'Adet',
+                    order_index: idx + 1
+                  };
+                });
                 await supabase.from('recipe_items').insert(recipeItems);
                 productResult.steps.push(`✅ ${recipeItems.length} kalem eklendi`);
               }
