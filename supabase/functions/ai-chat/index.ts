@@ -32,8 +32,8 @@ serve(async (req) => {
     let toolsUsed = []
     const startTime = Date.now();
 
-    for (let round = 0; round < 12; round++) {
-      if (Date.now() - startTime > 110000) break;
+    for (let round = 0; round < 15; round++) {
+      if (Date.now() - startTime > 115000) break;
 
       const apiOptions: any = {
         model,
@@ -104,7 +104,7 @@ async function executeTool(supabase: any, name: string, args: any) {
   try {
     switch (name) {
       case 'query_items': {
-        let q = supabase.from('items').select('id,name,sku,unit,item_type,stock_count,critical_limit,purchase_price,sale_price,base_currency,vat_rate,category').eq('is_draft', false).order('name').limit(args.limit || 50);
+        let q = supabase.from('items').select('*').eq('is_draft', false).order('name').limit(args.limit || 50);
         if (args.search) q = q.or(`name.ilike.%${args.search}%,sku.ilike.%${args.search}%`);
         const { data, error } = await q;
         if (error) throw error;
@@ -137,6 +137,42 @@ async function executeTool(supabase: any, name: string, args: any) {
         return { count: enriched.length, data: enriched };
       }
 
+      case 'update_item': {
+        if (!args.item_id) return { error: 'item_id gereklidir' };
+        const patch: any = {};
+        const fields = ['name', 'sku', 'purchase_price', 'sale_price', 'base_currency', 'sale_currency', 'unit', 'stock_count', 'critical_limit', 'category', 'location'];
+        fields.forEach(f => { if (args[f] !== undefined) patch[f] = f.includes('price') || f.includes('count') ? evalMath(args[f]) : args[f]; });
+        const { data, error } = await supabase.from('items').update(patch).eq('id', args.item_id).select('*').single();
+        if (error) throw error;
+        return { success: true, message: `✅ "${data.name}" güncellendi.`, data };
+      }
+
+      case 'update_recipe': {
+        if (!args.recipe_id) return { error: 'recipe_id gereklidir' };
+        const patch: any = {};
+        if (args.name) patch.name = args.name;
+        if (args.tags) patch.tags = args.tags;
+        if (args.other_costs) patch.other_costs = args.other_costs.map((oc: any) => ({ ...oc, amount: evalMath(oc.amount) }));
+        
+        const { data, error } = await supabase.from('product_recipes').update(patch).eq('id', args.recipe_id).select('*').single();
+        if (error) throw error;
+        
+        // Reçete kalemlerini güncelleme (opsiyonel)
+        if (args.items && Array.isArray(args.items)) {
+          await supabase.from('recipe_items').delete().eq('recipe_id', args.recipe_id);
+          const newItems = args.items.map((ri: any, idx: number) => ({
+            recipe_id: args.recipe_id,
+            item_id: ri.item_id || null,
+            item_name: ri.item_name,
+            quantity: evalMath(ri.quantity),
+            unit: ri.unit || 'Adet',
+            order_index: idx + 1
+          }));
+          await supabase.from('recipe_items').insert(newItems);
+        }
+        return { success: true, message: `✅ Reçete güncellendi.`, data };
+      }
+
       case 'batch_create_products': {
         if (!args.products || !Array.isArray(args.products)) return { error: 'products array required' };
         const results = [];
@@ -153,7 +189,18 @@ async function executeTool(supabase: any, name: string, args: any) {
 
         for (const product of args.products) {
           try {
-            const itemPayload: any = { name: product.name, item_type: 'product', unit: product.unit || 'Adet', is_draft: false, sku: product.sku, purchase_price: evalMath(product.purchase_price), sale_price: evalMath(product.sale_price), base_currency: product.base_currency || 'TRY', stock_count: evalMath(product.stock_count) || 0 };
+            const itemPayload: any = { 
+              name: product.name, 
+              item_type: 'product', 
+              unit: product.unit || 'Adet', 
+              is_draft: false, 
+              sku: product.sku, 
+              purchase_price: evalMath(product.purchase_price), 
+              sale_price: evalMath(product.sale_price), 
+              base_currency: product.base_currency || 'TRY', 
+              sale_currency: product.sale_currency || product.base_currency || 'TRY',
+              stock_count: evalMath(product.stock_count) || 0 
+            };
             const { data: itemData, error: itemErr } = await supabase.from('items').insert(itemPayload).select('id').single();
             if (itemErr) throw itemErr;
             if (product.recipe) {
@@ -169,25 +216,6 @@ async function executeTool(supabase: any, name: string, args: any) {
           } catch (e: any) { results.push({ name: product.name, success: false, error: e.message }); }
         }
         return { results };
-      }
-
-      case 'query_invoices': {
-        const selectFields = 'id,invoice_number,direction,total_amount,vat_amount,currency,customer_name,invoice_date,status,invoice_type';
-        let q = supabase.from('invoices').select(selectFields).order('invoice_date', { ascending: false }).limit(args.limit || 100);
-        if (args.date_from) q = q.gte('invoice_date', args.date_from);
-        if (args.date_to) q = q.lte('invoice_date', args.date_to);
-        const { data, error } = await q;
-        if (error) throw error;
-        return { count: data?.length || 0, data: data || [] };
-      }
-
-      case 'query_orders': {
-        let q = supabase.from('orders').select('*').order('order_date', { ascending: false }).limit(args.limit || 100);
-        if (args.date_from) q = q.gte('order_date', args.date_from);
-        if (args.date_to) q = q.lte('order_date', args.date_to);
-        const { data, error } = await q;
-        if (error) throw error;
-        return { count: data?.length || 0, data: data || [] };
       }
 
       case 'create_stock_movement': {
@@ -227,12 +255,13 @@ async function saveConversation(supabase: any, conversationId: string, userMessa
 }
 
 const SYSTEM_PROMPT = `Sen A-ERP sisteminin yapay zeka asistanısın. Adın "A-ERP Asistan".
-Görevin: ERP verilerini (ürünler, reçeteler, faturalar, stoklar) analiz edip yönetmek.
+Görevin: Ürünleri, reçeteleri, stokları ve maliyetleri yönetmek.
 
-🚀 ÖNEMLİ YETENEKLER:
-1. 'query_recipes' ile ürünlerin reçetelerini ve hammadde içeriklerini görebilirsin.
-2. 'batch_create_products' ile toplu ürün ve reçete oluşturabilirsin.
-3. Raporlarda tablo kullan.`
+🚀 KRİTİK YETENEKLER:
+1. 'batch_create_products' ile aynı anda Ürün + Reçete + Giderler (işçilik vb.) + Fiyatlar oluşturabilirsin.
+2. 'update_item' ile ürün fiyatlarını ve para birimlerini (USD/TRY) güncelleyebilirsin.
+3. 'update_recipe' ile mevcut reçetelere işçilik, genel gider veya hammadde ekleyebilirsin.
+4. Para birimi USD ise 'sale_currency' ve 'base_currency' alanlarını 'USD' yap.`
 
 const TOOLS = [
   {
@@ -240,12 +269,25 @@ const TOOLS = [
     function: {
       name: 'query_items',
       description: 'Ürün/Hammadde arar.',
+      parameters: { type: 'object', properties: { search: { type: 'string' }, limit: { type: 'integer' } } }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_item',
+      description: 'Ürün bilgilerini (fiyat, para birimi vb.) günceller.',
       parameters: {
         type: 'object',
         properties: {
-          search: { type: 'string' },
-          limit: { type: 'integer' }
-        }
+          item_id: { type: 'string' },
+          name: { type: 'string' },
+          sale_price: { type: ['number', 'string'] },
+          sale_currency: { type: 'string', enum: ['TRY', 'USD', 'EUR'] },
+          base_currency: { type: 'string', enum: ['TRY', 'USD', 'EUR'] },
+          unit: { type: 'string' }
+        },
+        required: ['item_id']
       }
     }
   },
@@ -254,12 +296,29 @@ const TOOLS = [
     function: {
       name: 'query_recipes',
       description: 'Reçete/BOM detaylarını sorgular.',
+      parameters: { type: 'object', properties: { product_id: { type: 'string' }, search: { type: 'string' } } }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_recipe',
+      description: 'Mevcut bir reçeteyi günceller (gider ekler veya kalemleri değiştirir).',
       parameters: {
         type: 'object',
         properties: {
-          product_id: { type: 'string' },
-          search: { type: 'string' }
-        }
+          recipe_id: { type: 'string' },
+          name: { type: 'string' },
+          other_costs: {
+            type: 'array',
+            items: { type: 'object', properties: { type: { type: 'string' }, amount: { type: ['number', 'string'] }, currency: { type: 'string' } } }
+          },
+          items: {
+            type: 'array',
+            items: { type: 'object', properties: { item_name: { type: 'string' }, quantity: { type: ['number', 'string'] } } }
+          }
+        },
+        required: ['recipe_id']
       }
     }
   },
@@ -267,7 +326,7 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'batch_create_products',
-      description: 'Toplu ürün ve reçete oluşturur.',
+      description: 'Toplu ürün, fiyat ve reçete oluşturur.',
       parameters: {
         type: 'object',
         properties: {
@@ -277,18 +336,18 @@ const TOOLS = [
               type: 'object',
               properties: {
                 name: { type: 'string' },
+                sale_price: { type: ['number', 'string'] },
+                sale_currency: { type: 'string' },
                 recipe: {
                   type: 'object',
                   properties: {
+                    other_costs: {
+                      type: 'array',
+                      items: { type: 'object', properties: { type: { type: 'string' }, amount: { type: ['number', 'string'] }, currency: { type: 'string' } } }
+                    },
                     items: {
                       type: 'array',
-                      items: {
-                        type: 'object',
-                        properties: {
-                          item_name: { type: 'string' },
-                          quantity: { type: ['number', 'string'] }
-                        }
-                      }
+                      items: { type: 'object', properties: { item_name: { type: 'string' }, quantity: { type: ['number', 'string'] } } }
                     }
                   }
                 }
@@ -302,43 +361,11 @@ const TOOLS = [
   {
     type: 'function',
     function: {
-      name: 'query_invoices',
-      description: 'Faturaları sorgular.',
-      parameters: {
-        type: 'object',
-        properties: {
-          date_from: { type: 'string' },
-          date_to: { type: 'string' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'query_orders',
-      description: 'Siparişleri sorgular.',
-      parameters: {
-        type: 'object',
-        properties: {
-          date_from: { type: 'string' },
-          date_to: { type: 'string' }
-        }
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
       name: 'create_stock_movement',
       description: 'Stok girişi/çıkışı yapar.',
       parameters: {
         type: 'object',
-        properties: {
-          item_id: { type: 'string' },
-          delta: { type: 'number' },
-          note: { type: 'string' }
-        },
+        properties: { item_id: { type: 'string' }, delta: { type: 'number' }, note: { type: 'string' } },
         required: ['item_id', 'delta']
       }
     }
@@ -348,10 +375,7 @@ const TOOLS = [
     function: {
       name: 'get_summary_stats',
       description: 'Genel özet istatistikleri.',
-      parameters: {
-        type: 'object',
-        properties: {}
-      }
+      parameters: { type: 'object', properties: {} }
     }
   }
 ]

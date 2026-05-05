@@ -22,7 +22,8 @@ import ItemDrawer from '../components/stock/ItemDrawer';
 import QuickAddModal from '../components/stock/QuickAddModal';
 import MediaPickerModal from '../components/MediaPickerModal';
 import { printDocument } from '../lib/printService';
-import { Image as ImageIcon } from 'lucide-react';
+import { Image as ImageIcon, ArrowRightLeft } from 'lucide-react';
+import RecipeComparisonModal from '../components/stock/RecipeComparisonModal';
 
 const CURRENCY_SYM = { TRY: '₺', USD: '$', EUR: '€' };
 
@@ -84,6 +85,7 @@ export default function Stock() {
   const [quickEdits,    setQuickEdits]    = useState({});      // {itemId: {field: val}}
   const [quickSaving,   setQuickSaving]   = useState(false);
   const [bulkModal,     setBulkModal]     = useState(false);  // toplu güncelle
+  const [showCompare,   setShowCompare]   = useState(false); // reçete karşılaştırma
   const { convert: fxConvert } = useFxRates();
   // Kategoriler
   const [categories, setCategories] = useState([]);
@@ -340,6 +342,12 @@ export default function Stock() {
             <Layers size={13} style={{ color: '#3b82f6' }} />
             <span className="hidden sm:inline">Toplu Güncelle</span>
           </button>
+          <button onClick={() => setShowCompare(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs sm:text-sm font-bold transition-all"
+            style={{ borderColor: c.border, color: c.muted, background: c.inputBg }}>
+            <ArrowRightLeft size={13} style={{ color: '#8b5cf6' }} />
+            <span className="hidden sm:inline">Reçete Karşılaştır</span>
+          </button>
           <button onClick={() => setQuickAdd(true)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs sm:text-sm font-bold transition-all"
             style={{ borderColor: c.border, color: c.muted, background: c.inputBg }}>
@@ -355,6 +363,11 @@ export default function Stock() {
           </button>
         </div>
       </div>
+
+      <RecipeComparisonModal 
+        isOpen={showCompare} 
+        onClose={() => setShowCompare(false)} 
+      />
 
       {/* Tab Bar */}
       <div className="flex items-center gap-0 border-b overflow-x-auto" style={{ borderColor: c.border }}>
