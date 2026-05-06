@@ -1121,35 +1121,59 @@ export default function App() {
                         </div>
 
                         {/* ================= 2.5 GÖRSEL İNDEKS (ALBÜM) SAYFALARI ================= */}
-                        {Array.from({ length: Math.ceil(products.length / 16) }).map((_, pageIdx) => {
-                            const group = products.slice(pageIdx * 16, pageIdx * 16 + 16);
-                            if (group.length === 0) return null;
-                            return (
-                                <div key={`album-${pageIdx}`} className="pdf-page flex flex-col relative" style={{ backgroundColor: '#ffffff', padding: '15mm' }}>
-                                    <div className="flex justify-between items-end border-b-[2px] pb-[16px] mb-[24px]" style={{ borderColor: c.textMain }}>
-                                        <h2 className="text-4xl font-black tracking-tight m-0" style={{ color: c.textMain }}>ÜRÜN İNDEKSİ</h2>
-                                        {settings.logo && <img src={settings.logo} className="h-[40px] object-contain" alt="Logo mini" />}
+                        {(() => {
+                            const ITEMS_PER_PAGE = 20;
+                            const miniPageCount = Math.ceil(products.length / ITEMS_PER_PAGE);
+                            
+                            // Sayfa numaralarını hesapla (Ön kapak ve Hakkımızda sayfalarından sonra)
+                            let currentPage = 2 + miniPageCount;
+                            const productPageMap = {};
+                            
+                            categories.forEach(cat => {
+                                const catProds = products.filter(p => p.categoryId === cat.id);
+                                if (catProds.length > 0) {
+                                    currentPage++; // Kategori kapak sayfası
+                                    catProds.forEach((p, idx) => {
+                                        const prodPageOffset = Math.floor(idx / 3);
+                                        productPageMap[p.id] = currentPage + prodPageOffset;
+                                    });
+                                    currentPage += Math.ceil(catProds.length / 3);
+                                }
+                            });
+
+                            return Array.from({ length: miniPageCount }).map((_, pageIdx) => {
+                                const group = products.slice(pageIdx * ITEMS_PER_PAGE, pageIdx * ITEMS_PER_PAGE + ITEMS_PER_PAGE);
+                                if (group.length === 0) return null;
+                                return (
+                                    <div key={`album-${pageIdx}`} className="pdf-page flex flex-col relative" style={{ backgroundColor: '#ffffff', padding: '15mm' }}>
+                                        <div className="flex justify-between items-end border-b-[2px] pb-[12px] mb-[20px]" style={{ borderColor: c.textMain }}>
+                                            <h2 className="text-3xl font-black tracking-tight m-0" style={{ color: c.textMain }}>ÜRÜN İNDEKSİ</h2>
+                                            {settings.logo && <img src={settings.logo} className="h-[32px] object-contain" alt="Logo mini" />}
+                                        </div>
+                                        <div className="grid grid-cols-4 gap-x-4 gap-y-3 flex-1 content-start">
+                                        {group.map((product) => (
+                                            <a href={`#prod-${product.id}`} key={product.id} className="flex flex-col items-center justify-start p-1.5 border rounded-lg no-underline cursor-pointer group hover:bg-gray-50" style={{ borderColor: '#f1f5f9' }}>
+                                                <div className="h-[65px] w-full flex justify-center items-center mb-1">
+                                                    {product.image ? (
+                                                        <img src={product.image} className="max-h-full max-w-full object-contain mix-blend-multiply" />
+                                                    ) : <FileImage size={20} style={{ color: '#cbd5e1' }} />}
+                                                </div>
+                                                <div className="text-[9px] font-black text-center truncate w-full" style={{ color: c.textMain }}>{product.name}</div>
+                                                <div className="text-[8px] text-center" style={{ color: '#64748b' }}>{product.code}</div>
+                                                <div className="mt-1 flex items-center justify-between w-full px-1">
+                                                    <span className="text-[8px] font-bold text-blue-600">SAYFA {productPageMap[product.id] || '?'}</span>
+                                                    {product.showPrice && product.price && (
+                                                        <span className="text-[8px] font-bold" style={{ color: '#10b981' }}>{getCurrencySymbol(product.currency)}{product.price}</span>
+                                                    )}
+                                                </div>
+                                            </a>
+                                        ))}
+                                        </div>
+                                        <div className="text-center text-[10px] uppercase tracking-widest mt-[20px] border-t pt-[12px] m-0" style={{ color: '#94a3b8', borderColor: '#f1f5f9' }}>Sayfa 0{3 + pageIdx}</div>
                                     </div>
-                                    <div className="grid grid-cols-4 gap-4 flex-1 content-start">
-                                    {group.map((product) => (
-                                        <a href={`#prod-${product.id}`} key={product.id} className="flex flex-col items-center justify-start p-2 border rounded-lg no-underline cursor-pointer" style={{ borderColor: '#f1f5f9' }}>
-                                            <div className="h-[80px] w-full flex justify-center items-center mb-2">
-                                                {product.image ? (
-                                                    <img src={product.image} className="max-h-full max-w-full object-contain mix-blend-multiply" />
-                                                ) : <FileImage size={24} style={{ color: '#cbd5e1' }} />}
-                                            </div>
-                                            <div className="text-[10px] font-black text-center" style={{ color: c.textMain }}>{product.name}</div>
-                                            <div className="text-[9px] text-center" style={{ color: '#64748b' }}>{product.code}</div>
-                                            {product.showPrice && product.price && (
-                                                <div className="text-[10px] font-bold mt-1 text-center" style={{ color: '#2563eb' }}>{getCurrencySymbol(product.currency)}{product.price}</div>
-                                            )}
-                                        </a>
-                                    ))}
-                                    </div>
-                                    <div className="text-center text-[10px] uppercase tracking-widest mt-[32px] border-t pt-[16px] m-0" style={{ color: '#94a3b8', borderColor: '#f1f5f9' }}>Sayfa 0{3 + pageIdx}</div>
-                                </div>
-                            )
-                        })}
+                                )
+                            });
+                        })()}
 
                         {/* ================= 3. İÇERİK SAYFALARI ================= */}
                         <div className="pdf-content-wrapper flex flex-col">
@@ -1269,13 +1293,13 @@ export default function App() {
                                                                         })}
                                                                     </div>
 
-                                                                    {/* Teknik Çizim (Özelliklerin Altında Sola Dayalı, Sol Üste Doğru Büyütülmüş) */}
+                                                                    {/* Teknik Çizim (Stabil Yerleşim) */}
                                                                     {product.techImage ? (
-                                                                        <div className="mt-auto pt-[8px] w-full relative h-[80px]" style={{ borderTop: '1px solid #e2e8f0' }}>
-                                                                            <img src={product.techImage} className="border-none" style={{ position: 'absolute', top: '12px', left: 0, height: '140%', maxWidth: '100%', objectFit: 'contain', mixBlendMode: 'multiply', transformOrigin: 'top left', transform: 'scale(1.25)', opacity: 0.9 }} alt={`${product.name} Teknik`} />
+                                                                        <div className="mt-auto pt-[4px] w-full flex justify-start items-end h-[100px]" style={{ borderTop: '1px solid #e2e8f0' }}>
+                                                                            <img src={product.techImage} className="max-h-[90px] max-w-[90%] object-contain mix-blend-multiply opacity-90" alt={`${product.name} Teknik`} />
                                                                         </div>
                                                                     ) : (
-                                                                        <div className="mt-auto pt-[8px] w-full h-[80px]" style={{ borderTop: '1px solid #e2e8f0' }}></div>
+                                                                        <div className="mt-auto pt-[4px] w-full h-[100px]" style={{ borderTop: '1px solid #e2e8f0' }}></div>
                                                                     )}
                                                                 </div>
                                                             </div>

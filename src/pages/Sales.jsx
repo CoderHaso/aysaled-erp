@@ -1785,15 +1785,13 @@ function OrderCard({ order, onView, onEdit, onStatusChange, onSendToWorkOrders, 
               {order.is_invoiced ? <BadgeCheck size={9}/> : <BadgeX size={9}/>}
               {order.is_invoiced ? 'Faturalı' : 'Faturasız'}
             </span>
-            {!isHistory && (
-              <button onClick={e => { e.stopPropagation(); onEdit(order); }}
-                className="p-1.5 rounded-lg transition-all"
-                style={{ color: c.muted }}
-                onMouseEnter={e => e.currentTarget.style.background = `${currentColor}15`}
-                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                <Edit3 size={13}/>
-              </button>
-            )}
+            <button onClick={e => { e.stopPropagation(); onEdit(order); }}
+              className="p-1.5 rounded-lg transition-all"
+              style={{ color: c.muted }}
+              onMouseEnter={e => e.currentTarget.style.background = `${currentColor}15`}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              <Edit3 size={13}/>
+            </button>
             <StatusBadge status={order.status} urgent={urgent}/>
           </div>
         </div>
