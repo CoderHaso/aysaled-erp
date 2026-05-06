@@ -590,6 +590,7 @@ function OrderForm({ order, customers, allItems, setAllItems, allRecipes = [], o
     vatBreak[pct] = (vatBreak[pct] || 0) + vatLine;
   });
 
+  const handleSave = async () => {
     // Reçete Kontrolü (Mamüller için)
     const missingRecipes = lines.filter(l => 
       l.item_type === 'product' && 
