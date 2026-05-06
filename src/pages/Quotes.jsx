@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Search, FileText, Loader2, Trash2, Eye, Edit3,
-  CheckCircle2, Clock, XCircle, Send, RefreshCw, FileMinus, Calendar, X
+  CheckCircle2, Clock, XCircle, Send, RefreshCw, FileMinus, Calendar, X, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
@@ -43,6 +43,72 @@ function Toast({ msg, type, onClose }) {
   );
 }
 
+function DateGroup({ date, quotes, isInitiallyExpanded, isDark, c, currentColor, onEdit, onDelete, onPreview, onStatusUpdate, onAccept }) {
+  const [isExpanded, setIsExpanded] = useState(isInitiallyExpanded);
+
+  return (
+    <div className="rounded-2xl overflow-hidden mb-4" style={{ border: `1px solid ${c.border}`, background: isDark ? 'rgba(255,255,255,0.02)' : '#ffffff' }}>
+      <button onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full flex items-center justify-between px-5 py-3.5 transition-colors"
+        style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', borderBottom: isExpanded ? `1px solid ${c.border}` : 'none' }}>
+        <div className="flex items-center gap-3">
+          <Calendar size={16} style={{ color: currentColor }} />
+          <span className="text-sm font-bold" style={{ color: c.text }}>{date}</span>
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: `${currentColor}20`, color: currentColor }}>
+            {quotes.length} Teklif
+          </span>
+        </div>
+        {isExpanded ? <ChevronUp size={18} style={{ color: c.muted }} /> : <ChevronDown size={18} style={{ color: c.muted }} />}
+      </button>
+
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+            <div className="divide-y" style={{ borderColor: c.border }}>
+              {quotes.map((q) => (
+                <div key={q.id} className="grid grid-cols-1 sm:grid-cols-12 px-5 py-4 items-center gap-3 hover:bg-white/5 transition-colors">
+                  <div className="sm:col-span-2">
+                    <p className="text-sm font-bold font-mono" style={{ color: '#22863a' }}>{q.quote_no}</p>
+                  </div>
+                  <div className="sm:col-span-4">
+                    <p className="text-sm font-medium" style={{ color: c.text }}>{q.company_name || '-'}</p>
+                    <p className="text-[11px]" style={{ color: c.muted }}>{q.contact_person || ''}</p>
+                  </div>
+                  <div className="sm:col-span-2"><StatusBadge status={q.status} /></div>
+                  <div className="sm:col-span-2 text-right">
+                    <p className="text-sm font-bold" style={{ color: c.text }}>{fmt(q.grand_total)} {q.currency}</p>
+                  </div>
+                  <div className="sm:col-span-2 flex items-center justify-end gap-1">
+                    {q.status === 'draft' && (
+                      <button onClick={() => onStatusUpdate(q.id, 'sent')} className="p-1.5 rounded-lg text-slate-400 hover:text-blue-500 hover:bg-blue-50">
+                        <Send size={15} />
+                      </button>
+                    )}
+                    {(q.status === 'draft' || q.status === 'sent') && (
+                      <button onClick={() => onAccept(q)} className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-500 hover:bg-emerald-50">
+                        <CheckCircle2 size={15} />
+                      </button>
+                    )}
+                    <button onClick={() => onPreview(q)} className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-500 hover:bg-indigo-50">
+                      <Eye size={15} />
+                    </button>
+                    <button onClick={() => onEdit(q.id)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100">
+                      <Edit3 size={15} />
+                    </button>
+                    <button onClick={() => onDelete(q.id, q.quote_no)} className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50">
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 export default function Quotes() {
   const { effectiveMode, currentColor } = useTheme();
   const isDark = effectiveMode === 'dark';
@@ -73,12 +139,10 @@ export default function Quotes() {
   const handleAccept = async (q) => {
     try {
       setAcceptModal(null);
-      // Satış ekranına yönlendir — teklif durumunu henüz değiştirme.
-      // Kullanıcı sipariş oluşturursa -> accepted, iptal ederse -> orijinal durum kalır.
       navigate('/sales', {
         state: {
           createFromQuote: q,
-          quoteOriginalStatus: q.status, // geri dönüş için
+          quoteOriginalStatus: q.status,
           quoteMsg: 'Sipariş formunu doldurup oluşturduğunuzda teklif kabul edilmiş olarak işaretlenecek.'
         }
       });
@@ -131,7 +195,6 @@ export default function Quotes() {
     return matchSearch && matchStatus;
   });
 
-  // İstatistikler
   const stats = {
     total: quotes.length,
     draft: quotes.filter(q => q.status === 'draft').length,
@@ -146,7 +209,6 @@ export default function Quotes() {
     muted: isDark ? '#94a3b8' : '#64748b',
   };
 
-  // Teklif formu aç/kapat
   if (view === 'form') {
     return (
       <QuoteForm
@@ -160,9 +222,7 @@ export default function Quotes() {
 
   return (
     <>
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-        className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
-
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex items-start justify-between gap-3 mb-6">
           <div>
@@ -202,10 +262,10 @@ export default function Quotes() {
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Teklif no veya müşteri ara..."
-              className="w-full pl-8 pr-4 py-2.5 rounded-xl text-sm text-slate-100 placeholder-slate-500 outline-none"
-              style={{ background: 'rgba(255,255,255,0.06)', border: `1px solid ${c.border}` }} />
+              className="w-full pl-8 pr-4 py-2.5 rounded-xl text-sm outline-none"
+              style={{ background: 'rgba(255,255,255,0.06)', border: `1px solid ${c.border}`, color: c.text }} />
           </div>
-          <div className="flex gap-1.5 flex-wrap overflow-x-auto">
+          <div className="flex gap-1.5 flex-wrap">
             {[['all', 'Tümü'], ...Object.entries(STATUS).map(([k, v]) => [k, v.label])].map(([k, l]) => (
               <button key={k} onClick={() => setStatusFilter(k)}
                 className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap"
@@ -217,27 +277,15 @@ export default function Quotes() {
               </button>
             ))}
           </div>
-          {/* Tarih Filtresi — mobilde gizle */}
-          <div className="hidden sm:flex items-center gap-2">
-            <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl"
-              style={{ background: 'rgba(255,255,255,0.06)', border: `1px solid ${c.border}` }}>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl" style={{ background: 'rgba(255,255,255,0.06)', border: `1px solid ${c.border}` }}>
               <Calendar size={11} style={{ color: c.muted }} />
-              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-                className="bg-transparent text-[11px] outline-none" style={{ color: c.text }} />
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="bg-transparent text-[11px] outline-none" style={{ color: c.text }} />
             </div>
-            <span className="text-[10px] font-bold" style={{ color: c.muted }}>—</span>
-            <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl"
-              style={{ background: 'rgba(255,255,255,0.06)', border: `1px solid ${c.border}` }}>
+            <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl" style={{ background: 'rgba(255,255,255,0.06)', border: `1px solid ${c.border}` }}>
               <Calendar size={11} style={{ color: c.muted }} />
-              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-                className="bg-transparent text-[11px] outline-none" style={{ color: c.text }} />
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="bg-transparent text-[11px] outline-none" style={{ color: c.text }} />
             </div>
-            {(dateFrom || dateTo) && (
-              <button onClick={() => { setDateFrom(''); setDateTo(''); }}
-                className="p-1.5 rounded-lg" style={{ color: '#ef4444', background: 'rgba(239,68,68,0.08)' }}>
-                <X size={11} />
-              </button>
-            )}
           </div>
         </div>
 
@@ -249,165 +297,30 @@ export default function Quotes() {
         ) : filtered.length === 0 ? (
           <div className="text-center py-20" style={{ color: c.muted }}>
             <FileText size={48} className="mx-auto mb-3 opacity-20" />
-            <p>{search || statusFilter !== 'all' ? 'Sonuç bulunamadı' : 'Henüz teklif oluşturulmadı'}</p>
-            {!search && statusFilter === 'all' && (
-              <button onClick={() => { setEditId(null); setView('form'); }}
-                className="mt-4 px-5 py-2 rounded-xl text-white text-sm font-semibold"
-                style={{ background: '#1a6b2c' }}>
-                İlk Teklifi Oluştur
-              </button>
-            )}
+            <p>Sonuç bulunamadı</p>
           </div>
         ) : (
-          <>
-            {/* ── Desktop: Tablo görünümü ── */}
-            <div className="hidden sm:block rounded-2xl overflow-hidden" style={{ border: `1px solid ${c.border}` }}>
-              {/* Tablo header */}
-              <div className="grid grid-cols-12 px-5 py-3 text-xs font-semibold"
-                style={{ color: c.muted, background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', borderBottom: `1px solid ${c.border}` }}>
-                <div className="col-span-2">Teklif No</div>
-                <div className="col-span-3">Müşteri</div>
-                <div className="col-span-2">Tarih</div>
-                <div className="col-span-1">Durum</div>
-                <div className="col-span-1 text-right">Tutar</div>
-                <div className="col-span-3" />
-              </div>
-              {filtered.map((q, i) => (
-                <motion.div key={q.id}
-                  initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.03 }}
-                  className="grid grid-cols-12 px-5 py-4 items-center border-b last:border-b-0 group hover:bg-white/5 transition-colors"
-                  style={{ borderColor: c.border }}>
-                  <div className="col-span-2">
-                    <p className="text-sm font-bold font-mono" style={{ color: '#22863a' }}>{q.quote_no}</p>
-                  </div>
-                  <div className="col-span-3">
-                    <p className="text-sm font-medium" style={{ color: c.text }}>{q.company_name || '-'}</p>
-                    <p className="text-[11px]" style={{ color: c.muted }}>{q.contact_person || ''}</p>
-                  </div>
-                  <div className="col-span-2 text-sm" style={{ color: c.muted }}>{fmtD(q.issue_date)}</div>
-                  <div className="col-span-1"><StatusBadge status={q.status} /></div>
-                  <div className="col-span-1 text-right">
-                    <p className="text-sm font-bold" style={{ color: c.text }}>{fmt(q.grand_total)}</p>
-                    <p className="text-[10px]" style={{ color: c.muted }}>{q.currency}</p>
-                  </div>
-                  <div className="col-span-3 flex items-center justify-end gap-1">
-                    {/* Hızlı İşlemler */}
-                    {q.status === 'draft' && (
-                      <button onClick={() => updateStatus(q.id, 'sent')} title="Gönderildi Olarak İşaretle"
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-blue-500 hover:bg-blue-50 transition-colors">
-                        <Send size={15} />
-                      </button>
-                    )}
-                    {(q.status === 'draft' || q.status === 'sent') && (
-                      <>
-                        <button onClick={() => setAcceptModal(q)} title="Onayla / Satışa Aktar"
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 transition-colors">
-                          <CheckCircle2 size={15} />
-                        </button>
-                        <button onClick={() => updateStatus(q.id, 'rejected')} title="Reddet"
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors">
-                          <XCircle size={15} />
-                        </button>
-                      </>
-                    )}
-
-                    <div className="w-[1px] h-4 bg-slate-200 mx-1" />
-
-                    <button onClick={() => setPreviewQ(q)} title="Önizle / Yazdır"
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 transition-colors">
-                      <Eye size={15} />
-                    </button>
-                    <button onClick={() => { setEditId(q.id); setView('form'); }} title="Düzenle"
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
-                      <Edit3 size={15} />
-                    </button>
-                    <button onClick={() => deleteQuote(q.id, q.quote_no)} title="Sil"
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-
-            {/* ── Mobil: Kart görünümü ── */}
-            <div className="sm:hidden space-y-3">
-              {filtered.map((q, i) => (
-                <motion.div key={q.id}
-                  initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.03 }}
-                  className="rounded-2xl overflow-hidden"
-                  style={{ background: c.card, border: `1px solid ${c.border}` }}>
-                  {/* Üst: No + Durum + Tutar */}
-                  <div className="flex items-center justify-between px-4 pt-3.5 pb-2">
-                    <div className="flex items-center gap-2.5">
-                      <p className="text-sm font-bold font-mono" style={{ color: '#22863a' }}>{q.quote_no}</p>
-                      <StatusBadge status={q.status} />
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold" style={{ color: c.text }}>{fmt(q.grand_total)}</p>
-                      <p className="text-[10px]" style={{ color: c.muted }}>{q.currency}</p>
-                    </div>
-                  </div>
-                  {/* Orta: Müşteri + Tarih */}
-                  <div className="px-4 pb-2.5">
-                    <p className="text-sm font-medium" style={{ color: c.text }}>{q.company_name || '-'}</p>
-                    <div className="flex items-center gap-3 mt-1">
-                      {q.contact_person && <p className="text-[11px]" style={{ color: c.muted }}>{q.contact_person}</p>}
-                      <p className="text-[11px]" style={{ color: c.muted }}>
-                        <Calendar size={10} className="inline mr-1" />{fmtD(q.issue_date)}
-                      </p>
-                    </div>
-                  </div>
-                  {/* Alt: Aksiyon butonları */}
-                  <div className="flex items-center justify-between px-3 py-2.5 border-t" style={{ borderColor: c.border, background: isDark ? 'rgba(255,255,255,0.02)' : '#f8fafc' }}>
-                    <div className="flex items-center gap-0.5">
-                      {q.status === 'draft' && (
-                        <button onClick={() => updateStatus(q.id, 'sent')}
-                          className="p-2 rounded-lg" style={{ color: '#3b82f6' }}>
-                          <Send size={16} />
-                        </button>
-                      )}
-                      {(q.status === 'draft' || q.status === 'sent') && (
-                        <>
-                          <button onClick={() => setAcceptModal(q)}
-                            className="p-2 rounded-lg" style={{ color: '#10b981' }}>
-                            <CheckCircle2 size={16} />
-                          </button>
-                          <button onClick={() => updateStatus(q.id, 'rejected')}
-                            className="p-2 rounded-lg" style={{ color: '#f59e0b' }}>
-                            <XCircle size={16} />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-0.5">
-                      <button onClick={() => setPreviewQ(q)}
-                        className="p-2 rounded-lg" style={{ color: '#6366f1' }}>
-                        <Eye size={16} />
-                      </button>
-                      <button onClick={() => { setEditId(q.id); setView('form'); }}
-                        className="p-2 rounded-lg" style={{ color: c.muted }}>
-                        <Edit3 size={16} />
-                      </button>
-                      <button onClick={() => deleteQuote(q.id, q.quote_no)}
-                        className="p-2 rounded-lg" style={{ color: '#ef4444' }}>
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </>
+          <div className="space-y-4">
+            {(() => {
+              const groups = {};
+              filtered.forEach(q => {
+                const d = new Date(q.created_at || q.issue_date).toLocaleDateString('tr-TR', { day:'2-digit', month:'long', year:'numeric' });
+                if (!groups[d]) groups[d] = [];
+                groups[d].push(q);
+              });
+              const sortedDates = Object.keys(groups).sort((a, b) => new Date(groups[b][0].created_at || groups[b][0].issue_date) - new Date(groups[a][0].created_at || groups[a][0].issue_date));
+              return sortedDates.map((date, idx) => (
+                <DateGroup key={date} date={date} quotes={groups[date]} isInitiallyExpanded={idx === 0 && !search}
+                  isDark={isDark} c={c} currentColor={currentColor} onEdit={id => { setEditId(id); setView('form'); }}
+                  onDelete={deleteQuote} onPreview={setPreviewQ} onStatusUpdate={updateStatus} onAccept={setAcceptModal} />
+              ));
+            })()}
+          </div>
         )}
       </motion.div>
 
-      {/* Önizleme */}
       {previewQ && <QuotePreview quote={previewQ} onClose={() => setPreviewQ(null)} />}
 
-      {/* Onay Modal */}
       {acceptModal && (
         <div className="fixed inset-0 z-[600] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(2px)' }}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 relative">
@@ -416,31 +329,22 @@ export default function Quotes() {
             </div>
             <h3 className="text-lg font-bold text-gray-800 text-center mb-2">Teklifi Onayla</h3>
             <p className="text-sm text-gray-500 text-center mb-6">
-              <strong className="text-gray-700">{acceptModal.company_name}</strong> adlı müşteriye ait teklif <span className="text-emerald-600 font-semibold mb-1">Kabul Edildi</span> aşamasına taşınacak ve sipariş formuna aktarılacak.
+              <strong className="text-gray-700">{acceptModal.company_name}</strong> adlı müşteriye ait teklif kabul edilecek ve sipariş formuna aktarılacak.
             </p>
             <div className="flex flex-col gap-2.5">
-              <button onClick={() => handleAccept(acceptModal)}
-                className="w-full py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold flex items-center justify-center gap-2 hover:bg-emerald-700 transition-colors shadow-sm">
-                <CheckCircle2 size={15} /> Onayla ve Siparişe Geç
+              <button onClick={() => handleAccept(acceptModal)} className="w-full py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold shadow-sm">
+                Onayla ve Siparişe Geç
               </button>
-              <button onClick={() => setAcceptModal(null)}
-                className="w-full py-2.5 text-gray-400 text-sm font-medium hover:text-gray-600 mt-2 transition-colors">
-                İptal Et
-              </button>
+              <button onClick={() => setAcceptModal(null)} className="w-full py-2.5 text-gray-400 text-sm font-medium">İptal Et</button>
             </div>
           </div>
         </div>
       )}
 
-      <AnimatePresence>
-        {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
-      </AnimatePresence>
+      <AnimatePresence>{toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}</AnimatePresence>
 
-      <CustomDialog
-        {...dialog}
-        onClose={() => setDialog({ ...dialog, open: false })}
-        onConfirm={dialog.onConfirm ? dialog.onConfirm : () => setDialog({ ...dialog, open: false })}
-      />
+      <CustomDialog {...dialog} onClose={() => setDialog({ ...dialog, open: false })}
+        onConfirm={dialog.onConfirm ? dialog.onConfirm : () => setDialog({ ...dialog, open: false })} />
     </>
   );
 }

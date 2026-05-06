@@ -1479,21 +1479,18 @@ export default function Invoices({ type = 'inbox' }) {
           <tbody>
             ${rows}
           </tbody>
-          <tfoot>
-            <tr style="background:#f1f5f9">
-              <td colspan="5" style="padding:10px 12px;border:1px solid #e2e8f0;font-size:12px;text-align:right;font-weight:bold">Tahmini TRY Karşılığı Toplamı:</td>
-              <td style="padding:10px 12px;border:1px solid #e2e8f0;font-size:12px;text-align:right;font-weight:bold;color:#475569">
-                ₺${grandMatrahTRY.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
-              </td>
-              <td style="padding:10px 12px;border:1px solid #e2e8f0;font-size:12px;text-align:right;font-weight:bold;color:#475569">
-                ₺${grandVatTRY.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
-              </td>
-              <td style="padding:10px 12px;border:1px solid #e2e8f0;font-size:13px;text-align:right;font-weight:900;color:#10b981">
-                ₺${grandTotalTRY.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}
-              </td>
-            </tr>
-          </tfoot>
         </table>
+
+        <div style="margin-top:16px; page-break-inside: avoid;">
+          <div style="background:#f1f5f9; padding:12px; border-radius:8px; border:1px solid #e2e8f0; display:flex; justify-content:flex-end; gap:20px; align-items:center;">
+            <div style="font-size:12px; font-weight:bold; color:#64748b;">Tahmini TRY Karşılığı Toplamı:</div>
+            <div style="text-align:right;">
+              <p style="margin:0; font-size:11px; color:#64748b;">Matrah: ₺${grandMatrahTRY.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</p>
+              <p style="margin:2px 0; font-size:11px; color:#64748b;">KDV: ₺${grandVatTRY.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</p>
+              <p style="margin:0; font-size:14px; font-weight:900; color:#10b981;">TOPLAM: ₺${grandTotalTRY.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</p>
+            </div>
+          </div>
+        </div>
       </div>
     `;
 

@@ -18,6 +18,7 @@ import CustomDialog from '../components/CustomDialog';
 import RecipePickerModal from '../components/RecipePickerModal';
 import { printDocument } from '../lib/printService';
 import { trNorm } from '../lib/trNorm';
+import QuickAddModal from '../components/stock/QuickAddModal';
 
 // ─── Sabitler & Yardımcılar ───────────────────────────────────────────────────
 const STATUS = {
@@ -125,7 +126,9 @@ function StatusBadge({ status, urgent }) {
 }
 
 // ─── Ürün Satırı ──────────────────────────────────────────────────────────────
-function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove, c, exchangeRate, fxRates, invoiceToggle }) {
+
+
+function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove, c, exchangeRate, fxRates, invoiceToggle, onQuickAdd }) {
   const { effectiveMode } = useTheme();
   const isDark = effectiveMode === 'dark';
   const [open, setOpen]             = useState(false);
@@ -243,7 +246,7 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
                     </div>
                     {/* Yeni ürün / hammadde oluştur */}
                     <div onClick={() => {
-                        window.open('#/stock', '_blank');
+                        onQuickAdd();
                         setOpen(false); setQ('');
                       }}
                       className="flex items-center gap-2 px-4 py-2.5 cursor-pointer transition-colors"
@@ -441,7 +444,7 @@ function Field({ label, type = 'text', value, onChange, suffix, placeholder }) {
 }
 
 // ─── Sipariş Formu ────────────────────────────────────────────────────────────
-function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSaved, currentColor, quoteId, quoteRevertFn, markQuoteAccepted }) {
+function OrderForm({ order, customers, allItems, setAllItems, allRecipes = [], onClose, onSaved, currentColor, quoteId, quoteRevertFn, markQuoteAccepted }) {
   const { effectiveMode } = useTheme();
   const isDark = effectiveMode === 'dark';
   const isEdit = !!order?.id;
@@ -488,7 +491,10 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
     notes:                order?.notes || '',
     quote_id:             order?.quote_id || null,
     is_history:           false, // Yeni eklenti: Geçmiş sipariş
+    discount_rate:        order?.discount_rate || 0,
+    discount_amount:      order?.discount_amount || 0,
   });
+  const [quickItemModal, setQuickItemModal] = useState(false);
   const [lines, setLines]   = useState(order?.items?.length ? order.items.map(i => ({ ...i, _key: Math.random() })) : [blankLine()]);
   const [saving, setSaving] = useState(false);
   const [custOpen, setCustOpen] = useState(false);
@@ -560,24 +566,45 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
 
   // Toplamlar
   const subtotal   = lines.reduce((s, l) => s + (l.quantity||0) * (l.unit_price||0), 0);
-  const taxTotal   = lines.reduce((s, l) => s + (l.quantity||0) * (l.unit_price||0) * (l.tax_rate||0) / 100, 0);
-  const grandTotal = subtotal + taxTotal;
+  const discountAmount = form.discount_amount || (subtotal * (form.discount_rate || 0) / 100);
+  const subtotalAfterDiscount = Math.max(0, subtotal - discountAmount);
+  
+  const taxTotal   = lines.reduce((s, l) => {
+    const lineTotal = (l.quantity||0) * (l.unit_price||0);
+    // Satır bazlı indirim orantılı dağıtılırsa (basitleştirme için global indirim matrahtan düşülür)
+    const ratio = subtotal > 0 ? lineTotal / subtotal : 0;
+    const discountedLineTotal = lineTotal - (discountAmount * ratio);
+    return s + Math.max(0, discountedLineTotal) * (l.tax_rate||0) / 100;
+  }, 0);
 
-  // KDV dökümü
+  const grandTotal = subtotalAfterDiscount + taxTotal;
+
+  // KDV dökümü (indirimli matrah üzerinden)
   const vatBreak = {};
   lines.forEach(l => {
     const pct = l.tax_rate || 0;
-    vatBreak[pct] = (vatBreak[pct] || 0) + (l.quantity||0) * (l.unit_price||0) * pct / 100;
+    const lineTotal = (l.quantity || 0) * (l.unit_price || 0);
+    const ratio = subtotal > 0 ? lineTotal / subtotal : 0;
+    const discountedLineTotal = lineTotal - (discountAmount * ratio);
+    const vatLine = Math.max(0, discountedLineTotal) * pct / 100;
+    vatBreak[pct] = (vatBreak[pct] || 0) + vatLine;
   });
 
-  const handleSave = async () => {
-    if (!form.customer_name.trim() || !form.order_number.trim()) return;
-
-    if (invoiceToggle && !isEdit) {
-      if (!form.customer_vkntckn || !form.customer_tax_office || !form.customer_city || !form.customer_address) {
-        setDialog({ open: true, title: 'Eksik Bilgi', message: "Resmi fatura oluşturabilmek için müşterinin VKN/TCKN, Vergi Dairesi, Şehir ve Açık Adres alanları Uyumsoft tarafından zorunlu tutulmaktadır!", type: 'alert' });
-        return;
-      }
+    // Reçete Kontrolü (Mamüller için)
+    const missingRecipes = lines.filter(l => 
+      l.item_type === 'product' && 
+      !l.recipe_id && 
+      !l.skip_work_order && 
+      l.item_name
+    );
+    if (missingRecipes.length > 0) {
+      setDialog({ 
+        open: true, 
+        title: 'Reçete Eksik', 
+        message: `"${missingRecipes[0].item_name}" ve ${missingRecipes.length - 1} diğer mamul için reçete seçilmemiş. Lütfen reçete seçin veya "Stoktan Kullan" seçeneğini işaretleyin.`, 
+        type: 'alert' 
+      });
+      return;
     }
 
     setSaving(true);
@@ -599,8 +626,10 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
         billing_address:  form.billing_address  || null,
         notes:            form.notes            || null,
         subtotal:         Math.round(subtotal   * 100) / 100,
+        discount_rate:    form.discount_rate    || 0,
+        discount_amount:  Math.round(discountAmount * 100) / 100,
         tax_total:        invoiceToggle ? Math.round(taxTotal * 100) / 100 : 0,
-        grand_total:      invoiceToggle ? Math.round(grandTotal * 100) / 100 : Math.round(subtotal * 100) / 100,
+        grand_total:      invoiceToggle ? Math.round(grandTotal * 100) / 100 : Math.round(subtotalAfterDiscount * 100) / 100,
         is_invoiced:      invoiceToggle ? true : false,
         // Geçmiş sipariş: created_at'i kullanıcının seçtiği tarih olarak ayarla
         ...(form.is_history && form.history_date ? { created_at: new Date(form.history_date).toISOString() } : {}),
@@ -1034,8 +1063,8 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
                 allRecipes={allRecipes} invoiceToggle={invoiceToggle}
                 onChange={patch => updateLine(idx, patch)}
                 onRemove={() => removeLine(idx)}
+                onQuickAdd={() => setQuickItemModal(true)}
                 c={{}} />
-
             ))}
           </div>
           <button onClick={() => setLines(ls => [...ls, blankLine()])}
@@ -1093,13 +1122,33 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
         <SectionCard title="Sipariş Özeti" icon={TrendingUp} isDark={isDark}>
           <div className="rounded-2xl overflow-hidden"
             style={{ border: `1px solid ${isDark ? 'rgba(148,163,184,0.1)' : '#e2e8f0'}` }}>
-            {invoiceToggle && Object.entries(vatBreak).map(([pct, amt]) => (
-              <React.Fragment key={pct}>
-                <SumRow isDark={isDark} label={`Matrah (%${pct} KDV için)`} value={fmt(lines.filter(l=>(l.tax_rate||0)==pct).reduce((s,l)=>s+(l.quantity||0)*(l.unit_price||0),0), form.currency)} />
-                <SumRow isDark={isDark} label={`KDV %${pct}`} value={fmt(amt, form.currency)} color="#60a5fa" />
-              </React.Fragment>
-            ))}
-            <SumRow isDark={isDark} label={invoiceToggle ? 'Ara Toplam (KDV hariç)' : 'Toplam'} value={fmt(subtotal, form.currency)} />
+            {invoiceToggle && Object.entries(vatBreak).map(([pct, amt]) => {
+              const lineSumForPct = lines.filter(l => (l.tax_rate || 0) == pct).reduce((s, l) => s + (l.quantity || 0) * (l.unit_price || 0), 0);
+              const ratio = subtotal > 0 ? lineSumForPct / subtotal : 0;
+              const discountedMatrah = lineSumForPct - (discountAmount * ratio);
+              return (
+                <React.Fragment key={pct}>
+                  <SumRow isDark={isDark} label={`Matrah (%${pct} KDV için)`} value={fmt(discountedMatrah, form.currency)} />
+                  <SumRow isDark={isDark} label={`KDV %${pct}`} value={fmt(amt, form.currency)} color="#60a5fa" />
+                </React.Fragment>
+              );
+            })}
+            <SumRow isDark={isDark} label={invoiceToggle ? 'Ara Toplam (KDV hariç)' : 'Ara Toplam'} value={fmt(subtotal, form.currency)} />
+            
+            <div className="grid grid-cols-2 gap-4 p-4"
+              style={{ background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(241,245,249,0.5)', borderTop: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9'}` }}>
+              <Field label="İndirim Oranı (%)" type="number" 
+                value={form.discount_rate} 
+                onChange={v => setForm(f => ({ ...f, discount_rate: parseFloat(v) || 0, discount_amount: 0 }))} />
+              <Field label="İndirim Tutarı" type="number" 
+                value={form.discount_amount} 
+                onChange={v => setForm(f => ({ ...f, discount_amount: parseFloat(v) || 0, discount_rate: 0 }))} />
+            </div>
+
+            {discountAmount > 0 && (
+              <SumRow isDark={isDark} label="Toplam İndirim" value={'-' + fmt(discountAmount, form.currency)} color="#ef4444" />
+            )}
+
             {invoiceToggle && <SumRow isDark={isDark} label="Toplam KDV" value={fmt(taxTotal, form.currency)} color="#60a5fa" />}
 
             {form.currency !== 'TRY' && (
@@ -1137,9 +1186,9 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
               borderTop: `2px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}`,
               background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(248,250,252,0.9)'
             }}>
-              <SumRow isDark={isDark} label="GENEL TOPLAM" value={fmt(invoiceToggle ? grandTotal : subtotal, form.currency)} bold accent />
+              <SumRow isDark={isDark} label="GENEL TOPLAM" value={fmt(grandTotal, form.currency)} bold accent />
               <div className="px-4 py-2 border-b text-center text-[10.5px] font-bold text-violet-500 uppercase tracking-widest" style={{ borderColor: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9' }}>
-                {buildAmountWords(invoiceToggle ? grandTotal : subtotal, form.currency)}
+                {buildAmountWords(grandTotal, form.currency)}
               </div>
               {form.currency !== 'TRY' && (
                 <div className="px-4 py-2 flex justify-between items-center text-[10px] font-bold uppercase tracking-wider"
@@ -1158,6 +1207,22 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
         </SectionCard>
 
 
+
+        {/* Uyarılar */}
+        {isEdit && (order.status === 'completed' || order.status === 'cancelled') && (
+          <div className="p-4 rounded-2xl flex items-start gap-3 mb-4"
+            style={{ background: isDark ? 'rgba(245,158,11,0.1)' : '#fffbeb', border: `1px solid ${isDark ? 'rgba(245,158,11,0.2)' : '#fde68a'}` }}>
+            <AlertTriangle size={18} className="text-amber-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-amber-600">Dikkat: Tamamlanmış Sipariş</p>
+              <p className="text-xs text-amber-600/80 leading-relaxed mt-1">
+                Bu sipariş daha önce <strong>{order.status === 'completed' ? 'Tamamlandı' : 'İptal Edildi'}</strong> olarak işaretlenmiş. 
+                Yapılan düzenlemeler (miktar, kalem değişikliği vb.) stok miktarlarını otomatik olarak <strong>GÜNCELLEMEZ</strong>. 
+                Stokları düzeltmek için manuel işlem yapmanız veya siparişi iade alıp tekrar işlemeniz gerekebilir.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Kaydet */}
         <div className="flex gap-3 pb-8">
@@ -1273,6 +1338,23 @@ function OrderForm({ order, customers, allItems, allRecipes = [], onClose, onSav
           </div>
         </motion.div>
       </div>
+    )}
+    {/* ── Hızlı Ürün Oluştur Modalı ── */}
+    {quickItemModal && (
+      <QuickAddModal 
+        onClose={() => setQuickItemModal(false)}
+        onSave={async (itemData) => {
+          try {
+            const { data, error } = await supabase.from('items').insert(itemData).select().single();
+            if (error) throw error;
+            setAllItems?.(prev => [...prev, data]);
+            setQuickItemModal(false);
+          } catch (e) {
+            setDialog({ open: true, title: 'Hata', message: 'Ürün kaydedilemedi: ' + e.message, type: 'alert' });
+          }
+        }}
+        saving={false}
+      />
     )}
   </>
   );
@@ -2366,6 +2448,7 @@ export default function Sales() {
             order={editOrder}
             customers={customers}
             allItems={allItems}
+            setAllItems={setAllItems}
             allRecipes={allRecipes}
             currentColor={currentColor}
             // Tekliften sipariş oluşturma: quote_id + geri alınabilir durum
