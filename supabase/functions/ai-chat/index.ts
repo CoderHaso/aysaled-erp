@@ -110,6 +110,14 @@ async function executeTool(supabase: any, name: string, args: any) {
         if (error) throw error;
         return { count: data?.length || 0, data: data || [] };
       }
+      
+      case 'query_customers': {
+        let q = supabase.from('customers').select('*').order('name').limit(args.limit || 20);
+        if (args.search) q = q.ilike('name', `%${args.search}%`);
+        const { data, error } = await q;
+        if (error) throw error;
+        return { count: data?.length || 0, data: data || [] };
+      }
 
       case 'query_recipes': {
         let productId = args.product_id;
@@ -237,6 +245,236 @@ async function executeTool(supabase: any, name: string, args: any) {
         ]);
         return { total_items: itemCount, total_products: productCount, total_orders: orderCount, total_invoices: invoiceCount };
       }
+
+      case 'create_quote': {
+        const { customer_name, products, currency = 'TRY', notes = '', vat_rate = 20 } = args;
+        if (!customer_name || !products || !Array.isArray(products)) return { error: 'Müşteri adı ve ürünler gereklidir.' };
+
+        // 1. Müşteri Ara
+        const { data: customer } = await supabase.from('customers').select('id, name, address, phone, email').ilike('name', `%${customer_name}%`).limit(1).maybeSingle();
+
+        // 2. Ürünleri Çöz ve Kalemleri Hazırla
+        const line_items = [];
+        let subtotal = 0;
+        for (const p of products) {
+          const { data: item } = await supabase.from('items').select('*').ilike('name', `%${p.name}%`).limit(1).maybeSingle();
+          const qty = evalMath(p.quantity) || 1;
+          const price = evalMath(p.price) || (item?.sale_price || 0);
+          const total = qty * price;
+          subtotal += total;
+          line_items.push({
+            id: Math.random().toString(36).slice(2),
+            item_id: item?.id || null,
+            item_code: item?.sku || item?.item_code || '',
+            name: item?.name || p.name,
+            description: p.description || item?.description || '',
+            quantity: qty,
+            unit: item?.unit || 'Adet',
+            unit_price: price,
+            total: total,
+            image_url: item?.image_url || ''
+          });
+        }
+
+        const vat_amount = subtotal * (evalMath(vat_rate) / 100);
+        const grand_total = subtotal + vat_amount;
+
+        // 3. Teklif No Üret (TKL-YYYY-SEQ)
+        const year = new Date().getFullYear();
+        const { data: lastQuote } = await supabase.from('quotes').select('quote_no').ilike('quote_no', `TKL-${year}-%`).order('created_at', { ascending: false }).limit(1).maybeSingle();
+        let seq = 1;
+        if (lastQuote?.quote_no) {
+          const parts = lastQuote.quote_no.split('-');
+          seq = (parseInt(parts[parts.length - 1]) || 0) + 1;
+        }
+        const quote_no = `TKL-${year}-${String(seq).padStart(3, '0')}`;
+
+        // 4. Kaydet
+        const payload = {
+          quote_no,
+          status: 'draft',
+          company_name: customer?.name || customer_name,
+          customer_id: customer?.id || null,
+          address: customer?.address || '',
+          phone: customer?.phone || '',
+          email: customer?.email || '',
+          issue_date: new Date().toISOString().slice(0, 10),
+          valid_until: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+          currency,
+          vat_rate: evalMath(vat_rate),
+          subtotal,
+          vat_amount,
+          grand_total,
+          notes,
+          line_items
+        };
+
+        const { data, error } = await supabase.from('quotes').insert(payload).select('id, quote_no').single();
+        if (error) throw error;
+        return { success: true, message: `✅ ${data.quote_no} numaralı teklif oluşturuldu.`, quote_id: data.id };
+      }
+
+      case 'convert_quote_to_order': {
+        const { quote_id, due_date } = args;
+        if (!quote_id) return { error: 'quote_id gereklidir.' };
+
+        // 1. Teklifi Oku
+        const { data: quote, error: qErr } = await supabase.from('quotes').select('*').eq('id', quote_id).single();
+        if (qErr) throw qErr;
+
+        // 2. Sipariş No Üret (AYS-FIRSTWORD-SEQ)
+        const firstWord = (quote.company_name || 'MUS').split(/\s+/)[0].replace(/[^A-Za-zİÇŞĞÜÖıçşğüö0-9]/g, '').toUpperCase().slice(0, 6);
+        const { count } = await supabase.from('orders').select('id', { count: 'exact', head: true });
+        const order_number = `AYS-${firstWord}-${String((count || 0) + 1).padStart(3, '0')}`;
+
+        // 3. Sipariş Başlığını Kaydet
+        const orderData = {
+          order_number,
+          customer_id: quote.customer_id,
+          customer_name: quote.company_name,
+          status: 'pending',
+          currency: quote.currency,
+          due_date: due_date ? new Date(due_date).toISOString() : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          billing_address: quote.address,
+          delivery_address: quote.address,
+          notes: quote.notes,
+          subtotal: quote.subtotal,
+          tax_total: quote.vat_amount,
+          grand_total: quote.grand_total,
+          is_invoiced: false,
+          quote_id: quote.id
+        };
+
+        const { data: order, error: oErr } = await supabase.from('orders').insert(orderData).select('id, order_number').single();
+        if (oErr) throw oErr;
+
+        // 4. Sipariş Kalemlerini Kaydet
+        const orderItems = [];
+        for (const li of (quote.line_items || [])) {
+          // Reçete bilgilerini bul (varsa varsayılan reçeteyi al)
+          let recipe_id = null;
+          let recipe_key = null;
+          if (li.item_id) {
+            const { data: rec } = await supabase.from('product_recipes').select('id, name').eq('product_id', li.item_id).eq('is_default', true).maybeSingle();
+            if (rec) {
+              recipe_id = rec.id;
+              recipe_key = rec.name;
+            }
+          }
+
+          orderItems.push({
+            order_id: order.id,
+            item_id: li.item_id,
+            item_name: li.name,
+            item_type: 'product', // Varsayılan olarak product
+            quantity: li.quantity,
+            unit: li.unit,
+            unit_price: li.unit_price,
+            tax_rate: quote.vat_rate,
+            notes: li.description,
+            recipe_id,
+            recipe_key,
+            skip_work_order: false
+          });
+        }
+        const { error: itemsErr } = await supabase.from('order_items').insert(orderItems);
+        if (itemsErr) console.warn('Order items error:', itemsErr.message);
+
+        // 5. Teklifi Kabul Edildi Yap
+        await supabase.from('quotes').update({ status: 'accepted' }).eq('id', quote_id);
+
+        return { success: true, message: `✅ ${order.order_number} numaralı sipariş oluşturuldu.`, order_id: order.id };
+      }
+
+      case 'create_work_orders_from_order': {
+        const { order_id } = args;
+        if (!order_id) return { error: 'order_id gereklidir.' };
+
+        // 1. Sipariş Kalemlerini Oku
+        const { data: items, error: iErr } = await supabase.from('order_items').select('*').eq('order_id', order_id);
+        if (iErr) throw iErr;
+
+        // 2. Reçeteli Ürünleri Filtrele (Mamül olan ve skip_work_order olmayan)
+        const productsToProduce = items.filter(i => i.item_type === 'product' && !i.skip_work_order);
+        if (productsToProduce.length === 0) return { success: true, message: 'Üretilecek reçeteli ürün bulunamadı.' };
+
+        // 3. İş Emirlerini Oluştur
+        const workOrders = [];
+        for (const p of productsToProduce) {
+          workOrders.push({
+            order_id: order_id,
+            item_id: p.item_id,
+            quantity: p.quantity,
+            status: 'pending',
+            recipe_id: p.recipe_id,
+            notes: p.recipe_note || '',
+            custom_recipe_items: p.custom_recipe_items
+          });
+        }
+
+        const { data: wos, error: wErr } = await supabase.from('work_orders').insert(workOrders).select('id');
+        if (wErr) throw wErr;
+
+        return { success: true, message: `✅ ${wos.length} adet iş emri oluşturuldu.`, work_order_ids: wos.map(w => w.id) };
+      }
+
+      case 'verify_recipe_materials': {
+        const { materials } = args;
+        if (!materials || !Array.isArray(materials)) return { error: 'Malzeme listesi gereklidir.' };
+
+        const results = [];
+        for (const m of materials) {
+          const name = typeof m === 'string' ? m : m.name;
+          
+          // 1. Tam Eşleşme
+          const { data: exact } = await supabase.from('items').select('id, name, unit, purchase_price, base_currency').ilike('name', name).limit(1).maybeSingle();
+          
+          if (exact) {
+            results.push({ requested: name, status: 'found', item: exact });
+            continue;
+          }
+
+          // 2. Benzer Eşleşme (Fuzzy/Partial)
+          const searchName = name.split(' ')[0]; // İlk kelimeye göre ara
+          const { data: similar } = await supabase.from('items').select('id, name, unit, purchase_price, base_currency').ilike('name', `%${searchName}%`).limit(3);
+
+          if (similar && similar.length > 0) {
+            results.push({ requested: name, status: 'suggested', suggestions: similar });
+          } else {
+            results.push({ requested: name, status: 'missing' });
+          }
+        }
+
+        const missingCount = results.filter(r => r.status === 'missing').length;
+        const suggestedCount = results.filter(r => r.status === 'suggested').length;
+
+        return { 
+          results, 
+          can_proceed: missingCount === 0 && suggestedCount === 0,
+          summary: `${results.length} malzemeden ${missingCount} tanesi bulunamadı, ${suggestedCount} tanesi için öneri var.`
+        };
+      }
+
+      case 'create_raw_material': {
+        const { name, unit = 'Adet', purchase_price = 0, base_currency = 'TRY', category = 'Hammadde' } = args;
+        if (!name) return { error: 'Malzeme adı gereklidir.' };
+
+        const payload = {
+          name,
+          item_type: 'rawmaterial',
+          unit,
+          purchase_price: evalMath(purchase_price),
+          base_currency,
+          category,
+          is_draft: false,
+          is_active: true
+        };
+
+        const { data, error } = await supabase.from('items').insert(payload).select('id, name').single();
+        if (error) throw error;
+
+        return { success: true, message: `✅ "${data.name}" hammaddesi oluşturuldu.`, item_id: data.id };
+      }
       
       default: return { error: `Bilinmeyen fonksiyon: ${name}` }
     }
@@ -258,9 +496,16 @@ const SYSTEM_PROMPT = `Sen A-ERP sisteminin yapay zeka asistanısın. Adın "A-E
 Görevin: Ürünleri, reçeteleri, stokları ve maliyetleri yönetmek.
 
 🚀 KRİTİK YETENEKLER:
-1. 'batch_create_products' ile aynı anda Ürün + Reçete + Giderler (işçilik vb.) + Fiyatlar oluşturabilirsin.
-2. 'update_item' ile ürün fiyatlarını ve para birimlerini (USD/TRY) güncelleyebilirsin.
-3. 'update_recipe' ile mevcut reçetelere işçilik, genel gider veya hammadde ekleyebilirsin.
+1. 'batch_create_products' ile Ürün + Reçete oluşturabilirsin.
+2. 'update_item' ve 'update_recipe' ile mevcut verileri güncelleyebilirsin.
+3. 'create_quote' -> 'convert_quote_to_order' -> 'create_work_orders_from_order' akışını yönetebilirsin.
+
+⚠️ REÇETE OLUŞTURMA KURALLARI:
+- Bir reçete (BOM) oluşturmadan veya güncellemeden önce MUTLAKA 'verify_recipe_materials' kullanarak malzemelerin sistemde varlığını kontrol etmelisiniz.
+- Eğer bir malzeme eksikse (status: 'missing'), kullanıcıya "Bu malzeme sistemde yok, oluşturmamı ister misiniz?" diye sormalısınız.
+- Eğer benzer isimli malzemeler varsa (status: 'suggested'), kullanıcıya bunları önerin: "Şu isimde benzer ürünler var, bunlardan birini mi demek istediniz?"
+- Kullanıcı onay vermeden asla hayali veya ID'siz malzemelerle reçete oluşturmayın. Eksik malzemeleri 'create_raw_material' ile oluşturduktan sonra reçeteye geçin.
+
 4. Para birimi USD ise 'sale_currency' ve 'base_currency' alanlarını 'USD' yap.`
 
 const TOOLS = [
@@ -376,6 +621,108 @@ const TOOLS = [
       name: 'get_summary_stats',
       description: 'Genel özet istatistikleri.',
       parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'query_customers',
+      description: 'Müşteri (Cari) arar.',
+      parameters: { type: 'object', properties: { search: { type: 'string' }, limit: { type: 'integer' } } }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_quote',
+      description: 'Yeni bir satış teklifi oluşturur.',
+      parameters: {
+        type: 'object',
+        properties: {
+          customer_name: { type: 'string', description: 'Müşteri adı' },
+          currency: { type: 'string', enum: ['TRY', 'USD', 'EUR'] },
+          vat_rate: { type: 'number', description: 'KDV oranı (örn: 20)' },
+          notes: { type: 'string' },
+          products: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                quantity: { type: ['number', 'string'] },
+                price: { type: ['number', 'string'] },
+                description: { type: 'string' }
+              },
+              required: ['name', 'quantity']
+            }
+          }
+        },
+        required: ['customer_name', 'products']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'convert_quote_to_order',
+      description: 'Bir teklifi satış siparişine dönüştürür.',
+      parameters: {
+        type: 'object',
+        properties: {
+          quote_id: { type: 'string', description: 'Teklif ID' },
+          due_date: { type: 'string', description: 'Termin tarihi (YYYY-MM-DD)' }
+        },
+        required: ['quote_id']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_work_orders_from_order',
+      description: 'Siparişteki reçeteli ürünler için iş emirleri oluşturur.',
+      parameters: {
+        type: 'object',
+        properties: {
+          order_id: { type: 'string', description: 'Sipariş ID' }
+        },
+        required: ['order_id']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'verify_recipe_materials',
+      description: 'Reçete malzemelerinin sistemde varlığını kontrol eder ve öneriler sunar.',
+      parameters: {
+        type: 'object',
+        properties: {
+          materials: {
+            type: 'array',
+            items: { type: 'string', description: 'Malzeme adı' }
+          }
+        },
+        required: ['materials']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_raw_material',
+      description: 'Yeni bir hammadde kaydı oluşturur.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          unit: { type: 'string' },
+          purchase_price: { type: ['number', 'string'] },
+          base_currency: { type: 'string' },
+          category: { type: 'string' }
+        },
+        required: ['name']
+      }
     }
   }
 ]
