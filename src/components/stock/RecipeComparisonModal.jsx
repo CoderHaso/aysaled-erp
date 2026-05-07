@@ -9,8 +9,11 @@ import { supabase } from '../../lib/supabaseClient';
 import { useTheme } from '../../contexts/ThemeContext';
 import { trNorm } from '../../lib/trNorm';
 
+import { useFxRates } from '../../hooks/useFxRates';
+
 export default function RecipeComparisonModal({ isOpen, onClose }) {
   const { effectiveMode, currentColor } = useTheme();
+  const { convert: fxConvert } = useFxRates();
   const isDark = effectiveMode === 'dark';
 
   const [loading, setLoading] = useState(true);
@@ -105,14 +108,20 @@ export default function RecipeComparisonModal({ isOpen, onClose }) {
       ...itemsB.map(i => i.item_name || i.item?.name)
     ])).filter(Boolean);
 
-    const rows = allItemNames.map(name => {
-      const itemA = itemsA.find(i => (i.item_name || i.item?.name) === name);
-      const itemB = itemsB.find(i => (i.item_name || i.item?.name) === name);
-      
-      const qtyA = itemA?.quantity || 0;
-      const qtyB = itemB?.quantity || 0;
-      const unit = itemA?.unit || itemB?.unit || '';
-      
+      const costA = (riA) => {
+        const p = riA?.item?.purchase_price || 0;
+        const cur = riA?.item?.base_currency || 'TRY';
+        return fxConvert(p * (riA?.quantity || 0), cur, 'TRY');
+      };
+      const costB = (riB) => {
+        const p = riB?.item?.purchase_price || 0;
+        const cur = riB?.item?.base_currency || 'TRY';
+        return fxConvert(p * (riB?.quantity || 0), cur, 'TRY');
+      };
+
+      const cA = costA(itemA);
+      const cB = costB(itemB);
+
       return {
         name,
         qtyA,
@@ -120,16 +129,26 @@ export default function RecipeComparisonModal({ isOpen, onClose }) {
         diff: qtyB - qtyA,
         unit,
         price: itemA?.item?.purchase_price || itemB?.item?.purchase_price || 0,
-        currency: itemA?.item?.base_currency || itemB?.item?.base_currency || 'TRY'
+        currency: itemA?.item?.base_currency || itemB?.item?.base_currency || 'TRY',
+        costA: cA,
+        costB: cB,
+        costDiff: cB - cA
       };
     });
 
     // Maliyet hesaplama
     const getCost = (recipe) => {
-      const materials = (recipe.recipe_items || []).reduce((sum, ri) => 
-        sum + (Number(ri.quantity) * (Number(ri.item?.purchase_price) || 0)), 0
-      );
-      const other = (recipe.other_costs || []).reduce((sum, oc) => sum + Number(oc.amount || 0), 0);
+      const materials = (recipe.recipe_items || []).reduce((sum, ri) => {
+        const price = Number(ri.item?.purchase_price) || 0;
+        const curr = ri.item?.base_currency || 'TRY';
+        const tryPrice = fxConvert(price, curr, 'TRY');
+        return sum + (Number(ri.quantity) * tryPrice);
+      }, 0);
+      const other = (recipe.other_costs || []).reduce((sum, oc) => {
+        const price = Number(oc.amount || 0);
+        const curr = oc.currency || 'TRY';
+        return sum + fxConvert(price, curr, 'TRY');
+      }, 0);
       return { materials, other, total: materials + other };
     };
 
@@ -138,7 +157,7 @@ export default function RecipeComparisonModal({ isOpen, onClose }) {
       costA: getCost(selectedA.recipe),
       costB: getCost(selectedB.recipe),
     };
-  }, [selectedA, selectedB]);
+  }, [selectedA, selectedB, fxConvert]);
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -211,9 +230,9 @@ export default function RecipeComparisonModal({ isOpen, onClose }) {
                     <thead>
                       <tr className="text-[10px] uppercase font-bold tracking-wider" style={{ background: c.inputBg, color: c.muted, borderBottom: `1px solid ${c.border}` }}>
                         <th className="px-4 py-3 text-left">Malzeme</th>
-                        <th className="px-4 py-3 text-center">Reçete A</th>
-                        <th className="px-4 py-3 text-center">Reçete B</th>
-                        <th className="px-4 py-3 text-right">Fark</th>
+                        <th className="px-4 py-3 text-center">Reçete A (Mly)</th>
+                        <th className="px-4 py-3 text-center">Reçete B (Mly)</th>
+                        <th className="px-4 py-3 text-right">Fark (Mly)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y" style={{ borderColor: c.border }}>
@@ -221,15 +240,21 @@ export default function RecipeComparisonModal({ isOpen, onClose }) {
                         const hasDiff = row.diff !== 0;
                         return (
                           <tr key={i} className="hover:bg-black/5 transition-colors">
-                            <td className="px-4 py-3 font-medium" style={{ color: c.text }}>{row.name}</td>
-                            <td className="px-4 py-3 text-center font-mono text-xs" style={{ color: c.muted }}>
-                              {row.qtyA > 0 ? `${row.qtyA} ${row.unit}` : '—'}
+                            <td className="px-4 py-3 font-medium" style={{ color: c.text }}>
+                              <div>{row.name}</div>
+                              <div className="text-[9px] opacity-50">{row.price.toFixed(2)} {row.currency} / {row.unit}</div>
                             </td>
-                            <td className="px-4 py-3 text-center font-mono text-xs" style={{ color: c.muted }}>
-                              {row.qtyB > 0 ? `${row.qtyB} ${row.unit}` : '—'}
+                            <td className="px-4 py-3 text-center tabular-nums">
+                              <div className="text-xs font-mono" style={{ color: c.text }}>{row.qtyA > 0 ? `${row.qtyA} ${row.unit}` : '—'}</div>
+                              {row.qtyA > 0 && <div className="text-[10px]" style={{ color: c.muted }}>₺{row.costA.toFixed(2)}</div>}
                             </td>
-                            <td className={`px-4 py-3 text-right font-bold text-xs ${row.diff > 0 ? 'text-red-500' : row.diff < 0 ? 'text-green-500' : 'opacity-20'}`}>
-                              {row.diff > 0 ? `+${row.diff}` : row.diff === 0 ? '—' : row.diff} {row.unit}
+                            <td className="px-4 py-3 text-center tabular-nums">
+                              <div className="text-xs font-mono" style={{ color: c.text }}>{row.qtyB > 0 ? `${row.qtyB} ${row.unit}` : '—'}</div>
+                              {row.qtyB > 0 && <div className="text-[10px]" style={{ color: c.muted }}>₺{row.costB.toFixed(2)}</div>}
+                            </td>
+                            <td className={`px-4 py-3 text-right tabular-nums font-bold text-xs ${row.costDiff > 0 ? 'text-red-500' : row.costDiff < 0 ? 'text-green-500' : 'opacity-20'}`}>
+                              <div>{row.diff > 0 ? `+${row.diff}` : row.diff === 0 ? '—' : row.diff} {row.unit}</div>
+                              {row.costDiff !== 0 && <div className="text-[10px]">₺{row.costDiff.toFixed(2)}</div>}
                             </td>
                           </tr>
                         );
@@ -249,7 +274,7 @@ export default function RecipeComparisonModal({ isOpen, onClose }) {
                 <p className="text-sm font-semibold">
                   B ürünü, A ürününe göre 
                   <span className={comparison.costB.total > comparison.costA.total ? 'text-red-500 mx-1' : 'text-green-500 mx-1'}>
-                    {Math.abs(comparison.costB.total - comparison.costA.total).toFixed(2)} {selectedA.product.base_currency}
+                    ₺{Math.abs(comparison.costB.total - comparison.costA.total).toFixed(2)}
                   </span> 
                   {comparison.costB.total > comparison.costA.total ? 'daha pahalı.' : 'daha ucuz.'}
                 </p>
@@ -403,7 +428,7 @@ function CostSummary({ cardLabel, cost, c, currentColor }) {
           <span className="font-bold" style={{ color: c.text }}>₺{cost.other.toFixed(2)}</span>
         </div>
         <div className="pt-2 mt-2 border-t flex justify-between" style={{ borderColor: c.border }}>
-          <span className="text-xs font-bold" style={{ color: c.text }}>Toplam:</span>
+          <span className="text-xs font-bold" style={{ color: c.text }}>Toplam (TRY):</span>
           <span className="text-sm font-extrabold" style={{ color: currentColor }}>₺{cost.total.toFixed(2)}</span>
         </div>
       </div>

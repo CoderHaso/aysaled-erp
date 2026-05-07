@@ -503,7 +503,7 @@ function OrderForm({ order, customers, allItems, setAllItems, allRecipes = [], o
   const [quickCustForm, setQuickCustForm] = useState(null);
   const [quickCustSaving, setQuickCustSaving] = useState(false);
   // Fatura toggle
-  const [invoiceToggle, setInvoiceToggle] = useState(false);
+  const [invoiceToggle, setInvoiceToggle] = useState(order?.is_invoiced || false);
   const [draftLoading,  setDraftLoading]  = useState(false);
   const [draftPreviewUrl, setDraftPreviewUrl] = useState(null);  // string URL veya null
 
@@ -577,7 +577,7 @@ function OrderForm({ order, customers, allItems, setAllItems, allRecipes = [], o
     return s + Math.max(0, discountedLineTotal) * (l.tax_rate||0) / 100;
   }, 0);
 
-  const grandTotal = subtotalAfterDiscount + taxTotal;
+  const grandTotal = invoiceToggle ? (subtotalAfterDiscount + taxTotal) : subtotalAfterDiscount;
 
   // KDV dökümü (indirimli matrah üzerinden)
   const vatBreak = {};
@@ -631,7 +631,7 @@ function OrderForm({ order, customers, allItems, setAllItems, allRecipes = [], o
         discount_amount:  Math.round(discountAmount * 100) / 100,
         tax_total:        invoiceToggle ? Math.round(taxTotal * 100) / 100 : 0,
         grand_total:      invoiceToggle ? Math.round(grandTotal * 100) / 100 : Math.round(subtotalAfterDiscount * 100) / 100,
-        is_invoiced:      invoiceToggle ? true : false,
+        is_invoiced:      !!invoiceToggle,
         // Geçmiş sipariş: created_at'i kullanıcının seçtiği tarih olarak ayarla
         ...(form.is_history && form.history_date ? { created_at: new Date(form.history_date).toISOString() } : {}),
         // quote_id — tekliften gelen siparişlerde bağlantı kurulur
@@ -773,7 +773,7 @@ function OrderForm({ order, customers, allItems, setAllItems, allRecipes = [], o
           // Note oluştur
           const noteParts = [];
           if (invSettings.show_amount_words) {
-            noteParts.push(buildAmountWords(Math.round((subtotal + taxTotal) * 100) / 100, form.currency));
+            noteParts.push(buildAmountWords(Math.round(grandTotal * 100) / 100, form.currency));
           }
           if (form.notes) noteParts.push(form.notes);
           if (invSettings.custom_note) noteParts.push(invSettings.custom_note);
@@ -790,13 +790,20 @@ function OrderForm({ order, customers, allItems, setAllItems, allRecipes = [], o
             currency: form.currency,
             notes: finalNotes,
             exchange_rate: exchangeRate?.rate || 1,
-            lines: orderLines.map(l => ({
-              name: l.item_name,
-              quantity: Number(l.quantity),
-              unit: l.unit,
-              unitPrice: Number(l.unit_price),
-              taxRate: Number(l.tax_rate)
-            }))
+            lines: orderLines.map(l => {
+              const lineTotal = Number(l.quantity) * Number(l.unit_price);
+              const ratio = subtotal > 0 ? lineTotal / subtotal : 0;
+              const discountedTotal = lineTotal - (discountAmount * ratio);
+              const discountedUnitPrice = Number(l.quantity) > 0 ? discountedTotal / Number(l.quantity) : Number(l.unit_price);
+              
+              return {
+                name: l.item_name,
+                quantity: Number(l.quantity),
+                unit: l.unit,
+                unitPrice: discountedUnitPrice,
+                taxRate: Number(l.tax_rate)
+              };
+            })
           };
           
           const r_create = await fetch('/api/invoices-api?action=create', { method: 'POST', body: JSON.stringify(invBody), headers: {'Content-Type': 'application/json'} });
@@ -1444,10 +1451,28 @@ function OrderSummaryModal({ order, onConfirm, onCancel, c, currentColor, isDark
               </div>
             ))}
           </div>
-          {/* Toplam */}
-          <div className="flex items-center justify-between px-1">
-            <span className="text-xs font-bold" style={{ color: c.muted }}>GENEL TOPLAM</span>
-            <span className="text-lg font-black" style={{ color: '#10b981' }}>{fmt(total, order.currency)}</span>
+          {/* Toplamlar */}
+          <div className="space-y-1 px-1 pt-2" style={{ borderTop: `1px solid ${c.border}` }}>
+            <div className="flex items-center justify-between text-[11px]" style={{ color: c.muted }}>
+              <span>Ara Toplam</span>
+              <span className="font-bold tabular-nums">{fmt(order.subtotal || subtotal, order.currency)}</span>
+            </div>
+            {order.discount_amount > 0 && (
+              <div className="flex items-center justify-between text-[11px]" style={{ color: '#ef4444' }}>
+                <span>Toplam İndirim</span>
+                <span className="font-bold tabular-nums">-{fmt(order.discount_amount, order.currency)}</span>
+              </div>
+            )}
+            {order.is_invoiced && (
+              <div className="flex items-center justify-between text-[11px]" style={{ color: '#60a5fa' }}>
+                <span>Toplam KDV</span>
+                <span className="font-bold tabular-nums">{fmt(order.tax_total || 0, order.currency)}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between pt-2">
+              <span className="text-xs font-bold" style={{ color: c.text }}>GENEL TOPLAM</span>
+              <span className="text-xl font-black tabular-nums" style={{ color: '#10b981' }}>{fmt(total, order.currency)}</span>
+            </div>
           </div>
           {/* Üretim notları */}
           {order.woNotes && (
@@ -1604,16 +1629,35 @@ function OrderDetailDrawer({ order, onClose, onEdit, onSendToWorkOrders, onStatu
         </div>
 
         {/* Meta */}
-        <div className="px-5 py-3 grid grid-cols-2 gap-2 flex-shrink-0" style={{ borderBottom: `1px solid ${c.border}` }}>
-          {[['Toplam', fmt(order.grand_total, order.currency), '#10b981'],
-            ['Para Birimi', order.currency, currentColor],
-            ['Teslim Tarihi', fmtD(order.due_date), '#f59e0b'],
-            ['Oluşturulma', fmtD(order.created_at), c.muted]].map(([l,v,col], i) => (
-            <div key={i} className="text-xs">
-              <p style={{ color: c.muted }}>{l}</p>
-              <p className="font-bold mt-0.5" style={{ color: col }}>{v || '—'}</p>
+        <div className="px-5 py-3 grid grid-cols-2 gap-y-3 gap-x-4 flex-shrink-0" style={{ borderBottom: `1px solid ${c.border}` }}>
+          <div>
+            <p style={{ color: c.muted }} className="text-[10px] font-bold uppercase">Ara Toplam</p>
+            <p className="font-bold text-xs" style={{ color: c.text }}>{fmt(order.subtotal, order.currency)}</p>
+          </div>
+          <div>
+            <p style={{ color: c.muted }} className="text-[10px] font-bold uppercase">İndirim</p>
+            <p className="font-bold text-xs text-red-400">
+              {order.discount_amount > 0 ? `-${fmt(order.discount_amount, order.currency)}` : '—'}
+            </p>
+          </div>
+          {order.is_invoiced && (
+            <div>
+              <p style={{ color: c.muted }} className="text-[10px] font-bold uppercase">Toplam KDV</p>
+              <p className="font-bold text-xs text-blue-400">{fmt(order.tax_total, order.currency)}</p>
             </div>
-          ))}
+          )}
+          <div>
+            <p style={{ color: c.muted }} className="text-[10px] font-bold uppercase">Genel Toplam</p>
+            <p className="font-bold text-xs text-emerald-500">{fmt(order.grand_total, order.currency)}</p>
+          </div>
+          <div>
+            <p style={{ color: c.muted }} className="text-[10px] font-bold uppercase">Teslim Tarihi</p>
+            <p className="font-bold text-xs text-amber-500">{fmtD(order.due_date) || '—'}</p>
+          </div>
+          <div>
+            <p style={{ color: c.muted }} className="text-[10px] font-bold uppercase">Para Birimi</p>
+            <p className="font-bold text-xs" style={{ color: currentColor }}>{order.currency}</p>
+          </div>
         </div>
 
         {/* Kalemler + Reçete accordion */}
@@ -1797,7 +1841,14 @@ function OrderCard({ order, onView, onEdit, onStatusChange, onSendToWorkOrders, 
         </div>
         {/* Bilgi çipleri */}
         <div className="grid grid-cols-3 gap-1.5">
-          <InfoChip icon={CreditCard} label="Toplam" value={fmt(order.grand_total, order.currency)} color="#10b981" c={c}/>
+          <div className="relative">
+            <InfoChip icon={CreditCard} label="Toplam" value={fmt(order.grand_total, order.currency)} color="#10b981" c={c}/>
+            {order.discount_amount > 0 && (
+              <div className="absolute -right-1 -top-1 px-1 py-0.5 rounded-full bg-red-500 text-[7px] font-black text-white shadow-sm border border-white/20">
+                %{(order.discount_rate || (order.discount_amount / (order.subtotal || 1) * 100)).toFixed(0)} İND.
+              </div>
+            )}
+          </div>
           <InfoChip icon={Calendar} label="Teslim" value={fmtD(order.due_date)}
             color={daysLeft != null && daysLeft <= 3 ? '#ef4444' : daysLeft != null && daysLeft <= 7 ? '#f59e0b' : c.muted} c={c}/>
           <InfoChip icon={Package} label="Oluşturma" value={fmtD(order.created_at)} c={c}/>

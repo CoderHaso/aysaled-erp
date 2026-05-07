@@ -220,14 +220,16 @@ export default function RecipePickerModal({
         unit:      item?.unit || 'Adet',
         quantity:  1,
         purchase_price: item?.purchase_price ?? null,
+        base_currency: item?.base_currency || 'TRY',
       }]);
     } else if (pickerTarget != null) {
       setLocalItems(prev => prev.map((it, i) => i === pickerTarget ? {
         ...it,
         item_id:   item?.id   || null,
         item_name: item?.name || custom || it.item_name,
-        unit:      item?.unit || it.unit,
+        unit:      item?.unit || it.unit || 'Adet',
         purchase_price: item?.purchase_price ?? it.purchase_price,
+        base_currency: item?.base_currency || it.base_currency || 'TRY',
       } : it));
     }
     setPickerTarget(null);
@@ -497,16 +499,28 @@ export default function RecipePickerModal({
                           </select>
 
                           {/* Birim Fiyat */}
-                          {!hideCosts && (
-                            <div className="flex items-center justify-end gap-0.5">
-                              <span className="text-[10px] text-slate-600">₺</span>
-                              <input type="number" min="0" step="0.01"
-                                value={it.purchase_price ?? (stockItem?.purchase_price ?? '')}
-                                onChange={e => updateItem(idx, 'purchase_price', e.target.value === '' ? null : Number(e.target.value))}
-                                placeholder={stockItem?.purchase_price ? String(stockItem.purchase_price) : '0'}
-                                className="w-14 bg-transparent outline-none text-xs text-right font-bold text-emerald-400 placeholder-slate-700"/>
-                            </div>
-                          )}
+                          {!hideCosts && (() => {
+                            const isOverridden = it.purchase_price !== null && it.purchase_price !== stockItem?.purchase_price;
+                            return (
+                              <div className="flex items-center justify-end gap-0.5">
+                                <span className="text-[10px] text-slate-600">
+                                  {CURRENCY_SYM[it.base_currency || stockItem?.base_currency || 'TRY']}
+                                </span>
+                                <div className="relative">
+                                  <input type="number" min="0" step="0.00001"
+                                    value={it.purchase_price ?? (stockItem?.purchase_price ?? '')}
+                                    onChange={e => updateItem(idx, 'purchase_price', e.target.value === '' ? null : Number(e.target.value))}
+                                    placeholder={stockItem?.purchase_price ? String(stockItem.purchase_price) : '0'}
+                                    className={`w-14 bg-transparent outline-none text-xs text-right font-bold transition-colors ${isOverridden ? 'text-amber-400' : 'text-emerald-400'} placeholder-slate-700`}/>
+                                  {isOverridden && (
+                                    <div className="absolute -right-2 -top-1" title="Manuel fiyat müdahalesi">
+                                      <AlertCircle size={8} className="text-amber-500 fill-amber-500/20"/>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
 
                           {/* Aksiyonlar */}
                           <div className="flex items-center justify-end gap-1">
@@ -524,7 +538,13 @@ export default function RecipePickerModal({
                         {/* Satır toplam */}
                         {!hideCosts && linePrice > 0 && (
                           <p className="text-right text-[10px] text-slate-600 pr-3 -mt-0.5 pb-0.5">
-                            {Number(it.quantity || 1).toFixed(2)} × ₺{linePrice.toFixed(2)} = <span className="text-slate-400 font-semibold">₺{lineTotal.toFixed(2)}</span>
+                            {Number(it.quantity || 1).toFixed(2)} × {CURRENCY_SYM[it.base_currency || stockItem?.base_currency || 'TRY']}{linePrice.toFixed(4)} 
+                            {(it.base_currency || stockItem?.base_currency) && (it.base_currency || stockItem?.base_currency) !== 'TRY' && (
+                                <span className="ml-1 opacity-70">(≈ ₺{fxConvert(lineTotal, it.base_currency || stockItem?.base_currency, 'TRY').toFixed(2)})</span>
+                            )}
+                            {' '} = <span className="text-slate-400 font-semibold">
+                                {CURRENCY_SYM[it.base_currency || stockItem?.base_currency || 'TRY']}{lineTotal.toFixed(2)}
+                            </span>
                           </p>
                         )}
                       </motion.div>
