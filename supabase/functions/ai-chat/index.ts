@@ -148,7 +148,7 @@ async function executeTool(supabase: any, name: string, args: any) {
       case 'update_item': {
         if (!args.item_id) return { error: 'item_id gereklidir' };
         const patch: any = {};
-        const fields = ['name', 'sku', 'purchase_price', 'sale_price', 'base_currency', 'sale_currency', 'unit', 'stock_count', 'critical_limit', 'category', 'location'];
+        const fields = ['name', 'sku', 'purchase_price', 'sale_price', 'base_currency', 'sale_currency', 'unit', 'stock_count', 'critical_limit', 'category', 'location', 'image_url'];
         fields.forEach(f => { if (args[f] !== undefined) patch[f] = f.includes('price') || f.includes('count') ? evalMath(args[f]) : args[f]; });
         const { data, error } = await supabase.from('items').update(patch).eq('id', args.item_id).select('*').single();
         if (error) throw error;
@@ -217,7 +217,8 @@ async function executeTool(supabase: any, name: string, args: any) {
               sale_price: evalMath(product.sale_price), 
               base_currency: product.base_currency || 'TRY', 
               sale_currency: product.sale_currency || product.base_currency || 'TRY',
-              stock_count: evalMath(product.stock_count) || 0 
+              stock_count: evalMath(product.stock_count) || 0,
+              image_url: product.image_url || null
             };
             const { data: itemData, error: itemErr } = await supabase.from('items').insert(itemPayload).select('id').single();
             if (itemErr) throw itemErr;
@@ -558,7 +559,8 @@ const TOOLS = [
           sale_price: { type: ['number', 'string'] },
           sale_currency: { type: 'string', enum: ['TRY', 'USD', 'EUR'] },
           base_currency: { type: 'string', enum: ['TRY', 'USD', 'EUR'] },
-          unit: { type: 'string' }
+          unit: { type: 'string' },
+          image_url: { type: 'string' }
         },
         required: ['item_id']
       }
@@ -618,6 +620,8 @@ const TOOLS = [
                 name: { type: 'string' },
                 sale_price: { type: ['number', 'string'] },
                 sale_currency: { type: 'string' },
+                sku: { type: 'string' },
+                image_url: { type: 'string' },
                 recipe: {
                   type: 'object',
                   properties: {
