@@ -377,6 +377,27 @@ export default function App() {
         setProducts(prev => [...prev, newProduct]);
     };
 
+    const sanitizeOklchColors = (clonedDoc) => {
+        const allElements = clonedDoc.querySelectorAll('*');
+        const colorProps = [
+            'color', 'background-color', 'border-color',
+            'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
+            'outline-color', 'text-decoration-color', 'box-shadow', 'text-shadow'
+        ];
+        const oklchRegex = /oklch\([^)]*\)/gi;
+
+        allElements.forEach(el => {
+            const computed = window.getComputedStyle(el);
+            colorProps.forEach(prop => {
+                const val = computed.getPropertyValue(prop);
+                if (val && oklchRegex.test(val)) {
+                    el.style.setProperty(prop, val.replace(oklchRegex, 'transparent'), 'important');
+                }
+                oklchRegex.lastIndex = 0;
+            });
+        });
+    };
+
     const exportPDF = async () => {
         const element = document.getElementById('pdf-preview-container');
         if (!element) return;
@@ -414,6 +435,9 @@ export default function App() {
                     scrollY: 0,
                     windowWidth: page.scrollWidth,
                     windowHeight: page.scrollHeight,
+                    onclone: (clonedDoc) => {
+                        sanitizeOklchColors(clonedDoc);
+                    },
                 });
 
                 const imgData = canvas.toDataURL('image/jpeg', 0.92);
@@ -946,9 +970,11 @@ export default function App() {
             color: white; backdrop-filter: blur(4px);
         }
 
-        /* Fix for html2canvas oklab parsing bug */
+        /* Fix for html2canvas oklch/oklab parsing bug — force standard colors */
+        #pdf-preview-container,
         #pdf-preview-container * {
-            border-color: #e2e8f0;
+            --tw-shadow-color: transparent;
+            --tw-ring-color: transparent;
         }
       `}} />
 
