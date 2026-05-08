@@ -108,6 +108,13 @@ export default function RecipeComparisonModal({ isOpen, onClose }) {
       ...itemsA.map(i => i.item_name || i.item?.name),
       ...itemsB.map(i => i.item_name || i.item?.name)
     ])).filter(Boolean);
+    const rows = allItemNames.map(name => {
+      const itemA = itemsA.find(i => (i.item_name || i.item?.name) === name);
+      const itemB = itemsB.find(i => (i.item_name || i.item?.name) === name);
+
+      const qtyA = itemA?.quantity || 0;
+      const qtyB = itemB?.quantity || 0;
+      const unit = itemA?.unit || itemB?.unit || '';
 
       const costA = (riA) => {
         const p = riA?.item?.purchase_price || 0;
