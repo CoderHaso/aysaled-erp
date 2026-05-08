@@ -2115,21 +2115,37 @@ export default function Sales() {
         const num = await generateOrderNumber(cName);
         const parsed = parseTurkishAddress(matchedCust?.address || q.address);
         
-        const newItems = (q.line_items || []).map(l => {
-          const itemMatch = allItems.find(i => i.name === l.name || i.item_code === l.item_code) || {};
-          return {
-            _key: Math.random(),
-            item_name: l.name,
-            quantity: Number(l.quantity || 1),
-            unit: l.unit || 'Adet',
-            unit_price: Number(l.unit_price || 0),
-            tax_rate: Number(q.vat_rate || 20),
-            item_id: itemMatch.id || null,
-            item_type: itemMatch.item_type || 'product',
-            stock_count: itemMatch.stock_count || null,
-            notes: l.description || ''
-          };
-        });
+          const newItems = (q.line_items || []).map(l => {
+            const itemMatch = allItems.find(i => i.name === l.name || i.item_code === l.item_code) || {};
+            
+            // Reçete otomatik seçimi
+            let recipeData = {};
+            if (itemMatch.id) {
+              const matchedRecipe = allRecipes.find(r => r.product_id === itemMatch.id && r.is_default) || 
+                                    allRecipes.find(r => r.product_id === itemMatch.id);
+              if (matchedRecipe) {
+                recipeData = {
+                  recipe_id: matchedRecipe.id,
+                  recipe_key: matchedRecipe.name,
+                  recipe_note: matchedRecipe.name
+                };
+              }
+            }
+
+            return {
+              _key: Math.random(),
+              item_name: l.name,
+              quantity: Number(l.quantity || 1),
+              unit: l.unit || 'Adet',
+              unit_price: Number(l.unit_price || 0),
+              tax_rate: Number(q.vat_rate || 20),
+              item_id: itemMatch.id || null,
+              item_type: itemMatch.item_type || 'product',
+              stock_count: itemMatch.stock_count || null,
+              notes: l.description || '',
+              ...recipeData
+            };
+          });
 
         setEditOrder({
           order_number: num,

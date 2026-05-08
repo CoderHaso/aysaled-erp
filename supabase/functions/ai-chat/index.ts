@@ -167,10 +167,20 @@ async function executeTool(supabase: any, name: string, args: any) {
         
         // Reçete kalemlerini güncelleme (opsiyonel)
         if (args.items && Array.isArray(args.items)) {
+          // Önce mevcut item_id'leri korumak için isim bazlı bir eşleşme gerekebilir
+          // Veya AI'dan tam liste beklenir. 
+          // batch_create_products'taki gibi bir lookup ekleyelim:
+          const missingNames = args.items.filter((ri: any) => !ri.item_id).map((ri: any) => ri.item_name);
+          const nameToIdMap: Record<string, string> = {};
+          if (missingNames.length > 0) {
+            const { data: foundItems } = await supabase.from('items').select('id, name').in('name', missingNames);
+            (foundItems || []).forEach((fi: any) => { nameToIdMap[fi.name] = fi.id; });
+          }
+
           await supabase.from('recipe_items').delete().eq('recipe_id', args.recipe_id);
           const newItems = args.items.map((ri: any, idx: number) => ({
             recipe_id: args.recipe_id,
-            item_id: ri.item_id || null,
+            item_id: ri.item_id || nameToIdMap[ri.item_name] || null,
             item_name: ri.item_name,
             quantity: evalMath(ri.quantity),
             unit: ri.unit || 'Adet',
@@ -212,7 +222,13 @@ async function executeTool(supabase: any, name: string, args: any) {
             const { data: itemData, error: itemErr } = await supabase.from('items').insert(itemPayload).select('id').single();
             if (itemErr) throw itemErr;
             if (product.recipe) {
-              const recipePayload: any = { product_id: itemData.id, name: product.recipe.name || `${product.name} Reçete`, tags: product.recipe.tags || [], other_costs: product.recipe.other_costs?.map((oc: any) => ({ ...oc, amount: evalMath(oc.amount) })) };
+              const recipePayload: any = { 
+                product_id: itemData.id, 
+                name: product.recipe.name || `${product.name} Reçete`, 
+                tags: product.recipe.tags || [], 
+                other_costs: product.recipe.other_costs?.map((oc: any) => ({ ...oc, amount: evalMath(oc.amount) })),
+                is_default: true // Yeni oluşturulan tek reçete varsayılan olsun
+              };
               const { data: recipeData, error: recErr } = await supabase.from('product_recipes').insert(recipePayload).select('id').single();
               if (recErr) throw recErr;
               if (product.recipe.items) {
@@ -355,10 +371,12 @@ async function executeTool(supabase: any, name: string, args: any) {
           let recipe_id = null;
           let recipe_key = null;
           if (li.item_id) {
-            const { data: rec } = await supabase.from('product_recipes').select('id, name').eq('product_id', li.item_id).eq('is_default', true).maybeSingle();
-            if (rec) {
-              recipe_id = rec.id;
-              recipe_key = rec.name;
+            // Önce varsayılanı dene, yoksa herhangi birini al
+            const { data: recs } = await supabase.from('product_recipes').select('id, name').eq('product_id', li.item_id).order('is_default', { ascending: false }).limit(1);
+            if (recs && recs.length > 0) {
+              recipe_id = recs[0].id;
+              recipe_key = recs[0].name;
+              recipe_note = recs[0].name; // UI'da görünmesi için
             }
           }
 
@@ -374,6 +392,7 @@ async function executeTool(supabase: any, name: string, args: any) {
             notes: li.description,
             recipe_id,
             recipe_key,
+            recipe_note,
             skip_work_order: false
           });
         }
