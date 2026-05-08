@@ -27,7 +27,21 @@ serve(async (req) => {
     let systemPrompt = SYSTEM_PROMPT.replace('{{TODAY_DATE}}', `${today} (${todayISO})`)
     if (pageContext) systemPrompt += `\n\nKullanıcı şu anda "${pageContext}" sayfasında bulunuyor.`
 
-    const currentMessages = [{ role: 'system', content: systemPrompt }, ...messages.slice(-20)]
+    // Mesajları DeepSeek formatına dönüştür (görsel destekli)
+    const formattedMessages = messages.slice(-20).map((m: any) => {
+      // Eğer mesajda görsel varsa multimodal content array kullan
+      if (m.image && m.role === 'user') {
+        return {
+          role: 'user',
+          content: [
+            { type: 'text', text: m.content || 'Bu görseli analiz et.' },
+            { type: 'image_url', image_url: { url: m.image } }
+          ]
+        };
+      }
+      return { role: m.role, content: m.content };
+    });
+    const currentMessages: any[] = [{ role: 'system', content: systemPrompt }, ...formattedMessages]
     const model = modelMode || 'deepseek-v4-pro'
     let toolsUsed = []
     const startTime = Date.now();
@@ -514,6 +528,16 @@ async function saveConversation(supabase: any, conversationId: string, userMessa
 
 const SYSTEM_PROMPT = `Sen A-ERP sisteminin yapay zeka asistanısın. Adın "A-ERP Asistan".
 Görevin: Ürünleri, reçeteleri, stokları ve maliyetleri yönetmek.
+Bugünün tarihi: {{TODAY_DATE}}
+Şirket: AYSALED (Ays Aydınlatma). Faturalarda "AYSALED" veya "AYS AYDINLATMA" geçiyorsa bu bizim şirketimizdir.
+
+🛑 ONAY KURALI (CONFIRMATION BEFORE ACTION):
+- Herhangi bir veri OLUŞTURMA, GÜNCELLEME veya SİLME işlemi yapmadan ÖNCE kullanıcıya bir ÖZET sun.
+- Özette şunları göster: ne yapacağın, hangi verileri değiştireceğin, kaç kalem etkileneceği.
+- "Yukarıdaki bilgiler doğru mu? Onaylarsanız işleme geçiyorum." diye sor.
+- Kullanıcı "evet", "onay", "tamam", "devam", "yap", "ok" gibi bir onay verene kadar KESİNLİKLE tool çağırma.
+- Sadece OKUMA/SORGULAMA işlemleri (query_items, query_recipes, query_customers, get_summary_stats, verify_recipe_materials) onaysız yapılabilir.
+- Bu kural her zaman geçerlidir, basit işlemlerde bile.
 
 🚀 KRİTİK YETENEKLER:
 1. 'batch_create_products' ile Ürün + Reçete oluşturabilirsin.
@@ -521,21 +545,22 @@ Görevin: Ürünleri, reçeteleri, stokları ve maliyetleri yönetmek.
 3. 'create_quote' -> 'convert_quote_to_order' -> 'create_work_orders_from_order' akışını yönetebilirsin.
 
 ⚠️ REÇETE OLUŞTURMA KURALLARI:
-- Bir reçete (BOM) oluşturmadan veya güncellemeden önce MUTLAKA 'verify_recipe_materials' kullanarak malzemelerin sistemde varlığını kontrol etmelisiniz.
-- Eğer bir malzeme eksikse (status: 'missing'), kullaniciya "Bu malzeme sistemde yok, oluşturmamı ister misiniz?" diye sormalısınız.
-- Eğer benzer isimli malzemeler varsa (status: 'suggested'), kullanıcıya bunları önerin: "Şu isimde benzer ürünler var, bunlardan birini mi demek istediniz?"
-- Kullanıcı onay vermeden asla hayali veya ID'siz malzemelerle reçete oluşturmayın. Eksik malzemeleri 'create_raw_material' ile oluşturduktan sonra reçeteye geçin.
+- Bir reçete (BOM) oluşturmadan veya güncellemeden önce MUTLAKA 'verify_recipe_materials' kullanarak malzemelerin sistemde varlığını kontrol et.
+- Malzeme eksikse kullanıcıya sor. Benzer isimli varsa öner. Onaysız hayali malzeme kullanma.
 
-5. BİRİM KORUMA (UNIT PRESERVATION):
-- Reçete oluştururken veya güncellerken malzemelerin birimlerini (Adet, Metre, Kg vb.) MUTLAKA sistemdeki orijinal halleriyle kullanın.
-- Eğer bir malzemenin biriminden emin değilseniz 'query_items' ile kontrol edin. Asla varsayılan olarak 'Adet' atamayın.
+📷 GÖRSEL ANALİZ (VISION):
+- Kullanıcı fatura, katalog veya belge görseli gönderebilir.
+- Görseldeki bilgileri dikkatle oku: ürün adları, miktarlar, birimler, fiyatlar, KDV oranları, tarihler.
+- Görseli analiz ettikten sonra ÖNCE özet sun, onay al, SONRA sisteme gir.
+- AYSALED/AYS AYDINLATMA bizim şirketimizdir, bunu alıcı/satıcı ayrımında kullan.
 
-6. ZAMAN AŞIMI VE PARÇALI ÇALIŞMA (TIMEOUT & CHUNKING):
-- Supabase Edge Function çalışma süresi kısıtlıdır (max 60s). Eğer kullanıcı çok kapsamlı bir işlem (örn: 5+ ürün ve reçete oluşturma) istediyse, işlemi parçalara bölün.
-- Örnek: "İşleminiz uzun süreceği için parçalara böldüm. İlk 2 ürünü oluşturdum, kontrol edin. Devam etmemi ister misiniz?"
-- Her adımda kullanıcıyı bilgilendirin ve onay alarak ilerleyin. Boş mesaj göndermekten veya timeout hatası almaktan kaçının.
+📏 BİRİM KORUMA:
+- Malzemelerin birimlerini sistemdeki orijinal halleriyle kullan. Emin değilsen 'query_items' ile kontrol et.
 
-7. Para birimi USD ise 'sale_currency' ve 'base_currency' alanlarını 'USD' yap. Basic promptlarda bile bu mantığı koruyun.`
+⏱️ PARÇALI ÇALIŞMA:
+- Uzun işlemleri parçala, her adımda bilgilendir ve onay al.
+
+💲 Para birimi USD ise sale_currency ve base_currency'yi USD yap.`
 
 const TOOLS = [
   {

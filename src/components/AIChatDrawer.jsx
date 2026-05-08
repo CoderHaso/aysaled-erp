@@ -12,6 +12,7 @@ import {
   Loader2, Bot, User, Wrench, ChevronDown, ChevronRight,
   Trash2, History, ToggleLeft, ToggleRight, Sparkles,
   AlertCircle, Copy, Check, ArrowLeft, Settings, Cpu,
+  ImagePlus, XCircle,
 } from 'lucide-react';
 
 // ── Markdown-light renderer ──────────────────────────────────────────────────
@@ -125,6 +126,14 @@ function MessageBubble({ msg, c, currentColor, isDark, onContinue, isContinuing 
           }}>
           <div className="text-[12.5px] leading-[1.65]"
             dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+
+          {/* User image thumbnail */}
+          {msg.image && (
+            <div style={{ marginTop: 6 }}>
+              <img src={msg.image} alt="Yüklenen görsel"
+                style={{ maxWidth: 200, maxHeight: 150, borderRadius: 8, border: '1px solid rgba(255,255,255,0.15)' }} />
+            </div>
+          )}
 
           {/* Copy button */}
           {!isUser && !isError && msg.content && (
@@ -285,10 +294,12 @@ export default function AIChatDrawer() {
   const isDark = effectiveMode === 'dark';
 
   const [input, setInput] = useState('');
+  const [pendingImage, setPendingImage] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showModelSelector, setShowModelSelector] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const c = {
     bg: isDark ? '#0b1729' : '#f8fafc',
@@ -309,10 +320,54 @@ export default function AIChatDrawer() {
     if (isDrawerOpen) setTimeout(() => inputRef.current?.focus(), 300);
   }, [isDrawerOpen]);
 
+  // File to base64
+  const fileToBase64 = (file) => new Promise((resolve, reject) => {
+    if (file.size > 4 * 1024 * 1024) { reject(new Error('Görsel 4MB\'dan küçük olmalı')); return; }
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+  // Handle file selection
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !file.type.startsWith('image/')) return;
+    try {
+      const base64 = await fileToBase64(file);
+      setPendingImage(base64);
+    } catch (err) {
+      alert(err.message);
+    }
+    e.target.value = ''; // reset
+  };
+
+  // Paste handler for clipboard images
+  const handlePaste = useCallback(async (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          try {
+            const base64 = await fileToBase64(file);
+            setPendingImage(base64);
+          } catch (err) {
+            alert(err.message);
+          }
+        }
+        break;
+      }
+    }
+  }, []);
+
   const handleSend = () => {
-    if (!input.trim() || isLoading) return;
-    sendMessage(input.trim());
+    if ((!input.trim() && !pendingImage) || isLoading) return;
+    sendMessage(input.trim() || (pendingImage ? 'Bu görseli analiz et.' : ''), pendingImage);
     setInput('');
+    setPendingImage(null);
   };
 
   const handleKeyDown = (e) => {
@@ -516,13 +571,43 @@ export default function AIChatDrawer() {
               </span>
             </div>
           )}
+
+          {/* Image preview */}
+          {pendingImage && (
+            <div className="relative inline-block mb-2">
+              <img src={pendingImage} alt="Yüklenecek görsel"
+                style={{ maxWidth: 180, maxHeight: 120, borderRadius: 10, border: `2px solid ${currentColor}40` }} />
+              <button onClick={() => setPendingImage(null)}
+                className="absolute -top-2 -right-2 rounded-full p-0.5"
+                style={{ background: '#ef4444', color: '#fff' }}>
+                <XCircle size={16} />
+              </button>
+            </div>
+          )}
+
           <div className="flex items-end gap-2">
+            {/* Hidden file input */}
+            <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileSelect}
+              style={{ display: 'none' }} />
+
+            {/* Image upload button */}
+            <button onClick={() => fileInputRef.current?.click()}
+              className="p-2.5 rounded-xl transition-all flex-shrink-0"
+              title="Görsel yükle (fatura, katalog vb.)"
+              style={{
+                background: pendingImage ? `${currentColor}20` : 'transparent',
+                color: pendingImage ? currentColor : c.muted,
+              }}>
+              <ImagePlus size={16} />
+            </button>
+
             <textarea
               ref={inputRef}
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Bir soru sorun..."
+              onPaste={handlePaste}
+              placeholder={pendingImage ? 'Görsel hakkında bir şey yazın...' : 'Bir soru sorun...'}
               rows={1}
               className="flex-1 resize-none px-3.5 py-2.5 rounded-xl text-xs outline-none transition-all"
               style={{
@@ -537,11 +622,11 @@ export default function AIChatDrawer() {
                 e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px';
               }}
             />
-            <button onClick={handleSend} disabled={!input.trim() || isLoading}
+            <button onClick={handleSend} disabled={(!input.trim() && !pendingImage) || isLoading}
               className="p-2.5 rounded-xl transition-all flex-shrink-0"
               style={{
-                background: input.trim() ? currentColor : 'transparent',
-                color: input.trim() ? '#fff' : c.muted,
+                background: (input.trim() || pendingImage) ? currentColor : 'transparent',
+                color: (input.trim() || pendingImage) ? '#fff' : c.muted,
                 opacity: isLoading ? 0.5 : 1,
               }}>
               <Send size={16} />

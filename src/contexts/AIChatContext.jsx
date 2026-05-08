@@ -57,19 +57,26 @@ export function AIChatProvider({ children }) {
   const canUseAI = profile && profile.role !== 'Atolye';
 
   // ── Mesaj gönder ────────────────────────────────────────────────────────────
-  const sendMessage = useCallback(async (content) => {
-    if (!content.trim() || isLoading) return;
+  const sendMessage = useCallback(async (content, imageBase64 = null) => {
+    if ((!content.trim() && !imageBase64) || isLoading) return;
 
-    const userMsg = { id: generateId(), role: 'user', content, timestamp: new Date().toISOString() };
+    const userMsg = {
+      id: generateId(),
+      role: 'user',
+      content,
+      image: imageBase64 || null,
+      timestamp: new Date().toISOString(),
+    };
     setMessages(prev => [...prev, userMsg]);
     setIsLoading(true);
     setError(null);
 
-    // API'ye gönderilecek mesaj geçmişi (role + content only)
-    const apiMessages = [...messages, userMsg].map(m => ({
-      role: m.role,
-      content: m.content,
-    }));
+    // API'ye gönderilecek mesaj geçmişi (role + content + image)
+    const apiMessages = [...messages, userMsg].map(m => {
+      const msg = { role: m.role, content: m.content };
+      if (m.image) msg.image = m.image;
+      return msg;
+    });
 
     try {
       abortRef.current = new AbortController();
