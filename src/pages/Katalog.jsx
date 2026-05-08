@@ -92,26 +92,7 @@ export default function App() {
     const { effectiveMode, currentColor } = useTheme();
     const isDark = effectiveMode === 'dark';
 
-    // html2pdf kütüphanesini güvenli bir şekilde yükleme
-    const [pdfReady, setPdfReady] = useState(false);
     const [pdfLoading, setPdfLoading] = useState(false);
-
-    useEffect(() => {
-        if (!window.html2pdf) {
-            const script = document.createElement('script');
-            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-            script.async = true;
-            script.onload = () => setPdfReady(true);
-            document.body.appendChild(script);
-            return () => {
-                if (document.body.contains(script)) {
-                    document.body.removeChild(script);
-                }
-            };
-        } else {
-            setPdfReady(true);
-        }
-    }, []);
 
     // --- STATE YÖNETİMİ ---
     const [activeTab, setActiveTab] = useState('settings');
@@ -397,41 +378,60 @@ export default function App() {
     };
 
     const exportPDF = async () => {
-        if (!pdfReady || !window.html2pdf) {
-            alert('PDF oluşturucu henüz yüklenmedi, lütfen birkaç saniye bekleyip tekrar deneyin.');
-            return;
-        }
-
         const element = document.getElementById('pdf-preview-container');
         if (!element) return;
 
-        window.scrollTo(0, 0); // En tepeye kaydır
         setPdfLoading(true);
 
-        setTimeout(async () => {
-            try {
-                const opt = {
-                    margin: 0,
-                    filename: `${settings.companyName.replace(/\s+/g, '-')}-Katalog.pdf`,
-                    image: { type: 'jpeg', quality: 0.90 }, 
-                    html2canvas: {
-                        scale: 1.5,
-                        useCORS: true,
-                        logging: false,
-                        scrollY: 0
-                    },
-                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-                    pagebreak: { mode: ['css', 'legacy'], avoid: ['.page-break-avoid'] }
-                };
+        await new Promise(r => setTimeout(r, 300));
 
-                await window.html2pdf().set(opt).from(element).save();
-            } catch (error) {
-                console.error("PDF oluşturma hatası:", error);
-                alert("PDF oluşturulurken bir hata oluştu. Lütfen konsolu kontrol edin.");
-            } finally {
+        try {
+            const { default: jsPDF } = await import('jspdf');
+            const { default: html2canvas } = await import('html2canvas');
+
+            const pages = element.querySelectorAll('.pdf-page');
+            if (pages.length === 0) {
+                alert('Önizlemede sayfa bulunamadı.');
                 setPdfLoading(false);
+                return;
             }
-        }, 300);
+
+            const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+            const pdfWidth = 210;
+            const pdfHeight = 297;
+
+            for (let i = 0; i < pages.length; i++) {
+                const page = pages[i];
+
+                const canvas = await html2canvas(page, {
+                    scale: 2,
+                    useCORS: true,
+                    logging: false,
+                    backgroundColor: null,
+                    width: page.scrollWidth,
+                    height: page.scrollHeight,
+                    scrollX: 0,
+                    scrollY: 0,
+                    windowWidth: page.scrollWidth,
+                    windowHeight: page.scrollHeight,
+                });
+
+                const imgData = canvas.toDataURL('image/jpeg', 0.92);
+
+                if (i > 0) {
+                    pdf.addPage();
+                }
+
+                pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+            }
+
+            pdf.save(`${settings.companyName.replace(/\s+/g, '-')}-Katalog.pdf`);
+        } catch (error) {
+            console.error("PDF oluşturma hatası:", error);
+            alert("PDF oluşturulurken bir hata oluştu. Lütfen konsolu kontrol edin.");
+        } finally {
+            setPdfLoading(false);
+        }
     };
 
     const getCurrencySymbol = (code) => {
@@ -904,7 +904,7 @@ export default function App() {
         
         .pdf-page {
           width: 210mm;
-          height: 296mm; 
+          height: 297mm; 
           background: #ffffff;
           position: relative;
           overflow: hidden;
@@ -915,7 +915,7 @@ export default function App() {
 
         .pdf-page-content {
           width: 210mm;
-          min-height: 296mm; 
+          min-height: 297mm; 
           background: #ffffff;
           position: relative;
           box-sizing: border-box;
@@ -1184,7 +1184,7 @@ export default function App() {
                                 return (
                                     <React.Fragment key={category.id}>
                                         {/* KATEGORİ KAPAK SAYFASI */}
-                                        <div className="pdf-page flex flex-col justify-center items-center relative overflow-hidden" id={`category-page-${category.id}`} style={{ minHeight: '296mm' }}>
+                                        <div className="pdf-page flex flex-col justify-center items-center relative overflow-hidden" id={`category-page-${category.id}`}>
                                             {/* Arkaplan Dalgası */}
                                             <div style={{ position: 'absolute', inset: 0, zIndex: 0, backgroundImage: 'url(/wave_bg.png)', backgroundSize: 'cover', backgroundPosition: 'center', filter: 'brightness(0.95) contrast(1.1)' }}></div>
                                             
@@ -1216,7 +1216,7 @@ export default function App() {
                                         {Array.from({ length: Math.ceil(categoryProducts.length / 3) }).map((_, pageIdx) => {
                                             const group = categoryProducts.slice(pageIdx * 3, pageIdx * 3 + 3);
                                             return (
-                                                <div key={`page-${pageIdx}`} className="pdf-page flex flex-col relative" style={{ backgroundColor: '#ffffff', minHeight: '296mm', padding: '15mm' }}>
+                                                <div key={`page-${pageIdx}`} className="pdf-page flex flex-col relative" style={{ backgroundColor: '#ffffff', padding: '15mm' }}>
                                                     {group.map((product, pIdx) => (
                                                         <div key={product.id} id={`prod-${product.id}`} className="flex-1 flex flex-col w-full relative mb-[16mm] last:mb-0" style={{ maxHeight: '82mm' }}>
                                                             {/* Üstteki Ürün İsmi ve Kod */}
@@ -1321,8 +1321,6 @@ export default function App() {
                                 </div>
                             )}
                         </div>
-
-                        <div className="html2pdf__page-break"></div>
 
                         {/* ================= 4. ARKA KAPAK (Back Cover) ================= */}
                         <div className="pdf-page flex flex-col" style={{ backgroundColor: c.bgPrimary }}>
