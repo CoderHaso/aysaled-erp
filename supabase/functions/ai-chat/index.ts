@@ -385,13 +385,13 @@ async function executeTool(supabase: any, name: string, args: any) {
           // Reçete bilgilerini bul (varsa varsayılan reçeteyi al)
           let recipe_id = null;
           let recipe_key = null;
+          let recipe_note = null;
           if (li.item_id) {
-            // Önce varsayılanı dene, yoksa herhangi birini al
             const { data: recs } = await supabase.from('product_recipes').select('id, name').eq('product_id', li.item_id).order('is_default', { ascending: false }).limit(1);
             if (recs && recs.length > 0) {
               recipe_id = recs[0].id;
               recipe_key = recs[0].name;
-              recipe_note = recs[0].name; // UI'da görünmesi için
+              recipe_note = recs[0].name;
             }
           }
 
