@@ -552,6 +552,9 @@ function OrderForm({ order, customers, allItems, setAllItems, allRecipes = [], o
       billing_address:  f.billing_address  || addr || cust.address || '',
       order_number: isEdit ? f.order_number : num,
     }));
+    if (cust.is_faturasiz) {
+      setInvoiceToggle(false);
+    }
     setCustOpen(false); setCustQ('');
   };
 
@@ -569,26 +572,28 @@ function OrderForm({ order, customers, allItems, setAllItems, allRecipes = [], o
   const discountAmount = form.discount_amount || (subtotal * (form.discount_rate || 0) / 100);
   const subtotalAfterDiscount = Math.max(0, subtotal - discountAmount);
   
-  const taxTotal   = lines.reduce((s, l) => {
+  const taxTotal   = invoiceToggle ? lines.reduce((s, l) => {
     const lineTotal = (l.quantity||0) * (l.unit_price||0);
     // Satır bazlı indirim orantılı dağıtılırsa (basitleştirme için global indirim matrahtan düşülür)
     const ratio = subtotal > 0 ? lineTotal / subtotal : 0;
     const discountedLineTotal = lineTotal - (discountAmount * ratio);
     return s + Math.max(0, discountedLineTotal) * (l.tax_rate||0) / 100;
-  }, 0);
+  }, 0) : 0;
 
-  const grandTotal = invoiceToggle ? (subtotalAfterDiscount + taxTotal) : subtotalAfterDiscount;
+  const grandTotal = subtotalAfterDiscount + taxTotal;
 
   // KDV dökümü (indirimli matrah üzerinden)
   const vatBreak = {};
-  lines.forEach(l => {
-    const pct = l.tax_rate || 0;
-    const lineTotal = (l.quantity || 0) * (l.unit_price || 0);
-    const ratio = subtotal > 0 ? lineTotal / subtotal : 0;
-    const discountedLineTotal = lineTotal - (discountAmount * ratio);
-    const vatLine = Math.max(0, discountedLineTotal) * pct / 100;
-    vatBreak[pct] = (vatBreak[pct] || 0) + vatLine;
-  });
+  if (invoiceToggle) {
+    lines.forEach(l => {
+      const pct = l.tax_rate || 0;
+      const lineTotal = (l.quantity || 0) * (l.unit_price || 0);
+      const ratio = subtotal > 0 ? lineTotal / subtotal : 0;
+      const discountedLineTotal = lineTotal - (discountAmount * ratio);
+      const vatLine = Math.max(0, discountedLineTotal) * pct / 100;
+      vatBreak[pct] = (vatBreak[pct] || 0) + vatLine;
+    });
+  }
 
   const handleSave = async () => {
     // Reçete Kontrolü (Mamüller için)
@@ -1463,7 +1468,7 @@ function OrderSummaryModal({ order, onConfirm, onCancel, c, currentColor, isDark
                 <span className="font-bold tabular-nums">-{fmt(order.discount_amount, order.currency)}</span>
               </div>
             )}
-            {order.is_invoiced && (
+            {order.is_invoiced === true && (
               <div className="flex items-center justify-between text-[11px]" style={{ color: '#60a5fa' }}>
                 <span>Toplam KDV</span>
                 <span className="font-bold tabular-nums">{fmt(order.tax_total || 0, order.currency)}</span>

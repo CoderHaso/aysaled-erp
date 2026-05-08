@@ -13,9 +13,10 @@ import { useFxRates } from '../../hooks/useFxRates';
 
 export default function RecipeComparisonModal({ isOpen, onClose }) {
   const { effectiveMode, currentColor } = useTheme();
-  const { convert: fxConvert } = useFxRates();
+  const { fxRates, loadingRates: fxLoading, convert: fxConvert } = useFxRates();
   const isDark = effectiveMode === 'dark';
 
+  const [comparisonCurrency, setComparisonCurrency] = useState('TRY');
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState([]);
   const [search, setSearch] = useState('');
@@ -111,12 +112,12 @@ export default function RecipeComparisonModal({ isOpen, onClose }) {
       const costA = (riA) => {
         const p = riA?.item?.purchase_price || 0;
         const cur = riA?.item?.base_currency || 'TRY';
-        return fxConvert(p * (riA?.quantity || 0), cur, 'TRY');
+        return fxConvert(p * (riA?.quantity || 0), cur, comparisonCurrency);
       };
       const costB = (riB) => {
         const p = riB?.item?.purchase_price || 0;
         const cur = riB?.item?.base_currency || 'TRY';
-        return fxConvert(p * (riB?.quantity || 0), cur, 'TRY');
+        return fxConvert(p * (riB?.quantity || 0), cur, comparisonCurrency);
       };
 
       const cA = costA(itemA);
@@ -141,13 +142,13 @@ export default function RecipeComparisonModal({ isOpen, onClose }) {
       const materials = (recipe.recipe_items || []).reduce((sum, ri) => {
         const price = Number(ri.item?.purchase_price) || 0;
         const curr = ri.item?.base_currency || 'TRY';
-        const tryPrice = fxConvert(price, curr, 'TRY');
-        return sum + (Number(ri.quantity) * tryPrice);
+        const targetPrice = fxConvert(price, curr, comparisonCurrency);
+        return sum + (Number(ri.quantity) * targetPrice);
       }, 0);
       const other = (recipe.other_costs || []).reduce((sum, oc) => {
         const price = Number(oc.amount || 0);
         const curr = oc.currency || 'TRY';
-        return sum + fxConvert(price, curr, 'TRY');
+        return sum + fxConvert(price, curr, comparisonCurrency);
       }, 0);
       return { materials, other, total: materials + other };
     };
@@ -157,7 +158,12 @@ export default function RecipeComparisonModal({ isOpen, onClose }) {
       costA: getCost(selectedA.recipe),
       costB: getCost(selectedB.recipe),
     };
-  }, [selectedA, selectedB, fxConvert]);
+  }, [selectedA, selectedB, fxConvert, comparisonCurrency]);
+
+  const fmt = (n) => {
+    const sym = { TRY: '₺', USD: '$', EUR: '€', GBP: '£' }[comparisonCurrency] || '';
+    return `${sym}${Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -178,7 +184,7 @@ export default function RecipeComparisonModal({ isOpen, onClose }) {
         style={{ background: c.card, borderColor: c.border }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: c.border }}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between px-6 py-4 border-b gap-4" style={{ borderColor: c.border }}>
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl bg-blue-500/10 text-blue-500">
               <ArrowRightLeft size={20} />
@@ -188,9 +194,25 @@ export default function RecipeComparisonModal({ isOpen, onClose }) {
               <p className="text-xs" style={{ color: c.muted }}>İki farklı reçeteyi malzeme ve maliyet bazlı kıyaslayın</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 rounded-xl hover:bg-black/5 transition-colors" style={{ color: c.muted }}>
-            <X size={20} />
-          </button>
+          
+          <div className="flex items-center gap-2">
+            {/* Döviz Seçici */}
+            <div className="flex bg-black/5 p-1 rounded-xl">
+              {['TRY', 'USD', 'EUR', 'GBP'].map(curr => (
+                <button 
+                  key={curr}
+                  onClick={() => setComparisonCurrency(curr)}
+                  className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${comparisonCurrency === curr ? 'bg-white shadow-sm text-blue-500' : 'text-slate-500 hover:text-slate-700'}`}
+                  style={comparisonCurrency === curr && isDark ? { background: 'rgba(255,255,255,0.1)', color: '#60a5fa' } : {}}
+                >
+                  {curr}
+                </button>
+              ))}
+            </div>
+            <button onClick={onClose} className="p-2 rounded-xl hover:bg-black/5 transition-colors" style={{ color: c.muted }}>
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
@@ -219,8 +241,8 @@ export default function RecipeComparisonModal({ isOpen, onClose }) {
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
               {/* Maliyet Özeti */}
               <div className="grid grid-cols-2 gap-4">
-                <CostSummary cardLabel="A Maliyeti" cost={comparison.costA} c={c} currentColor={currentColor} />
-                <CostSummary cardLabel="B Maliyeti" cost={comparison.costB} c={c} currentColor={currentColor} />
+                <CostSummary cardLabel="A Maliyeti" cost={comparison.costA} c={c} currentColor={currentColor} fmt={fmt} currency={comparisonCurrency} />
+                <CostSummary cardLabel="B Maliyeti" cost={comparison.costB} c={c} currentColor={currentColor} fmt={fmt} currency={comparisonCurrency} />
               </div>
 
               {/* Malzeme Detayları */}
@@ -246,15 +268,15 @@ export default function RecipeComparisonModal({ isOpen, onClose }) {
                             </td>
                             <td className="px-4 py-3 text-center tabular-nums">
                               <div className="text-xs font-mono" style={{ color: c.text }}>{row.qtyA > 0 ? `${row.qtyA} ${row.unit}` : '—'}</div>
-                              {row.qtyA > 0 && <div className="text-[10px]" style={{ color: c.muted }}>₺{row.costA.toFixed(2)}</div>}
+                              {row.qtyA > 0 && <div className="text-[10px]" style={{ color: c.muted }}>{fmt(row.costA)}</div>}
                             </td>
                             <td className="px-4 py-3 text-center tabular-nums">
                               <div className="text-xs font-mono" style={{ color: c.text }}>{row.qtyB > 0 ? `${row.qtyB} ${row.unit}` : '—'}</div>
-                              {row.qtyB > 0 && <div className="text-[10px]" style={{ color: c.muted }}>₺{row.costB.toFixed(2)}</div>}
+                              {row.qtyB > 0 && <div className="text-[10px]" style={{ color: c.muted }}>{fmt(row.costB)}</div>}
                             </td>
                             <td className={`px-4 py-3 text-right tabular-nums font-bold text-xs ${row.costDiff > 0 ? 'text-red-500' : row.costDiff < 0 ? 'text-green-500' : 'opacity-20'}`}>
                               <div>{row.diff > 0 ? `+${row.diff}` : row.diff === 0 ? '—' : row.diff} {row.unit}</div>
-                              {row.costDiff !== 0 && <div className="text-[10px]">₺{row.costDiff.toFixed(2)}</div>}
+                              {row.costDiff !== 0 && <div className="text-[10px]">{fmt(row.costDiff)}</div>}
                             </td>
                           </tr>
                         );
@@ -274,7 +296,7 @@ export default function RecipeComparisonModal({ isOpen, onClose }) {
                 <p className="text-sm font-semibold">
                   B ürünü, A ürününe göre 
                   <span className={comparison.costB.total > comparison.costA.total ? 'text-red-500 mx-1' : 'text-green-500 mx-1'}>
-                    ₺{Math.abs(comparison.costB.total - comparison.costA.total).toFixed(2)}
+                    {fmt(Math.abs(comparison.costB.total - comparison.costA.total))}
                   </span> 
                   {comparison.costB.total > comparison.costA.total ? 'daha pahalı.' : 'daha ucuz.'}
                 </p>
@@ -283,11 +305,15 @@ export default function RecipeComparisonModal({ isOpen, onClose }) {
           ) : (
             <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
               <div className="w-16 h-16 rounded-full bg-black/5 flex items-center justify-center" style={{ color: c.muted }}>
-                <FlaskConical size={32} strokeWidth={1} />
+                {fxLoading || loading ? <Loader2 size={32} className="animate-spin text-blue-400" /> : <FlaskConical size={32} strokeWidth={1} />}
               </div>
               <div className="max-w-xs">
-                <p className="text-sm font-bold" style={{ color: c.text }}>Karşılaştırmak için ürün seçin</p>
-                <p className="text-xs mt-1" style={{ color: c.muted }}>Yukarıdaki kutucukları kullanarak iki farklı ürün veya reçete seçerek farkları görün.</p>
+                <p className="text-sm font-bold" style={{ color: c.text }}>
+                  {fxLoading ? 'Döviz kurları yükleniyor...' : 'Karşılaştırmak için ürün seçin'}
+                </p>
+                <p className="text-xs mt-1" style={{ color: c.muted }}>
+                  {fxLoading ? 'Hesaplamaların doğru olması için kurlar bekleniyor.' : 'Yukarıdaki kutucukları kullanarak iki farklı ürün veya reçete seçerek farkları görün.'}
+                </p>
               </div>
             </div>
           )}
@@ -414,22 +440,22 @@ function SelectionBox({ label, selection, onClear, onOpen, currentColor, c }) {
   );
 }
 
-function CostSummary({ cardLabel, cost, c, currentColor }) {
+function CostSummary({ cardLabel, cost, c, currentColor, fmt, currency }) {
   return (
     <div className="p-4 rounded-2xl border space-y-3" style={{ background: c.card, borderColor: c.border }}>
       <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: c.muted }}>{cardLabel}</p>
       <div className="space-y-1">
         <div className="flex justify-between text-xs">
           <span style={{ color: c.muted }}>Malzeme:</span>
-          <span className="font-bold" style={{ color: c.text }}>₺{cost.materials.toFixed(2)}</span>
+          <span className="font-bold" style={{ color: c.text }}>{fmt(cost.materials)}</span>
         </div>
         <div className="flex justify-between text-xs">
           <span style={{ color: c.muted }}>Giderler:</span>
-          <span className="font-bold" style={{ color: c.text }}>₺{cost.other.toFixed(2)}</span>
+          <span className="font-bold" style={{ color: c.text }}>{fmt(cost.other)}</span>
         </div>
         <div className="pt-2 mt-2 border-t flex justify-between" style={{ borderColor: c.border }}>
-          <span className="text-xs font-bold" style={{ color: c.text }}>Toplam (TRY):</span>
-          <span className="text-sm font-extrabold" style={{ color: currentColor }}>₺{cost.total.toFixed(2)}</span>
+          <span className="text-xs font-bold" style={{ color: c.text }}>Toplam ({currency}):</span>
+          <span className="text-sm font-extrabold" style={{ color: currentColor }}>{fmt(cost.total)}</span>
         </div>
       </div>
     </div>
@@ -439,3 +465,4 @@ function CostSummary({ cardLabel, cost, c, currentColor }) {
 // Minimal icons local proxy
 function Trash2({ size, className }) { return <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18m-2 0v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6m3 0V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2m-6 9 2 2 4-4"/></svg>; }
 function Plus({ size, className }) { return <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14m-7-7h14"/></svg>; }
+function Loader2({ size, className }) { return <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>; }
