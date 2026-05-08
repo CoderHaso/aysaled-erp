@@ -521,11 +521,20 @@ Görevin: Ürünleri, reçeteleri, stokları ve maliyetleri yönetmek.
 
 ⚠️ REÇETE OLUŞTURMA KURALLARI:
 - Bir reçete (BOM) oluşturmadan veya güncellemeden önce MUTLAKA 'verify_recipe_materials' kullanarak malzemelerin sistemde varlığını kontrol etmelisiniz.
-- Eğer bir malzeme eksikse (status: 'missing'), kullanıcıya "Bu malzeme sistemde yok, oluşturmamı ister misiniz?" diye sormalısınız.
+- Eğer bir malzeme eksikse (status: 'missing'), kullaniciya "Bu malzeme sistemde yok, oluşturmamı ister misiniz?" diye sormalısınız.
 - Eğer benzer isimli malzemeler varsa (status: 'suggested'), kullanıcıya bunları önerin: "Şu isimde benzer ürünler var, bunlardan birini mi demek istediniz?"
 - Kullanıcı onay vermeden asla hayali veya ID'siz malzemelerle reçete oluşturmayın. Eksik malzemeleri 'create_raw_material' ile oluşturduktan sonra reçeteye geçin.
 
-4. Para birimi USD ise 'sale_currency' ve 'base_currency' alanlarını 'USD' yap.`
+5. BİRİM KORUMA (UNIT PRESERVATION):
+- Reçete oluştururken veya güncellerken malzemelerin birimlerini (Adet, Metre, Kg vb.) MUTLAKA sistemdeki orijinal halleriyle kullanın.
+- Eğer bir malzemenin biriminden emin değilseniz 'query_items' ile kontrol edin. Asla varsayılan olarak 'Adet' atamayın.
+
+6. ZAMAN AŞIMI VE PARÇALI ÇALIŞMA (TIMEOUT & CHUNKING):
+- Supabase Edge Function çalışma süresi kısıtlıdır (max 60s). Eğer kullanıcı çok kapsamlı bir işlem (örn: 5+ ürün ve reçete oluşturma) istediyse, işlemi parçalara bölün.
+- Örnek: "İşleminiz uzun süreceği için parçalara böldüm. İlk 2 ürünü oluşturdum, kontrol edin. Devam etmemi ister misiniz?"
+- Her adımda kullanıcıyı bilgilendirin ve onay alarak ilerleyin. Boş mesaj göndermekten veya timeout hatası almaktan kaçının.
+
+7. Para birimi USD ise 'sale_currency' ve 'base_currency' alanlarını 'USD' yap. Basic promptlarda bile bu mantığı koruyun.`
 
 const TOOLS = [
   {
@@ -579,7 +588,14 @@ const TOOLS = [
           },
           items: {
             type: 'array',
-            items: { type: 'object', properties: { item_name: { type: 'string' }, quantity: { type: ['number', 'string'] } } }
+            items: { 
+              type: 'object', 
+              properties: { 
+                item_name: { type: 'string' }, 
+                quantity: { type: ['number', 'string'] },
+                unit: { type: 'string', description: 'Malzeme birimi (Adet, Metre, Kg vb.)' }
+              } 
+            }
           }
         },
         required: ['recipe_id']
@@ -611,7 +627,14 @@ const TOOLS = [
                     },
                     items: {
                       type: 'array',
-                      items: { type: 'object', properties: { item_name: { type: 'string' }, quantity: { type: ['number', 'string'] } } }
+                      items: { 
+                        type: 'object', 
+                        properties: { 
+                          item_name: { type: 'string' }, 
+                          quantity: { type: ['number', 'string'] },
+                          unit: { type: 'string', description: 'Malzeme birimi (Adet, Metre, Kg vb.)' }
+                        } 
+                      }
                     }
                   }
                 }
