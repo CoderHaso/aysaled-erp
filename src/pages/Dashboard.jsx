@@ -326,8 +326,8 @@ export default function Dashboard() {
             const key = oi.item_id || oi.item_name;
             if (!grouped[key]) {
               const stockItem = itemMap[oi.item_id];
-              // Gerçek tür belirleme: stokta kayıtlı mı? Reçeteli mi?
-              let realType = 'kayitsiz'; // Stokta karşılığı yok
+              // Gerçek tür belirleme: önce stoktan bak, yoksa siparişteki item_type'a bak
+              let realType = 'kayitsiz';
               let stockSource = '';
               if (stockItem) {
                 stockSource = stockItem.name;
@@ -336,7 +336,14 @@ export default function Dashboard() {
                 } else if (stockItem.item_type === 'product' && (stockItem.has_bom || isRecipeProduct(oi.item_id))) {
                   realType = 'receteli';
                 } else {
-                  realType = 'recetesiz'; // Ürün ama reçetesi yok
+                  realType = 'recetesiz';
+                }
+              } else if (oi.item_type) {
+                // Stokta eşleşme yok ama siparişteki tür bilgisi var
+                if (oi.item_type === 'product') {
+                  realType = isRecipeProduct(oi.item_id) ? 'receteli' : 'recetesiz';
+                } else if (oi.item_type === 'raw' || oi.item_type === 'rawmaterial') {
+                  realType = 'hammadde';
                 }
               }
               grouped[key] = { name: oi.item_name, qty: 0, revenue: 0, realType, stockSource };
