@@ -319,38 +319,9 @@ export default function Dashboard() {
             sub={`${new Set(rawItems.map(oi => oi.item_id)).size} farklı hammadde`}
             icon={Tag} color="#f59e0b" isDark={isDark} />
         </div>
-        {/* Top 10 ürün tablosu */}
+        {/* Satış kalemleri — sipariş bazlı */}
         {(() => {
-          const grouped = {};
-          filteredOrderItems.forEach(oi => {
-            const key = oi.item_id || oi.item_name;
-            if (!grouped[key]) {
-              const stockItem = itemMap[oi.item_id];
-              // Gerçek tür belirleme: önce stoktan bak, yoksa siparişteki item_type'a bak
-              let realType = 'kayitsiz';
-              let stockSource = '';
-              if (stockItem) {
-                stockSource = stockItem.name;
-                if (stockItem.item_type === 'raw' || stockItem.item_type === 'rawmaterial') {
-                  realType = 'hammadde';
-                } else if (stockItem.item_type === 'product' && (stockItem.has_bom || isRecipeProduct(oi.item_id))) {
-                  realType = 'receteli';
-                } else {
-                  realType = 'recetesiz';
-                }
-              } else if (oi.item_type) {
-                // Stokta eşleşme yok ama siparişteki tür bilgisi var
-                if (oi.item_type === 'product') {
-                  realType = isRecipeProduct(oi.item_id) ? 'receteli' : 'recetesiz';
-                } else if (oi.item_type === 'raw' || oi.item_type === 'rawmaterial') {
-                  realType = 'hammadde';
-                }
-              }
-              grouped[key] = { name: oi.item_name, qty: 0, revenue: 0, realType, stockSource };
-            }
-            grouped[key].qty += Number(oi.quantity || 0);
-            grouped[key].revenue += Number(oi.quantity || 0) * Number(oi.unit_price || 0);
-          });
+          const orderLookup = Object.fromEntries(filteredOrders.map(o => [o.id, o]));
           const typeLabels = {
             receteli:  '📦 Reçeteli',
             recetesiz: '🏷️ Reçetesiz',
@@ -363,17 +334,52 @@ export default function Dashboard() {
             hammadde:  '#f59e0b',
             kayitsiz:  '#94a3b8',
           };
-          const sorted = Object.values(grouped).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+          const rows = filteredOrderItems.map(oi => {
+            const order = orderLookup[oi.order_id];
+            const stockItem = itemMap[oi.item_id];
+            let realType = 'kayitsiz';
+            let stockSource = '';
+            if (stockItem) {
+              stockSource = stockItem.name;
+              if (stockItem.item_type === 'raw' || stockItem.item_type === 'rawmaterial') {
+                realType = 'hammadde';
+              } else if (stockItem.item_type === 'product' && (stockItem.has_bom || isRecipeProduct(oi.item_id))) {
+                realType = 'receteli';
+              } else {
+                realType = 'recetesiz';
+              }
+            } else if (oi.item_type) {
+              if (oi.item_type === 'product') {
+                realType = isRecipeProduct(oi.item_id) ? 'receteli' : 'recetesiz';
+              } else if (oi.item_type === 'raw' || oi.item_type === 'rawmaterial') {
+                realType = 'hammadde';
+              }
+            }
+            return {
+              name: oi.item_name,
+              orderNo: order?.order_number || '',
+              customer: order?.customer_name || '',
+              invoiced: order?.is_invoiced ? '✅' : '❌',
+              realType,
+              stockSource,
+              qty: Number(oi.quantity || 0),
+              revenue: Number(oi.quantity || 0) * Number(oi.unit_price || 0),
+            };
+          });
+          const sorted = rows.sort((a, b) => b.revenue - a.revenue);
           return (
             <ReportTable isDark={isDark} emptyText="Bu ay sipariş yok"
               columns={[
                 { label: 'Ürün', key: 'name', bold: true },
+                { label: 'Sipariş No', key: 'orderNo',
+                  color: r => r.orderNo ? '#3b82f6' : '#94a3b8',
+                  render: r => r.orderNo || '—' },
+                { label: 'Müşteri', key: 'customer', render: r => r.customer || '—' },
+                { label: 'Faturalı', key: 'invoiced', align: 'center' },
                 { label: 'Tür', key: 'realType', render: r => typeLabels[r.realType] || r.realType,
                   color: r => typeColors[r.realType] || '#64748b' },
-                { label: 'Stok Kaynağı', key: 'stockSource', render: r => r.stockSource || '—',
-                  color: r => r.stockSource ? (isDark ? '#e2e8f0' : '#334155') : '#94a3b8' },
                 { label: 'Miktar', key: 'qty', align: 'right', render: r => fmtInt(r.qty) },
-                { label: 'Ciro', key: 'revenue', align: 'right', total: true, render: r => `₺${fmt(r.revenue)}` },
+                { label: 'Tutar', key: 'revenue', align: 'right', total: true, render: r => `₺${fmt(r.revenue)}` },
               ]}
               rows={sorted}
             />
