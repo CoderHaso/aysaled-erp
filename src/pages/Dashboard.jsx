@@ -33,7 +33,7 @@ const currentYear = now.getFullYear();
 
 const REPORT_MODES = [
   { id: 'ozet',       label: 'Özet',       icon: PieChart,    color: '#3b82f6' },
-  { id: 'receteli',   label: 'Reçeteli',   icon: Package,     color: '#8b5cf6' },
+  { id: 'receteli',   label: 'Reçeteli (İş Emirli)', icon: Package, color: '#8b5cf6' },
   { id: 'hammadde',   label: 'Hammadde',   icon: Tag,         color: '#f59e0b' },
   { id: 'faturali',   label: 'Faturalı',   icon: Receipt,     color: '#10b981' },
   { id: 'faturasiz',  label: 'Faturasız',  icon: FileText,    color: '#ef4444' },
@@ -166,6 +166,7 @@ export default function Dashboard() {
   const [items, setItems] = useState([]);
   const [recipes, setRecipes] = useState([]);
   const [recipeItems, setRecipeItems] = useState([]);
+  const [workOrders, setWorkOrders] = useState([]);
 
   const c = {
     bg: 'var(--bg-app)',
@@ -184,9 +185,9 @@ export default function Dashboard() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [ordRes, oiRes, invInRes, invOutRes, custRes, suppRes, itmRes, recRes, riRes] = await Promise.all([
+      const [ordRes, oiRes, invInRes, invOutRes, custRes, suppRes, itmRes, recRes, riRes, woRes] = await Promise.all([
         supabase.from('orders')
-          .select('id, customer_id, customer_name, status, currency, subtotal, tax_total, grand_total, is_invoiced, created_at')
+          .select('id, order_number, customer_id, customer_name, customer_vkntckn, status, currency, subtotal, tax_total, grand_total, is_invoiced, created_at')
           .gte('created_at', startDate).lte('created_at', endDate)
           .not('status', 'eq', 'cancelled'),
         supabase.from('order_items')
@@ -201,9 +202,12 @@ export default function Dashboard() {
           .gte('issue_date', startDate.slice(0, 10)).lte('issue_date', endDate.slice(0, 10)),
         supabase.from('customers').select('id, name, vkntckn, is_faturasiz'),
         supabase.from('suppliers').select('id, name, vkntckn, is_faturasiz'),
-        supabase.from('items').select('id, name, item_type, purchase_price, sale_price, base_currency, sale_currency, unit'),
+        supabase.from('items').select('id, name, item_type, purchase_price, sale_price, base_currency, sale_currency, unit, has_bom'),
         supabase.from('product_recipes').select('id, product_id, name, is_default'),
         supabase.from('recipe_items').select('id, recipe_id, item_id, item_name, quantity, unit'),
+        supabase.from('work_orders')
+          .select('id, item_id, item_name, order_id, quantity, status, created_at')
+          .gte('created_at', startDate).lte('created_at', endDate),
       ]);
 
       setOrders(ordRes.data || []);
@@ -218,6 +222,7 @@ export default function Dashboard() {
       setItems(itmRes.data || []);
       setRecipes(recRes.data || []);
       setRecipeItems(riRes.data || []);
+      setWorkOrders(woRes.data || []);
     } catch (e) {
       console.error('[Dashboard] fetch error:', e);
     } finally {
@@ -314,21 +319,52 @@ export default function Dashboard() {
             sub={`${new Set(rawItems.map(oi => oi.item_id)).size} farklı hammadde`}
             icon={Tag} color="#f59e0b" isDark={isDark} />
         </div>
-        {/* Top 5 ürün tablosu */}
+        {/* Top 10 ürün tablosu */}
         {(() => {
           const grouped = {};
           filteredOrderItems.forEach(oi => {
             const key = oi.item_id || oi.item_name;
-            if (!grouped[key]) grouped[key] = { name: oi.item_name, qty: 0, revenue: 0, type: oi.item_type };
+            if (!grouped[key]) {
+              const stockItem = itemMap[oi.item_id];
+              // Gerçek tür belirleme: stokta kayıtlı mı? Reçeteli mi?
+              let realType = 'kayitsiz'; // Stokta karşılığı yok
+              let stockSource = '';
+              if (stockItem) {
+                stockSource = stockItem.name;
+                if (stockItem.item_type === 'raw' || stockItem.item_type === 'rawmaterial') {
+                  realType = 'hammadde';
+                } else if (stockItem.item_type === 'product' && (stockItem.has_bom || isRecipeProduct(oi.item_id))) {
+                  realType = 'receteli';
+                } else {
+                  realType = 'recetesiz'; // Ürün ama reçetesi yok
+                }
+              }
+              grouped[key] = { name: oi.item_name, qty: 0, revenue: 0, realType, stockSource };
+            }
             grouped[key].qty += Number(oi.quantity || 0);
             grouped[key].revenue += Number(oi.quantity || 0) * Number(oi.unit_price || 0);
           });
+          const typeLabels = {
+            receteli:  '📦 Reçeteli',
+            recetesiz: '🏷️ Reçetesiz',
+            hammadde:  '🧪 Hammadde',
+            kayitsiz:  '📌 Kayıtsız',
+          };
+          const typeColors = {
+            receteli:  '#8b5cf6',
+            recetesiz: '#3b82f6',
+            hammadde:  '#f59e0b',
+            kayitsiz:  '#94a3b8',
+          };
           const sorted = Object.values(grouped).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
           return (
             <ReportTable isDark={isDark} emptyText="Bu ay sipariş yok"
               columns={[
                 { label: 'Ürün', key: 'name', bold: true },
-                { label: 'Tür', key: 'type', render: r => r.type === 'product' ? '📦 Reçeteli' : '🏷️ Hammadde' },
+                { label: 'Tür', key: 'realType', render: r => typeLabels[r.realType] || r.realType,
+                  color: r => typeColors[r.realType] || '#64748b' },
+                { label: 'Stok Kaynağı', key: 'stockSource', render: r => r.stockSource || '—',
+                  color: r => r.stockSource ? (isDark ? '#e2e8f0' : '#334155') : '#94a3b8' },
                 { label: 'Miktar', key: 'qty', align: 'right', render: r => fmtInt(r.qty) },
                 { label: 'Ciro', key: 'revenue', align: 'right', total: true, render: r => `₺${fmt(r.revenue)}` },
               ]}
@@ -341,35 +377,55 @@ export default function Dashboard() {
   };
 
   const renderReceteli = () => {
-    const grouped = {};
-    filteredOrderItems.forEach(oi => {
-      if (!isRecipeProduct(oi.item_id) && oi.item_type !== 'product') return;
-      const key = oi.item_id || oi.item_name;
-      if (!grouped[key]) grouped[key] = { name: oi.item_name, itemId: oi.item_id, qty: 0, revenue: 0, cost: 0 };
-      grouped[key].qty += Number(oi.quantity || 0);
-      grouped[key].revenue += Number(oi.quantity || 0) * Number(oi.unit_price || 0);
+    // İş emirlerinden ürün bazlı gruplama
+    const statusLabels = { pending: '⏳ Bekliyor', in_progress: '⚡ Üretimde', completed: '✅ Tamamlandı', cancelled: '❌ İptal' };
+    const orderMap = Object.fromEntries(filteredOrders.map(o => [o.id, o]));
+    // Satır bazlı gösterim — her iş emri bir satır
+    const rows = workOrders.map(wo => {
+      const order = orderMap[wo.order_id];
+      const stockItem = itemMap[wo.item_id];
+      return {
+        product: stockItem?.name || wo.item_name || 'Bilinmeyen',
+        orderNo: order?.order_number || '',
+        customer: order?.customer_name || '',
+        qty: Number(wo.quantity || 1),
+        status: wo.status,
+        statusLabel: statusLabels[wo.status] || wo.status,
+        isAdHoc: !wo.item_id,
+        date: wo.created_at ? new Date(wo.created_at).toLocaleDateString('tr-TR') : '',
+      };
     });
-    Object.values(grouped).forEach(g => {
-      g.cost = recipeCost(g.itemId) * g.qty;
-      g.profit = g.revenue - g.cost;
-      g.margin = g.revenue > 0 ? ((g.profit / g.revenue) * 100) : 0;
+    const sorted = rows.sort((a, b) => {
+      const order = { pending: 0, in_progress: 1, completed: 2, cancelled: 3 };
+      return (order[a.status] ?? 9) - (order[b.status] ?? 9);
     });
-    const sorted = Object.values(grouped).sort((a, b) => b.revenue - a.revenue);
+    // Özet kartları
+    const pending = workOrders.filter(w => w.status === 'pending').length;
+    const inProg = workOrders.filter(w => w.status === 'in_progress').length;
+    const done = workOrders.filter(w => w.status === 'completed').length;
     return (
-      <ReportTable isDark={isDark} emptyText="Bu ay reçeteli ürün satışı yok"
-        columns={[
-          { label: 'Ürün', key: 'name', bold: true },
-          { label: 'Adet', key: 'qty', align: 'right', render: r => fmtInt(r.qty) },
-          { label: 'Maliyet', key: 'cost', align: 'right', total: true, render: r => `₺${fmt(r.cost)}` },
-          { label: 'Satış', key: 'revenue', align: 'right', total: true, render: r => `₺${fmt(r.revenue)}` },
-          { label: 'Kâr', key: 'profit', align: 'right', total: true,
-            render: r => `₺${fmt(r.profit)}`,
-            color: r => r.profit >= 0 ? '#22c55e' : '#ef4444' },
-          { label: 'Marj', key: 'margin', align: 'right', render: r => `%${fmt(r.margin)}`,
-            color: r => r.margin >= 20 ? '#22c55e' : r.margin >= 0 ? '#f59e0b' : '#ef4444' },
-        ]}
-        rows={sorted}
-      />
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <StatCard label="Toplam İş Emri" value={fmtInt(workOrders.length)} icon={Package} color="#8b5cf6" isDark={isDark} />
+          <StatCard label="Bekleyen" value={fmtInt(pending)} icon={Clock} color="#f59e0b" isDark={isDark} />
+          <StatCard label="Üretimde" value={fmtInt(inProg)} icon={RefreshCw} color="#3b82f6" isDark={isDark} />
+          <StatCard label="Tamamlanan" value={fmtInt(done)} icon={CheckCircle2} color="#22c55e" isDark={isDark} />
+        </div>
+        <ReportTable isDark={isDark} emptyText="Bu ay iş emri yok"
+          columns={[
+            { label: 'Ürün', key: 'product', bold: true,
+              render: r => r.isAdHoc ? `📌 ${r.product}` : r.product },
+            { label: 'Sipariş No', key: 'orderNo', render: r => r.orderNo || '—',
+              color: r => r.orderNo ? '#3b82f6' : '#94a3b8' },
+            { label: 'Müşteri', key: 'customer', render: r => r.customer || '—' },
+            { label: 'Miktar', key: 'qty', align: 'right', total: true, render: r => fmtInt(r.qty) },
+            { label: 'Durum', key: 'statusLabel',
+              color: r => r.status === 'completed' ? '#22c55e' : r.status === 'in_progress' ? '#3b82f6' : r.status === 'cancelled' ? '#ef4444' : '#f59e0b' },
+            { label: 'Tarih', key: 'date' },
+          ]}
+          rows={sorted}
+        />
+      </div>
     );
   };
 
@@ -422,26 +478,88 @@ export default function Dashboard() {
   };
 
   const renderFaturali = () => {
+    // Giden faturalar (iptal/taslak hariç, gerçek faturalar)
+    const validInvoicesOut = invoicesOut.filter(inv => inv.cari_name && inv.status !== 'cancelled' && inv.status !== 'draft');
+    // Faturalı siparişler
     const invOrders = filteredOrders.filter(o => o.is_invoiced);
-    const grouped = {};
-    invOrders.forEach(o => {
-      const key = o.customer_id || o.customer_name;
-      if (!grouped[key]) grouped[key] = { name: o.customer_name, count: 0, total: 0, tax: 0 };
-      grouped[key].count++;
-      grouped[key].total += Number(o.grand_total || 0);
-      grouped[key].tax += Number(o.tax_total || 0);
+
+    // Fatura → sipariş eşleştirmesi (cari_name / vkntckn üzerinden)
+    const rows = [];
+    const matchedOrderIds = new Set();
+    const matchedInvIds = new Set();
+
+    // 1) Her faturaya en yakın siparişi eşle
+    validInvoicesOut.forEach(inv => {
+      // vkntckn ile kesin eşleşme dene
+      let matchedOrder = null;
+      if (inv.vkntckn) {
+        matchedOrder = invOrders.find(o =>
+          !matchedOrderIds.has(o.id) && o.customer_vkntckn === inv.vkntckn
+        );
+      }
+      // vkntckn yoksa cari_name ile dene
+      if (!matchedOrder) {
+        const invName = (inv.cari_name || '').toLowerCase().trim();
+        matchedOrder = invOrders.find(o =>
+          !matchedOrderIds.has(o.id) && (o.customer_name || '').toLowerCase().trim() === invName
+        );
+      }
+      if (matchedOrder) {
+        matchedOrderIds.add(matchedOrder.id);
+        matchedInvIds.add(inv.id);
+      }
+      rows.push({
+        cari: inv.cari_name,
+        faturaNo: inv.invoice_id || '',
+        siparisNo: matchedOrder?.order_number || '',
+        total: Number(inv.amount || 0),
+        tax: Number(inv.tax_total || 0),
+        source: matchedOrder ? 'linked' : 'invoice_only',
+        date: inv.issue_date || '',
+      });
     });
-    const sorted = Object.values(grouped).sort((a, b) => b.total - a.total);
+
+    // 2) Eşleşmemiş faturalı siparişleri ekle
+    invOrders.forEach(o => {
+      if (matchedOrderIds.has(o.id)) return;
+      rows.push({
+        cari: o.customer_name,
+        faturaNo: '',
+        siparisNo: o.order_number || '',
+        total: Number(o.grand_total || 0),
+        tax: Number(o.tax_total || 0),
+        source: 'order_only',
+        date: o.created_at ? o.created_at.slice(0, 10) : '',
+      });
+    });
+
+    const sorted = rows.sort((a, b) => b.total - a.total);
+    const totalAmt = sorted.reduce((s, r) => s + r.total, 0);
+    const totalTax = sorted.reduce((s, r) => s + r.tax, 0);
+
     return (
-      <ReportTable isDark={isDark} emptyText="Bu ay faturalı satış yok"
-        columns={[
-          { label: 'Müşteri', key: 'name', bold: true },
-          { label: 'Sipariş', key: 'count', align: 'right', render: r => fmtInt(r.count) },
-          { label: 'KDV', key: 'tax', align: 'right', total: true, render: r => `₺${fmt(r.tax)}` },
-          { label: 'Toplam', key: 'total', align: 'right', total: true, render: r => `₺${fmt(r.total)}` },
-        ]}
-        rows={sorted}
-      />
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <StatCard label="Giden Fatura" value={fmtInt(validInvoicesOut.length)} icon={ArrowUp} color="#10b981" isDark={isDark} />
+          <StatCard label="Faturalı Sipariş" value={fmtInt(invOrders.length)} icon={Receipt} color="#3b82f6" isDark={isDark} />
+          <StatCard label="Toplam Tutar" value={`₺${fmt(totalAmt)}`} sub={`KDV: ₺${fmt(totalTax)}`} icon={DollarSign} color="#8b5cf6" isDark={isDark} />
+        </div>
+        <ReportTable isDark={isDark} emptyText="Bu ay faturalı kayıt yok"
+          columns={[
+            { label: 'Cari / Müşteri', key: 'cari', bold: true },
+            { label: 'Fatura No', key: 'faturaNo',
+              render: r => r.faturaNo || '—',
+              color: r => r.faturaNo ? '#10b981' : '#94a3b8' },
+            { label: 'Sipariş No', key: 'siparisNo',
+              render: r => r.siparisNo || '—',
+              color: r => r.siparisNo ? '#3b82f6' : '#94a3b8' },
+            { label: 'Tarih', key: 'date' },
+            { label: 'KDV', key: 'tax', align: 'right', total: true, render: r => `₺${fmt(r.tax)}` },
+            { label: 'Toplam', key: 'total', align: 'right', total: true, render: r => `₺${fmt(r.total)}` },
+          ]}
+          rows={sorted}
+        />
+      </div>
     );
   };
 
@@ -468,10 +586,14 @@ export default function Dashboard() {
   };
 
   const renderKdv = () => {
+    // Sadece geçerli (cari_name'i olan) faturaları al — taslak/iptal olanlar hariç
+    const validIn = invoicesIn.filter(inv => inv.cari_name && inv.status !== 'cancelled' && inv.status !== 'draft');
+    const validOut = invoicesOut.filter(inv => inv.cari_name && inv.status !== 'cancelled' && inv.status !== 'draft');
+
     // Gelen fatura (alış) KDV
     const gelenByMonth = {};
-    invoicesIn.forEach(inv => {
-      const k = inv.cari_name || 'Bilinmiyor';
+    validIn.forEach(inv => {
+      const k = inv.cari_name;
       if (!gelenByMonth[k]) gelenByMonth[k] = { name: k, count: 0, taxExcl: 0, tax: 0, total: 0 };
       gelenByMonth[k].count++;
       gelenByMonth[k].taxExcl += Number(inv.tax_exclusive_amount || 0);
@@ -480,16 +602,16 @@ export default function Dashboard() {
     });
     // Giden fatura (satış) KDV
     const gidenByMonth = {};
-    invoicesOut.forEach(inv => {
-      const k = inv.cari_name || 'Bilinmiyor';
+    validOut.forEach(inv => {
+      const k = inv.cari_name;
       if (!gidenByMonth[k]) gidenByMonth[k] = { name: k, count: 0, taxExcl: 0, tax: 0, total: 0 };
       gidenByMonth[k].count++;
       gidenByMonth[k].taxExcl += Number(inv.tax_exclusive_amount || 0);
       gidenByMonth[k].tax += Number(inv.tax_total || 0);
       gidenByMonth[k].total += Number(inv.amount || 0);
     });
-    const totalGelenKdv = invoicesIn.reduce((s, inv) => s + Number(inv.tax_total || 0), 0);
-    const totalGidenKdv = invoicesOut.reduce((s, inv) => s + Number(inv.tax_total || 0), 0);
+    const totalGelenKdv = validIn.reduce((s, inv) => s + Number(inv.tax_total || 0), 0);
+    const totalGidenKdv = validOut.reduce((s, inv) => s + Number(inv.tax_total || 0), 0);
 
     const cols = [
       { label: 'Cari', key: 'name', bold: true },
@@ -505,9 +627,9 @@ export default function Dashboard() {
         {/* Özet kartlar */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <StatCard label="Gelen Fatura KDV" value={`₺${fmt(totalGelenKdv)}`}
-            sub={`${invoicesIn.length} fatura`} icon={ArrowDown} color="#ef4444" isDark={isDark} />
+            sub={`${validIn.length} fatura`} icon={ArrowDown} color="#ef4444" isDark={isDark} />
           <StatCard label="Giden Fatura KDV" value={`₺${fmt(totalGidenKdv)}`}
-            sub={`${invoicesOut.length} fatura`} icon={ArrowUp} color="#22c55e" isDark={isDark} />
+            sub={`${validOut.length} fatura`} icon={ArrowUp} color="#22c55e" isDark={isDark} />
           <StatCard label="Net KDV (Gelen-Giden)" value={`₺${fmt(totalGelenKdv - totalGidenKdv)}`}
             icon={Calculator} color={totalGelenKdv - totalGidenKdv >= 0 ? '#ef4444' : '#22c55e'} isDark={isDark} />
         </div>
