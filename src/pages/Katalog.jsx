@@ -417,7 +417,7 @@ export default function App() {
         };
     })();
 
-    // PDF container içindeki tüm oklch renklerini inline RGB'ye çevir
+    // PDF container içindeki tüm oklch renklerini inline RGB'ye çevir ve href'leri temizle
     const sanitizeOklchColors = (container) => {
         const COLOR_PROPS = [
             'color', 'backgroundColor', 'borderColor',
@@ -428,6 +428,13 @@ export default function App() {
         const restoreList = [];
 
         for (const el of elements) {
+            // A etiketlerindeki href'leri geçici olarak kaldır (harici web linki olmaması için)
+            if (el.tagName === 'A' && el.hasAttribute('href')) {
+                const href = el.getAttribute('href');
+                el.removeAttribute('href');
+                restoreList.push({ el, type: 'href', value: href });
+            }
+
             const computed = window.getComputedStyle(el);
             const overrides = {};
 
@@ -441,7 +448,6 @@ export default function App() {
             // background-image gradients with oklch
             const bgImg = computed.backgroundImage;
             if (bgImg && bgImg.includes('oklch')) {
-                // Gradient oklch'leri regex ile değiştir
                 overrides.backgroundImage = bgImg.replace(
                     /oklch\([^)]+\)/g,
                     (match) => resolveColor(match)
@@ -455,7 +461,7 @@ export default function App() {
                     originals[cssProp] = el.style.getPropertyValue(cssProp);
                     el.style.setProperty(cssProp, newVal, 'important');
                 }
-                restoreList.push({ el, originals });
+                restoreList.push({ el, type: 'style', originals });
             }
         }
 
@@ -475,19 +481,23 @@ export default function App() {
                 originals[cssProp] = container.style.getPropertyValue(cssProp);
                 container.style.setProperty(cssProp, newVal, 'important');
             }
-            restoreList.push({ el: container, originals });
+            restoreList.push({ el: container, type: 'style', originals });
         }
 
         return restoreList;
     };
 
     const restoreOklchColors = (restoreList) => {
-        for (const { el, originals } of restoreList) {
-            for (const [cssProp, origVal] of Object.entries(originals)) {
-                if (origVal) {
-                    el.style.setProperty(cssProp, origVal);
-                } else {
-                    el.style.removeProperty(cssProp);
+        for (const item of restoreList) {
+            if (item.type === 'href') {
+                item.el.setAttribute('href', item.value);
+            } else if (item.type === 'style') {
+                for (const [cssProp, origVal] of Object.entries(item.originals)) {
+                    if (origVal) {
+                        item.el.style.setProperty(cssProp, origVal);
+                    } else {
+                        item.el.style.removeProperty(cssProp);
+                    }
                 }
             }
         }
@@ -519,12 +529,11 @@ export default function App() {
                     margin: 0,
                     filename: `${settings.companyName.replace(/\s+/g, '-')}-Katalog.pdf`,
                     image: { type: 'jpeg', quality: 0.90 },
+                    enableLinks: false,
                     html2canvas: {
                         scale: 1.5,
                         useCORS: true,
-                        logging: false,
-                        scrollY: 0,
-                        windowWidth: element.scrollWidth,
+                        logging: false
                     },
                     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
                     pagebreak: { mode: ['css', 'legacy'], avoid: ['.page-break-avoid'] }
