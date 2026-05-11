@@ -315,13 +315,14 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
     onUpdateMeta(recipe.id, { other_costs: [...otherCosts, newCost] });
   };
 
-  const updateOtherCost = (id, patch) => {
-    const next = otherCosts.map(x => x.id === id ? { ...x, ...patch } : x);
+  const updateOtherCost = (index, patch) => {
+    const next = [...otherCosts];
+    next[index] = { ...next[index], ...patch };
     onUpdateMeta(recipe.id, { other_costs: next });
   };
 
-  const deleteOtherCost = (id) => {
-    const next = otherCosts.filter(x => x.id !== id);
+  const deleteOtherCost = (index) => {
+    const next = otherCosts.filter((_, i) => i !== index);
     onUpdateMeta(recipe.id, { other_costs: next });
   };
 
@@ -588,20 +589,20 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
             {otherCosts.length > 0 && (
               <div className="space-y-1.5 mb-4">
                 {otherCosts.map((oc, i) => (
-                  <div key={oc.id} className="grid gap-1.5 rounded-xl p-2 items-center"
+                  <div key={oc.id || `oc-${i}`} className="grid gap-1.5 rounded-xl p-2 items-center"
                     style={{ background: isDark ? 'rgba(255,255,255,0.02)' : '#f8fafc', border: `1px solid ${c.border}`, gridTemplateColumns: 'minmax(80px,1fr) 90px 60px 28px' }}>
                     <span className="text-xs font-bold pl-1" style={{ color: c.text }}>{oc.type}</span>
                     <input type="number" min="0" step="0.01" value={oc.amount || ''} placeholder="Tutar"
-                      onChange={e => updateOtherCost(oc.id, { amount: parseFloat(e.target.value) || 0 })}
+                      onChange={e => updateOtherCost(i, { amount: parseFloat(e.target.value) || 0 })}
                       className="px-2 py-1 text-xs rounded-lg border outline-none text-right"
                       style={{ background: 'transparent', borderColor: c.border, color: c.text }} />
                     <select value={oc.currency || 'TRY'}
-                      onChange={e => updateOtherCost(oc.id, { currency: e.target.value })}
+                      onChange={e => updateOtherCost(i, { currency: e.target.value })}
                       className="px-1 py-1 text-xs font-bold rounded-lg border outline-none"
                       style={{ background: c.card, borderColor: c.border, color: currentColor }}>
                       {['TRY','USD','EUR','GBP'].map(cu => <option key={cu}>{cu}</option>)}
                     </select>
-                    <button onClick={() => deleteOtherCost(oc.id)}
+                    <button onClick={() => deleteOtherCost(i)}
                       className="p-1 rounded-lg flex items-center justify-center hover:bg-red-500/10 transition-colors"
                       style={{ color: '#ef4444' }}><Trash2 size={12} /></button>
                   </div>
