@@ -396,6 +396,103 @@ export default function App() {
         setProducts(prev => [...prev, newProduct]);
     };
 
+    // oklch() rengini RGB'ye dönüştür (html2canvas oklch desteklemiyor)
+    const resolveColor = (() => {
+        let ctx = null;
+        return (colorStr) => {
+            if (!colorStr || !colorStr.includes('oklch')) return colorStr;
+            try {
+                if (!ctx) {
+                    const c = document.createElement('canvas');
+                    c.width = 1; c.height = 1;
+                    ctx = c.getContext('2d');
+                }
+                ctx.clearRect(0, 0, 1, 1);
+                ctx.fillStyle = '#000000'; // reset
+                ctx.fillStyle = colorStr;
+                ctx.fillRect(0, 0, 1, 1);
+                const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+                return a < 255 ? `rgba(${r},${g},${b},${(a / 255).toFixed(3)})` : `rgb(${r},${g},${b})`;
+            } catch { return colorStr; }
+        };
+    })();
+
+    // PDF container içindeki tüm oklch renklerini inline RGB'ye çevir
+    const sanitizeOklchColors = (container) => {
+        const COLOR_PROPS = [
+            'color', 'backgroundColor', 'borderColor',
+            'borderTopColor', 'borderRightColor', 'borderBottomColor', 'borderLeftColor',
+            'outlineColor', 'textDecorationColor', 'boxShadow', 'caretColor'
+        ];
+        const elements = container.querySelectorAll('*');
+        const restoreList = [];
+
+        for (const el of elements) {
+            const computed = window.getComputedStyle(el);
+            const overrides = {};
+
+            for (const prop of COLOR_PROPS) {
+                const val = computed[prop];
+                if (val && val.includes('oklch')) {
+                    overrides[prop] = resolveColor(val);
+                }
+            }
+
+            // background-image gradients with oklch
+            const bgImg = computed.backgroundImage;
+            if (bgImg && bgImg.includes('oklch')) {
+                // Gradient oklch'leri regex ile değiştir
+                overrides.backgroundImage = bgImg.replace(
+                    /oklch\([^)]+\)/g,
+                    (match) => resolveColor(match)
+                );
+            }
+
+            if (Object.keys(overrides).length > 0) {
+                const originals = {};
+                for (const [prop, newVal] of Object.entries(overrides)) {
+                    const cssProp = prop.replace(/([A-Z])/g, '-$1').toLowerCase();
+                    originals[cssProp] = el.style.getPropertyValue(cssProp);
+                    el.style.setProperty(cssProp, newVal, 'important');
+                }
+                restoreList.push({ el, originals });
+            }
+        }
+
+        // Container kendisi
+        const rootComputed = window.getComputedStyle(container);
+        const rootOverrides = {};
+        for (const prop of COLOR_PROPS) {
+            const val = rootComputed[prop];
+            if (val && val.includes('oklch')) {
+                rootOverrides[prop] = resolveColor(val);
+            }
+        }
+        if (Object.keys(rootOverrides).length > 0) {
+            const originals = {};
+            for (const [prop, newVal] of Object.entries(rootOverrides)) {
+                const cssProp = prop.replace(/([A-Z])/g, '-$1').toLowerCase();
+                originals[cssProp] = container.style.getPropertyValue(cssProp);
+                container.style.setProperty(cssProp, newVal, 'important');
+            }
+            restoreList.push({ el: container, originals });
+        }
+
+        return restoreList;
+    };
+
+    const restoreOklchColors = (restoreList) => {
+        for (const { el, originals } of restoreList) {
+            for (const [cssProp, origVal] of Object.entries(originals)) {
+                if (origVal) {
+                    el.style.setProperty(cssProp, origVal);
+                } else {
+                    el.style.removeProperty(cssProp);
+                }
+            }
+        }
+    };
+
     const exportPDF = async () => {
         if (!pdfReady || !window.html2pdf) {
             alert('PDF oluşturucu henüz yüklenmedi, lütfen birkaç saniye bekleyip tekrar deneyin.');
@@ -405,20 +502,29 @@ export default function App() {
         const element = document.getElementById('pdf-preview-container');
         if (!element) return;
 
-        window.scrollTo(0, 0); // En tepeye kaydır
+        window.scrollTo(0, 0);
         setPdfLoading(true);
+
+        // oklch renkleri RGB'ye çevir (html2canvas uyumu için)
+        let restoreList = [];
+        try {
+            restoreList = sanitizeOklchColors(element);
+        } catch (e) {
+            console.warn('oklch sanitize hatası:', e);
+        }
 
         setTimeout(async () => {
             try {
                 const opt = {
                     margin: 0,
                     filename: `${settings.companyName.replace(/\s+/g, '-')}-Katalog.pdf`,
-                    image: { type: 'jpeg', quality: 0.90 }, 
+                    image: { type: 'jpeg', quality: 0.90 },
                     html2canvas: {
                         scale: 1.5,
                         useCORS: true,
                         logging: false,
-                        scrollY: 0
+                        scrollY: 0,
+                        windowWidth: element.scrollWidth,
                     },
                     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
                     pagebreak: { mode: ['css', 'legacy'], avoid: ['.page-break-avoid'] }
@@ -429,9 +535,11 @@ export default function App() {
                 console.error("PDF oluşturma hatası:", error);
                 alert("PDF oluşturulurken bir hata oluştu. Lütfen konsolu kontrol edin.");
             } finally {
+                // Orijinal stilleri geri yükle
+                restoreOklchColors(restoreList);
                 setPdfLoading(false);
             }
-        }, 300);
+        }, 500);
     };
 
     const getCurrencySymbol = (code) => {
