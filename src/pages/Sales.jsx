@@ -2064,7 +2064,8 @@ export default function Sales() {
     if (!recipeLines.length) return;
     try {
       const payload = recipeLines.map(line => ({
-        item_id:   line.item_id,
+        item_id:   line.item_id || null,   // ad-hoc ürünlerde null
+        item_name: line.item_name || '',   // ad-hoc ürünlerde ürün adını taşı
         order_id:  order.id,
         recipe_id: line.recipe_id || null,
         quantity:  Number(line.quantity || 1),

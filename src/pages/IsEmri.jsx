@@ -200,7 +200,9 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
   const [savingNote, setSavingNote] = useState(false);
   const [showRecipePicker, setShowRecipePicker] = useState(false);
 
-  const item   = items.find(i => i.id === wo.item_id);
+  const item   = wo.item_id ? items.find(i => i.id === wo.item_id) : null;
+  const isAdHoc = !wo.item_id; // Kayıtsız (ad-hoc) ürün
+  const displayName = item?.name || wo.item_name || 'Bilinmeyen Ürün';
   const order  = orders.find(o => o.id === wo.order_id);
   const s      = STATUS[wo.status] || STATUS.pending;
   const Icon   = s.icon;
@@ -217,24 +219,28 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
     if (newStatus === 'completed') {
       const recipeId = wo.recipe_id || null;
       const woQty    = Number(wo.quantity || 1);
-      const woNote   = `İş emri #${wo.id?.slice(0,8)} (${item?.name||''}) tamamlandı${noteInput.trim() ? ` | Not: ${noteInput.trim()}` : ''}`;
+      const woNote   = `İş emri #${wo.id?.slice(0,8)} (${displayName}) tamamlandı${noteInput.trim() ? ` | Not: ${noteInput.trim()}` : ''}`;
       const customItems = wo.custom_recipe_items; // JSONB from DB
       const isCustom = customItems && Array.isArray(customItems) && customItems.length > 0;
       console.log('[WO COMPLETE] custom_recipe_items:', customItems, 'isCustom:', isCustom, 'recipeId:', recipeId);
 
-      // Mamül stok artır + custom reçete bilgisini kaydet
-      const rpcResult = await supabase.rpc('increment_stock', {
-        p_item_id: wo.item_id, p_qty: woQty, p_source: 'work_order',
-        p_source_id: wo.id, p_recipe_id: recipeId, p_note: woNote,
-        p_custom_recipe: isCustom ? JSON.stringify(customItems) : null,
-      });
-      console.log('[WO COMPLETE] increment_stock result:', rpcResult);
+      // Mamül stok artır + custom reçete bilgisini kaydet (sadece kayıtlı ürün varsa)
+      if (wo.item_id) {
+        const rpcResult = await supabase.rpc('increment_stock', {
+          p_item_id: wo.item_id, p_qty: woQty, p_source: 'work_order',
+          p_source_id: wo.id, p_recipe_id: recipeId, p_note: woNote,
+          p_custom_recipe: isCustom ? JSON.stringify(customItems) : null,
+        });
+        console.log('[WO COMPLETE] increment_stock result:', rpcResult);
+      } else {
+        console.log('[WO COMPLETE] ad-hoc product — stok artırma atlandı');
+      }
 
       // Hammadde düş: custom reçete varsa onu, yoksa base reçeteyi kullan
       let rawMaterials = [];
       if (isCustom) {
         rawMaterials = customItems.filter(ri => ri.item_id);
-      } else {
+      } else if (wo.item_id) {
         const recipeQuery = supabase.from('product_recipes').select('id, other_costs, recipe_items(item_id, quantity)').eq('product_id', wo.item_id);
         if (recipeId) recipeQuery.eq('id', recipeId); else recipeQuery.limit(1);
         try {
@@ -312,7 +318,7 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
   // Custom reçete items (accordion'da göster)
   const hasCustomRecipe = wo.custom_recipe_items && Array.isArray(wo.custom_recipe_items) && wo.custom_recipe_items.length > 0;
   const displayRecipeItems = hasCustomRecipe ? wo.custom_recipe_items : (recipe?.recipe_items || []);
-  const displayRecipeName = hasCustomRecipe ? `${recipe?.name || 'Reçete'} (Özel)` : recipe?.name;
+  const displayRecipeName = hasCustomRecipe ? `${recipe?.name || 'Reçete'} (Özel)` : (recipe?.name || (isAdHoc && hasCustomRecipe ? 'Özel Reçete' : ''));
 
   return (
     <motion.div initial={{ opacity:0,y:6 }} animate={{ opacity:1,y:0 }}
@@ -327,8 +333,9 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
               style={{ background:s.bg, color:s.color }}><Icon size={10}/> {s.label}</span>
             {wo.status==='in_progress' && <span className="text-[10px] text-blue-400 animate-pulse font-bold">⚡ AKTİF</span>}
             {hasCustomRecipe && <span className="text-[10px] text-amber-400 font-bold">🔧 Özel Reçete</span>}
+            {isAdHoc && <span className="text-[10px] text-violet-400 font-bold">📌 Kayıtsız Ürün</span>}
           </div>
-          <p className="text-sm font-bold truncate" style={{ color: isDark?'#f1f5f9':'#1e293b' }}>{item?.name||'Bilinmeyen Ürün'}</p>
+          <p className="text-sm font-bold truncate" style={{ color: isDark?'#f1f5f9':'#1e293b' }}>{displayName}</p>
           <p className="text-[11px]" style={{ color:'#64748b' }}>{fmt(wo.quantity)} {item?.unit||'Adet'} üretim</p>
         </div>
         <div className="text-right flex-shrink-0">
@@ -355,7 +362,7 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
         )}
 
         {/* Reçete accordion — custom veya base */}
-        {(recipe || hasCustomRecipe) && (
+        {(recipe || hasCustomRecipe || (isAdHoc && hasCustomRecipe)) && (
           <div className="rounded-xl overflow-hidden" style={{ border:`1px solid ${hasCustomRecipe ? 'rgba(245,158,11,0.3)' : 'rgba(139,92,246,0.2)'}` }}>
             <button className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold"
               style={{ background: hasCustomRecipe ? 'rgba(245,158,11,0.08)' : 'rgba(139,92,246,0.06)', color: hasCustomRecipe ? '#f59e0b' : '#a78bfa' }}
@@ -445,7 +452,7 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
             </button>
           );
         })}
-        {wo.status==='in_progress' && item && (allRecipes||[]).some(r => r.product_id===wo.item_id) && (
+        {wo.status==='in_progress' && (hasCustomRecipe || (item && (allRecipes||[]).some(r => r.product_id===wo.item_id))) && (
           <button onClick={() => setShowRecipePicker(true)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-semibold"
             style={{ background:'rgba(139,92,246,0.1)', color:'#a78bfa', border:'1px solid rgba(139,92,246,0.25)' }}>
@@ -462,9 +469,9 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
         <button onClick={() => {
           printDocument('work_order', {
             wo_number: `WO-${wo.id?.slice(0,8).toUpperCase()}`,
-            product_name: item?.name || 'Bilinmeyen',
+            product_name: displayName,
             recipe_name: displayRecipeName || '',
-            quantity: wo.quantity, unit: item?.unit || 'Adet',
+            quantity: wo.quantity, unit: item?.unit || wo.unit || 'Adet',
             status: s.label, customer_name: orders.find(o => o.id === wo.order_id)?.customer_name || '',
             created_at: wo.started_at || wo.created_at,
             production_note: wo.production_note || noteInput || '',
@@ -472,7 +479,7 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
               item_name: ri.item_name, per_unit: ri.quantity, unit: ri.unit || 'Adet',
               total_qty: Number(ri.quantity || 0) * Number(wo.quantity || 1),
             })),
-          }, `İş Emri - ${item?.name || ''}`);
+          }, `İş Emri - ${displayName}`);
         }}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold"
           style={{ background:'rgba(59,130,246,0.1)', color:'#3b82f6', border:'1px solid rgba(59,130,246,0.25)' }}>
@@ -481,7 +488,7 @@ function WorkOrderCard({ wo, items, orders, allRecipes, onStatusChange, onDelete
       </div>
 
       {showRecipePicker && (
-        <RecipePickerModal productId={wo.item_id} productName={item?.name||''}
+        <RecipePickerModal productId={wo.item_id} productName={displayName}
           allRecipes={allRecipes||[]} allItems={items||[]} currentColor={currentColor}
           selectedRecipeId={wo.recipe_id}
           customRecipeItems={wo.custom_recipe_items}
@@ -607,10 +614,10 @@ export default function IsEmri() {
   // Arama filtresi
   const searchFilter = (wo) => {
     if (!search) return true;
-    const item = items.find(i => i.id === wo.item_id);
+    const item = wo.item_id ? items.find(i => i.id === wo.item_id) : null;
     const ord  = orders.find(o => o.id === wo.order_id);
     const q = trNorm(search);
-    return trNorm(item?.name).includes(q) ||
+    return trNorm(item?.name || wo.item_name).includes(q) ||
       trNorm(ord?.customer_name).includes(q) ||
       trNorm(ord?.order_number).includes(q);
   };
