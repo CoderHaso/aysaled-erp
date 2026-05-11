@@ -156,13 +156,23 @@ export default function RecipePickerModal({
   const activeRecipe = filteredRecipes.find(r => r.id === selectedId) || filteredRecipes[0];
 
   /* ── Maliyet ───────────────────────────────────────────────── */
-  const totalCost = useMemo(() => localItems.reduce((sum, it) => {
-    const item  = (allItems || []).find(i => i.id === it.item_id) || {};
-    const price = Number(it.purchase_price ?? item.purchase_price ?? 0);
-    const curr  = it.base_currency || item.base_currency || 'TRY';
-    const tryPrice = fxConvert(price, curr, 'TRY');
-    return sum + tryPrice * Number(it.quantity || 1);
-  }, 0), [localItems, allItems, fxConvert]);
+  const { totalCost, materialCost, expenseCost, materialCount, expenseCount } = useMemo(() => {
+    let matCost = 0, expCost = 0, matCnt = 0, expCnt = 0;
+    localItems.forEach(it => {
+      const item  = (allItems || []).find(i => i.id === it.item_id) || {};
+      const price = Number(it.purchase_price ?? item.purchase_price ?? 0);
+      const curr  = it.base_currency || item.base_currency || 'TRY';
+      const tryPrice = fxConvert(price, curr, 'TRY');
+      if (it._isOtherCost) {
+        expCost += tryPrice; // Giderler: sadece tutar (adet yok)
+        expCnt++;
+      } else {
+        matCost += tryPrice * Number(it.quantity || 1);
+        matCnt++;
+      }
+    });
+    return { totalCost: matCost + expCost, materialCost: matCost, expenseCost: expCost, materialCount: matCnt, expenseCount: expCnt };
+  }, [localItems, allItems, fxConvert]);
 
   const addOtherCost = (type) => {
     setLocalItems(prev => [...prev, {
@@ -447,11 +457,11 @@ export default function RecipePickerModal({
 
               {/* Tablo başlığı */}
               <div className="px-4 py-1.5 flex-shrink-0 grid text-[10px] font-bold uppercase tracking-widest text-slate-600"
-                style={{ gridTemplateColumns: hideCosts ? '1fr 64px 68px 56px' : '1fr 64px 68px 80px 56px', borderBottom: '1px solid rgba(148,163,184,0.05)' }}>
+                style={{ gridTemplateColumns: '1fr 64px 68px 80px 56px', borderBottom: '1px solid rgba(148,163,184,0.05)' }}>
                 <span>Malzeme</span>
                 <span className="text-center">Miktar</span>
                 <span className="text-center">Birim</span>
-                {!hideCosts && <span className="text-right">Birim Fiyat</span>}
+                <span className="text-right">Birim Fiyat</span>
                 <span/>
               </div>
 
@@ -476,7 +486,7 @@ export default function RecipePickerModal({
                         className="group">
                         <div className="grid items-center gap-2 px-3 py-2.5 rounded-2xl transition-colors"
                           style={{
-                            gridTemplateColumns: hideCosts ? '1fr 64px 68px 56px' : '1fr 64px 68px 80px 56px',
+                            gridTemplateColumns: '1fr 64px 68px 80px 56px',
                             background: 'rgba(255,255,255,0.025)',
                             border: '1px solid rgba(148,163,184,0.07)',
                           }}>
@@ -519,7 +529,7 @@ export default function RecipePickerModal({
                           </select>
 
                           {/* Birim Fiyat */}
-                          {!hideCosts && (() => {
+                          {(() => {
                             const isOverridden = it.purchase_price !== null && it.purchase_price !== stockItem?.purchase_price;
                             return (
                               <div className="flex items-center justify-end gap-0.5">
@@ -556,7 +566,7 @@ export default function RecipePickerModal({
                         </div>
 
                         {/* Satır toplam */}
-                        {!hideCosts && linePrice > 0 && (
+                        {linePrice > 0 && (
                           <p className="text-right text-[10px] text-slate-600 pr-3 -mt-0.5 pb-0.5">
                             {Number(it.quantity || 1).toFixed(2)} × {CURRENCY_SYM[it.base_currency || stockItem?.base_currency || 'TRY']}{linePrice.toFixed(4)} 
                             {(it.base_currency || stockItem?.base_currency) && (it.base_currency || stockItem?.base_currency) !== 'TRY' && (
@@ -603,21 +613,21 @@ export default function RecipePickerModal({
                   {localItems.map((it, idx) => {
                     if (!it._isOtherCost) return null;
                     const linePrice = Number(it.purchase_price ?? 0);
-                    const lineTotal = linePrice * Number(it.quantity || 1);
+                    const lineCurr = it.base_currency || 'TRY';
+                    const lineTryVal = fxConvert(linePrice, lineCurr, 'TRY');
                     return (
                       <motion.div key={idx}
                         initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
                         exit={{ opacity: 0, height: 0 }}
                         className="group">
-                        <div className="grid items-center gap-2 px-3 py-2.5 rounded-2xl transition-colors"
+                        <div className="flex items-center gap-2 px-3 py-2.5 rounded-2xl transition-colors"
                           style={{
-                            gridTemplateColumns: hideCosts ? '1fr 64px 68px 56px' : '1fr 64px 68px 80px 56px',
                             background: 'rgba(245,158,11,0.04)',
                             border: '1px solid rgba(245,158,11,0.15)',
                           }}>
                           
-                          {/* İsim */}
-                          <div className="min-w-0 flex items-center gap-2">
+                          {/* İkon + İsim */}
+                          <div className="min-w-0 flex items-center gap-2 flex-1">
                              <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
                               style={{ background: 'rgba(245,158,11,0.1)' }}>
                               <DollarSign size={10} style={{ color: '#f59e0b' }}/>
@@ -630,50 +640,32 @@ export default function RecipePickerModal({
                               style={{ color: '#f59e0b' }}/>
                           </div>
 
-                          {/* Miktar */}
-                          <input type="number" min="0" step="0.01"
-                            value={it.quantity}
-                            onChange={e => updateItem(idx, 'quantity', e.target.value)}
-                            className="w-full bg-transparent outline-none text-xs text-center font-bold rounded-lg px-1 py-1"
-                            style={{ color: isDark ? '#e2e8f0' : '#1e293b', border: `1px solid ${isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0'}` }}/>
-
-                          {/* Birim */}
-                          <select value={it.unit || 'Adet'}
-                            onChange={e => updateItem(idx, 'unit', e.target.value)}
-                            className="bg-transparent outline-none text-[11px] text-center rounded-lg px-1 py-1 w-full"
-                            style={{ color: '#94a3b8', border: `1px solid ${isDark ? 'rgba(148,163,184,0.12)' : '#e2e8f0'}`, background: isDark ? 'rgba(15,23,42,0.5)' : '#f8fafc' }}>
-                            {UNITS.map(u => <option key={u} value={u} style={{ background: isDark ? '#0d1b2e' : '#ffffff' }}>{u}</option>)}
-                          </select>
-
-                          {/* Birim Fiyat */}
-                          {!hideCosts && (
-                            <div className="flex items-center justify-end gap-0.5">
-                              <select value={it.base_currency || 'TRY'}
-                                onChange={e => updateItem(idx, 'base_currency', e.target.value)}
-                                className="bg-transparent text-[10px] text-amber-600 outline-none p-0 pr-1 border-none cursor-pointer">
-                                {CURRENCIES.map(c => <option key={c} value={c} className="text-black">{CURRENCY_SYM[c] || c}</option>)}
-                              </select>
-                              <input type="number" min="0" step="0.01"
-                                value={it.purchase_price ?? ''}
-                                onChange={e => updateItem(idx, 'purchase_price', e.target.value === '' ? null : Number(e.target.value))}
-                                placeholder="0"
-                                className="w-14 bg-transparent outline-none text-xs text-right font-bold text-amber-500 placeholder-slate-700"/>
-                            </div>
-                          )}
-
-                          {/* Aksiyonlar */}
-                          <div className="flex items-center justify-end gap-1">
-                             <div className="w-7"/> {/* Placeholder for swap */}
-                             <button onClick={() => removeItem(idx)}
-                              className="p-1.5 rounded-lg transition-colors hover:bg-red-500/10">
-                              <Trash2 size={10} className="text-red-400"/>
-                             </button>
+                          {/* Tutar (döviz + fiyat) */}
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <select value={lineCurr}
+                              onChange={e => updateItem(idx, 'base_currency', e.target.value)}
+                              className="bg-transparent text-[10px] text-amber-600 outline-none p-0 pr-1 border-none cursor-pointer">
+                              {CURRENCIES.map(c => <option key={c} value={c} className="text-black">{CURRENCY_SYM[c] || c}</option>)}
+                            </select>
+                            <input type="number" min="0" step="0.01"
+                              value={it.purchase_price ?? ''}
+                              onChange={e => updateItem(idx, 'purchase_price', e.target.value === '' ? null : Number(e.target.value))}
+                              placeholder="0.00"
+                              className="w-20 bg-transparent outline-none text-sm text-right font-bold text-amber-500 placeholder-slate-700"
+                              style={{ border: `1px solid ${isDark ? 'rgba(245,158,11,0.2)' : '#e2e8f0'}`, borderRadius: 8, padding: '2px 6px' }}/>
                           </div>
+
+                          {/* Sil */}
+                          <button onClick={() => removeItem(idx)}
+                            className="p-1.5 rounded-lg transition-colors hover:bg-red-500/10 flex-shrink-0">
+                            <Trash2 size={10} className="text-red-400"/>
+                          </button>
                         </div>
 
-                        {!hideCosts && linePrice > 0 && (
+                        {/* Döviz dönüşüm notu */}
+                        {linePrice > 0 && lineCurr !== 'TRY' && (
                           <p className="text-right text-[10px] text-amber-600/70 pr-3 -mt-0.5 pb-0.5">
-                            {Number(it.quantity || 1).toFixed(2)} × ₺{linePrice.toFixed(2)} = <span className="text-amber-500 font-bold">₺{lineTotal.toFixed(2)}</span>
+                            ≈ <span className="text-amber-500 font-semibold">₺{lineTryVal.toFixed(2)}</span>
                           </p>
                         )}
                       </motion.div>
@@ -701,17 +693,23 @@ export default function RecipePickerModal({
           <div className="flex items-center justify-between gap-3 px-5 py-3.5 flex-shrink-0"
             style={{ borderTop: '1px solid rgba(148,163,184,0.08)', background: 'rgba(0,0,0,0.2)' }}>
             <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <div className="flex items-center gap-1.5">
                   <Package size={12} className="text-slate-600"/>
-                  <span className="text-xs text-slate-500">{localItems.filter(i => i.item_name?.trim()).length} malzeme</span>
+                  <span className="text-xs text-slate-500">{materialCount} malzeme{expenseCount > 0 ? ` + ${expenseCount} gider` : ''}</span>
                 </div>
-                {totalCost > 0 && !hideCosts && (
+                {totalCost > 0 && (
                   <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg"
                     style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)' }}>
                     <DollarSign size={11} className="text-emerald-400"/>
                     <span className="text-xs font-bold text-emerald-400">₺{totalCost.toFixed(2)}</span>
                     <span className="text-[10px] text-emerald-600">toplam maliyet</span>
+                  </div>
+                )}
+                {materialCost > 0 && expenseCost > 0 && (
+                  <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                    <span>Malzeme: <strong className="text-slate-400">₺{materialCost.toFixed(2)}</strong></span>
+                    <span>Gider: <strong className="text-amber-400">₺{expenseCost.toFixed(2)}</strong></span>
                   </div>
                 )}
                 {activeStock > 0 && (

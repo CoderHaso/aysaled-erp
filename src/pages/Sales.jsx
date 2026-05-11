@@ -385,6 +385,9 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
               item_name: c.item_name || '',
               quantity: Number(c.quantity) || 1,
               unit: c.unit || 'Adet',
+              purchase_price: c.purchase_price ?? null,
+              base_currency: c.base_currency || 'TRY',
+              _isOtherCost: !!c._isOtherCost,
             })) : null;
             onChange({
               recipe_id: recipeData.recipe_id || null,
