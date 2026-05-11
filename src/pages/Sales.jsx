@@ -141,6 +141,15 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
 
   // product_recipes: bu ürüne ait reçete var mı?
   const hasRecipe = line.item_id && (allRecipes || []).some(r => r.product_id === line.item_id);
+  // Kayıtsız reçeteli ürün: item_id yok ama custom_recipe_items var (veya pending)
+  const isAdHocRecipe = !line.item_id && line.item_name && ((line.custom_recipe_items && line.custom_recipe_items.length > 0) || line._pendingAdHocRecipe);
+
+  // _pendingAdHocRecipe geldiğinde modal'ı otomatik aç
+  useEffect(() => {
+    if (line._pendingAdHocRecipe) {
+      setShowRecipePicker(true);
+    }
+  }, [line._pendingAdHocRecipe]);
 
   // Evrensel fiyat dönüştürme: stok'taki item.base_currency → sipariş currency
   // fxRates = { USD: 38.5, EUR: 42.1, GBP: 49.0 } — 1 birim yabancı = X TL
@@ -244,6 +253,21 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
                         📋 <strong style={{ color: isDark ? '#cbd5e1' : '#1e293b' }}>&quot;{q}&quot;</strong> — Kayıtsız devam et
                       </span>
                     </div>
+                    {/* Kayıtsız reçeteli devam et */}
+                    <div onClick={() => {
+                        onChange({ item_id: null, item_name: q.trim(), item_type: 'product',
+                          unit: 'Adet', unit_price: 0, stock_count: null,
+                          custom_recipe_items: [], _pendingAdHocRecipe: true });
+                        setOpen(false); setQ('');
+                      }}
+                      className="flex items-center gap-2 px-4 py-2.5 cursor-pointer transition-colors"
+                      style={{ borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.06)' : '#f1f5f9'}` }}
+                      onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(139,92,246,0.08)' : 'rgba(139,92,246,0.05)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <span className="text-sm" style={{ color: isDark ? '#c4b5fd' : '#7c3aed' }}>
+                        🔬 <strong style={{ color: isDark ? '#e9d5ff' : '#6d28d9' }}>&quot;{q}&quot;</strong> — Kayıtsız reçeteli devam et
+                      </span>
+                    </div>
                     {/* Yeni ürün / hammadde oluştur */}
                     <div onClick={() => {
                         onQuickAdd();
@@ -301,10 +325,12 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
         </AnimatePresence>
       </div>
 
-      {/* Reçete Seç butonu — sadece kayıtlı mamul ve BOM var ise */}
-      {hasRecipe && (
+      {/* Reçete Seç butonu — kayıtlı mamul + BOM varsa VEYA kayıtsız reçeteli ise */}
+      {(hasRecipe || isAdHocRecipe) && (
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: '#64748b' }}>Reçete</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: isAdHocRecipe ? '#a855f7' : '#64748b' }}>
+            {isAdHocRecipe ? '🔬 Özel Reçete' : 'Reçete'}
+          </p>
           <button onClick={() => setShowRecipePicker(true)}
             className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-all"
             style={{
@@ -314,7 +340,7 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
             }}>
             <span className="flex items-center gap-2 text-left truncate">
               <FlaskConical size={13} className="shrink-0" style={{ color: '#a855f7' }}/>
-              <span className="truncate">{line.recipe_note ? '✓ ' + line.recipe_key : 'Reçete Seç...'}</span>
+              <span className="truncate">{line.recipe_note ? '✓ ' + (line.recipe_key || 'Özel Reçete') : (isAdHocRecipe ? 'Reçete Düzenle...' : 'Reçete Seç...')}</span>
             </span>
             <BookOpen size={12} style={{ flexShrink: 0, color: '#a855f7' }}/>
           </button>
@@ -327,10 +353,10 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
                   ✓ Stoktan
                 </span>
               )}
-              {line.custom_recipe_items && (
+              {(line.custom_recipe_items || isAdHocRecipe) && (
                 <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
-                  style={{ background:'rgba(245,158,11,0.1)', color:'#f59e0b' }}>
-                  🔧 Özel
+                  style={{ background: isAdHocRecipe ? 'rgba(139,92,246,0.1)' : 'rgba(245,158,11,0.1)', color: isAdHocRecipe ? '#a855f7' : '#f59e0b' }}>
+                  {isAdHocRecipe ? '🔬 Tek Seferlik' : '🔧 Özel'}
                 </span>
               )}
             </div>
@@ -338,7 +364,7 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
         </div>
       )}
 
-      {/* Reçete Picker Modal */}
+      {/* Reçete Picker Modal — kayıtlı veya adHoc mod */}
       {showRecipePicker && (
         <RecipePickerModal
           productId={line.item_id}
@@ -348,22 +374,26 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
           currentColor="#8b5cf6"
           selectedRecipeId={line.recipe_id || null}
           customRecipeItems={line.custom_recipe_items || null}
+          adHocMode={isAdHocRecipe || line._pendingAdHocRecipe}
+          hideSkipWorkOrder={isAdHocRecipe || line._pendingAdHocRecipe}
           onClose={() => setShowRecipePicker(false)}
           onSelect={(recipeData) => {
-            // Sadece reçete değiştirildiyse custom items kaydet
-            const customItems = recipeData.changed ? recipeData.components?.map(c => ({
+            // AdHoc modda her zaman custom_recipe_items kaydet
+            const isAdHoc = isAdHocRecipe || line._pendingAdHocRecipe;
+            const customItems = (recipeData.changed || isAdHoc) ? recipeData.components?.map(c => ({
               item_id: c.item_id || null,
               item_name: c.item_name || '',
               quantity: Number(c.quantity) || 1,
               unit: c.unit || 'Adet',
             })) : null;
             onChange({
-              recipe_id: recipeData.recipe_id,
-              recipe_key: recipeData.recipe_key,
+              recipe_id: recipeData.recipe_id || null,
+              recipe_key: recipeData.recipe_key || (isAdHoc ? `${line.item_name} - Özel Reçete` : null),
               recipe_note: recipeData.recipe_note,
               recipe_components: recipeData.components,
               custom_recipe_items: customItems,
               skip_work_order: recipeData.skip_work_order || false,
+              _pendingAdHocRecipe: false,
             });
             setShowRecipePicker(false);
           }}/>
@@ -597,11 +627,14 @@ function OrderForm({ order, customers, allItems, setAllItems, allRecipes = [], o
 
   const handleSave = async () => {
     // Reçete Kontrolü (Mamüller için)
+    // Kayıtsız reçeteli ürünler (item_id=null + custom_recipe_items) muaf
     const missingRecipes = lines.filter(l => 
       l.item_type === 'product' && 
       !l.recipe_id && 
       !l.skip_work_order && 
-      l.item_name
+      l.item_name &&
+      l.item_id && // Kayıtsız (item_id=null) ürünlerde reçete zorunlu değil
+      !(l.custom_recipe_items && l.custom_recipe_items.length > 0) // custom reçetesi olanları atla
     );
     if (missingRecipes.length > 0) {
       setDialog({ 

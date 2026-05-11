@@ -21,6 +21,7 @@ export default function RecipePickerModal({
   customRecipeItems = null,
   hideSkipWorkOrder = false,
   hideCosts = false,
+  adHocMode = false,
 }) {
   const { effectiveMode } = useTheme();
   const { convert: fxConvert } = useFxRates();
@@ -47,14 +48,14 @@ export default function RecipePickerModal({
   }, [expenseDrop]);
 
   const productRecipes = useMemo(
-    () => (allRecipes || []).filter(r => r.product_id === productId),
-    [allRecipes, productId]
+    () => adHocMode ? [] : (allRecipes || []).filter(r => r.product_id === productId),
+    [allRecipes, productId, adHocMode]
   );
 
   const [activeTag,  setActiveTag]  = useState('Tümü');
-  const initialRecipe = selectedRecipeId
+  const initialRecipe = adHocMode ? null : (selectedRecipeId
     ? productRecipes.find(r => r.id === selectedRecipeId) || productRecipes[0]
-    : productRecipes[0];
+    : productRecipes[0]);
   const [selectedId, setSelectedId] = useState(() => initialRecipe?.id || null);
 
   // customRecipeItems varsa (geçici reçete), base yerine onu kullan
@@ -62,7 +63,7 @@ export default function RecipePickerModal({
   const [localItems, setLocalItems] = useState(() =>
     hasCustomInit
       ? cloneItems(customRecipeItems)
-      : cloneRecipeData(initialRecipe)
+      : (adHocMode ? [] : cloneRecipeData(initialRecipe))
   );
   // ItemPickerModal: 'add' | idx (swap) | null
   const [pickerTarget, setPickerTarget] = useState(null);
@@ -237,8 +238,9 @@ export default function RecipePickerModal({
 
   /* ── Onayla ────────────────────────────────────────────────── */
   const handleConfirm = () => {
-    if (!activeRecipe) return;
-    const isVirtual = !!activeRecipe._isCustomVirtual;
+    // adHocMode: activeRecipe olmadan da devam edebilir
+    if (!adHocMode && !activeRecipe) return;
+    const isVirtual = !!activeRecipe?._isCustomVirtual;
     const components = localItems
       .filter(it => it.item_name?.trim())
       .map(it => ({
@@ -251,6 +253,24 @@ export default function RecipePickerModal({
         base_currency:  it.base_currency || 'TRY',
         _isOtherCost:   !!it._isOtherCost,
       }));
+
+    if (adHocMode) {
+      // Kayıtsız reçeteli ürün — sanal reçete bilgisi oluştur
+      const adHocKey = `${productName} - Özel Reçete`;
+      onSelect({
+        recipe_id:   null,
+        recipe_key:  adHocKey,
+        recipe_note: `${adHocKey}: ${components.filter(c => !c._isOtherCost).map(c => `${c.quantity}x ${c.item_name}`).join(', ')}`,
+        components,
+        changed: true,
+        skip_work_order: false,
+        recipe_stock: 0,
+        is_custom_virtual: false,
+        custom_recipe_key: null,
+      });
+      return;
+    }
+
     onSelect({
       // Sanal özel reçete ise base recipe_id'yi kullan
       recipe_id:   isVirtual ? activeRecipe._baseRecipeId : activeRecipe.id,
@@ -298,7 +318,7 @@ export default function RecipePickerModal({
             <FlaskConical size={17} style={{ color: '#c4b5fd' }}/>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-purple-400">Reçete Seç & Düzenle</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-purple-400">{adHocMode ? '🔬 Özel Reçete Oluştur' : 'Reçete Seç & Düzenle'}</p>
             <h3 className="text-sm font-bold truncate mt-0.5" style={{ color: isDark ? '#ffffff' : '#1e293b' }}>{productName}</h3>
           </div>
           {changed && (
@@ -316,7 +336,7 @@ export default function RecipePickerModal({
         </div>
 
         {/* ═══ BODY ═══ */}
-        {allCombinedRecipes.length === 0 ? (
+        {!adHocMode && allCombinedRecipes.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center py-16 px-8 text-center">
             <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
               style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#f1f5f9', border: `1px solid ${isDark ? 'rgba(148,163,184,0.1)' : '#e2e8f0'}` }}>
@@ -399,7 +419,7 @@ export default function RecipePickerModal({
                 <div>
                   <div className="flex items-center gap-2">
                     <p className="text-sm font-bold" style={{ color: '#e2e8f0' }}>
-                      {activeRecipe?.name}
+                      {adHocMode ? `${productName} - Özel Reçete` : activeRecipe?.name}
                     </p>
                     {(activeRecipe?.tags || []).map(tag => (
                       <span key={tag} className="px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1"
@@ -677,7 +697,7 @@ export default function RecipePickerModal({
         )}
 
         {/* ═══ FOOTER ═══ */}
-        {allCombinedRecipes.length > 0 && (
+        {(adHocMode || allCombinedRecipes.length > 0) && (
           <div className="flex items-center justify-between gap-3 px-5 py-3.5 flex-shrink-0"
             style={{ borderTop: '1px solid rgba(148,163,184,0.08)', background: 'rgba(0,0,0,0.2)' }}>
             <div className="flex flex-col gap-2">
