@@ -330,7 +330,7 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
     <div className="rounded-2xl" style={{ border: `1px solid ${expanded ? currentColor + '60' : c.border}`, transition: 'border-color 0.2s', overflow: 'visible' }}>
       {/* Header */}
       <div className="flex items-center gap-2 px-4 py-3 cursor-pointer rounded-t-2xl"
-        style={{ background: expanded ? `${currentColor}08` : 'transparent' }}
+        style={{ background: expanded ? `${currentColor}15` : 'transparent' }}
         onClick={onToggle}>
         <div className="w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
           style={{ background: currentColor }}>
@@ -422,8 +422,10 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
           </button>
           <button onClick={() => onCopyThisRecipe(recipe)}
-            className="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
-            title="Bu reçeteyi kopyala" style={{ color: c.muted }}>
+            className="p-1.5 rounded-lg transition-colors"
+            title="Bu reçeteyi kopyala" style={{ color: c.muted }}
+            onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
             <Copy size={13} />
           </button>
           <button onClick={() => onDelete(recipe.id)}
@@ -575,8 +577,10 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
                     <div className="py-1">
                       {costTypes.map(ct => (
                         <button key={ct} onClick={() => { addOtherCost(ct); setExpenseDrop(false); }}
-                          className="w-full text-left px-3 py-2 text-xs font-semibold hover:bg-black/5 dark:hover:bg-white/5"
-                          style={{ color: c.text, borderBottom: `1px solid ${c.border}` }}>
+                          className="w-full text-left px-3 py-2 text-xs font-semibold transition-colors"
+                          style={{ color: c.text, borderBottom: `1px solid ${c.border}` }}
+                          onMouseEnter={e => e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                           + {ct}
                         </button>
                       ))}
@@ -614,8 +618,8 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
             {/* Toplam */}
             {(recipe.recipe_items?.length > 0 || otherCosts.length > 0) && (
               <div className="rounded-xl px-3 py-2 flex items-center justify-between mt-2"
-                style={{ background: `${currentColor}08`, border: `1px solid ${currentColor}25` }}>
-                <span className="text-xs font-semibold" style={{ color: c.muted }}>Maliyet Toplamı ({CURRENCY_SYM[productCurrency || 'TRY'] || '₺'})</span>
+                style={{ background: isDark ? `${currentColor}12` : `${currentColor}18`, border: `1px solid ${isDark ? currentColor + '30' : currentColor + '40'}` }}>
+                <span className="text-xs font-semibold" style={{ color: c.text }}>Maliyet Toplamı ({CURRENCY_SYM[productCurrency || 'TRY'] || '₺'})</span>
                 <div className="text-right">
                   <span className="text-[10px] mr-3" style={{ color: c.muted }}>
                     {totalItems} kalem{otherCosts.length > 0 ? ` + ${otherCosts.length} gider` : ''}
@@ -627,7 +631,7 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
                     <div className="text-[9px] font-bold mt-0.5 flex items-center justify-end gap-2" style={{ color: c.muted }}>
                       <span className="flex items-center gap-1">
                         <span style={{ color: '#10b981' }}>₺{tryEq}</span>
-                        {productCurrency !== 'TRY' && <span className="opacity-70">(Kur: {kur})</span>}
+                        {productCurrency !== 'TRY' && <span style={{ color: c.muted, opacity: 0.8 }}>(Kur: {kur})</span>}
                       </span>
                       {productCurrency !== 'USD' && (
                         <span style={{ color: '#3b82f6' }}>${convert(totalCost, productCurrency || 'TRY', 'USD').toFixed(2)}</span>
