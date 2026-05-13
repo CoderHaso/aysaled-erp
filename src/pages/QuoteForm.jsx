@@ -364,17 +364,14 @@ export function QuotePreview({ quote, onClose, colWidths = {}, rowHeight = 58 })
                 const fileName = `${quote.quote_no || 'Teklif'}.pdf`;
                 const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
                 
-                // Mobil mi kontrol et (sadece mobilde Web Share API kullan)
-                const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-                
-                if (isMobile && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
                   await navigator.share({
                     title: `Teklif - ${quote.quote_no}`,
                     text: `${quote.company_name || ''} - ${quote.quote_no} Teklif`,
                     files: [file],
                   });
                 } else {
-                  // PDF indir + WhatsApp Web aç
+                  // Tarayıcı dosya paylaşımını desteklemiyorsa PDF indir + WhatsApp Web aç.
                   const phone = (quote.phone || '').replace(/\D/g, '');
                   const fullPhone = phone ? `90${phone.startsWith('0') ? phone.slice(1) : phone}` : '';
                   const msg = encodeURIComponent(
