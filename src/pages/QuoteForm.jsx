@@ -363,48 +363,18 @@ export function QuotePreview({ quote, onClose, colWidths = {}, rowHeight = 58 })
                 const pdfBlob = pdf.output('blob');
                 const fileName = `${quote.quote_no || 'Teklif'}.pdf`;
                 const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
+                const shareTitle = `Teklif - ${quote.quote_no || ''}`.trim();
+                const shareText = `${quote.company_name || ''} - ${quote.quote_no || ''} Teklif`.trim();
                 
-                // Mobil mi kontrol et (sadece mobilde Web Share API kullan)
-                const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-                
-                if (isMobile && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-                  await navigator.share({
-                    title: `Teklif - ${quote.quote_no}`,
-                    text: `${quote.company_name || ''} - ${quote.quote_no} Teklif`,
-                    files: [file],
-                  });
-                } else {
-                  // PDF indir + WhatsApp Web aç
-                  const phone = (quote.phone || '').replace(/\D/g, '');
-                  const fullPhone = phone ? `90${phone.startsWith('0') ? phone.slice(1) : phone}` : '';
-                  const msg = encodeURIComponent(
-                    `Merhaba, ${quote.company_name || ''} adına hazırlanan ${quote.quote_no} numaralı teklifimiz ektedir. İyi günler.`
-                  );
-                  const waUrl = fullPhone 
-                    ? `https://web.whatsapp.com/send?phone=${fullPhone}&text=${msg}`
-                    : `https://web.whatsapp.com/send?text=${msg}`;
-                  
-                  // Önce PDF indir
-                  const link = document.createElement('a');
-                  link.href = URL.createObjectURL(pdfBlob);
-                  link.download = fileName;
-                  link.click();
-                  URL.revokeObjectURL(link.href);
-                  
-                  // Sonra WhatsApp Web aç
-                  setTimeout(() => window.open(waUrl, '_blank'), 500);
+                if (typeof navigator.share !== 'function') {
+                  console.warn('Native paylaşım API desteklenmiyor.');
+                  return;
                 }
+
+                await navigator.share({ title: shareTitle, text: shareText, files: [file] });
               } catch (err) {
+                if (err?.name === 'AbortError') return;
                 console.error('WhatsApp paylaşım hatası:', err);
-                const phone = (quote.phone || '').replace(/\D/g, '');
-                const fullPhone = phone ? `90${phone.startsWith('0') ? phone.slice(1) : phone}` : '';
-                const msg = encodeURIComponent(
-                  `Merhaba, ${quote.company_name || ''} adına hazırlanan ${quote.quote_no} numaralı teklifimiz hakkında bilgi vermek istiyoruz.`
-                );
-                const waUrl = fullPhone 
-                  ? `https://web.whatsapp.com/send?phone=${fullPhone}&text=${msg}`
-                  : `https://web.whatsapp.com/send?text=${msg}`;
-                window.open(waUrl, '_blank');
               }
             }}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700">
