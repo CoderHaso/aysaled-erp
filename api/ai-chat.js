@@ -265,6 +265,40 @@ const TOOLS = [
       parameters: { type: 'object', properties: {} },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'query_invoices',
+      description: 'Müşteri adına veya tarihe göre faturaları (inbound/outbound) sorgular.',
+      parameters: {
+        type: 'object',
+        properties: {
+          customer_name: { type: 'string', description: 'Müşteri veya tedarikçi adı' },
+          direction: { type: 'string', enum: ['inbound', 'outbound'], description: 'inbound (gelen/alış), outbound (giden/satış)' },
+          date_from: { type: 'string', description: 'Başlangıç tarihi YYYY-MM-DD' },
+          date_to: { type: 'string', description: 'Bitiş tarihi YYYY-MM-DD' },
+          limit: { type: 'integer' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'query_orders',
+      description: 'Müşteri adına veya sipariş durumuna göre siparişleri sorgular.',
+      parameters: {
+        type: 'object',
+        properties: {
+          customer_name: { type: 'string' },
+          status: { type: 'string', description: 'pending, processing, completed vb.' },
+          date_from: { type: 'string', description: 'YYYY-MM-DD' },
+          date_to: { type: 'string', description: 'YYYY-MM-DD' },
+          limit: { type: 'integer' }
+        }
+      }
+    }
+  },
   // ═══════════════════════════════════════════════════════════════════════════
   // ── YAZMA ARAÇLARI (Write Tools) ─────────────────────────────────────────
   // ═══════════════════════════════════════════════════════════════════════════
@@ -566,6 +600,7 @@ async function executeTool(name, rawArgs) {
         if (args.date_from) q = q.gte('invoice_date', args.date_from);
         if (args.date_to) q = q.lte('invoice_date', args.date_to);
         if (args.customer_id) q = q.eq('customer_id', args.customer_id);
+        if (args.customer_name) q = q.ilike('customer_name', `%${args.customer_name}%`);
         if (args.search) q = q.or(`invoice_number.ilike.%${args.search}%,customer_name.ilike.%${args.search}%`);
         const { data, error } = await q;
         if (error) throw error;
@@ -597,6 +632,7 @@ async function executeTool(name, rawArgs) {
       case 'query_orders': {
         let q = supabase.from('orders').select('id,order_number,customer_name,status,total,vat_total,grand_total,currency,order_date').order('order_date', { ascending: false }).limit(args.limit || 200);
         if (args.customer_id) q = q.eq('customer_id', args.customer_id);
+        if (args.customer_name) q = q.ilike('customer_name', `%${args.customer_name}%`);
         if (args.status) q = q.eq('status', args.status);
         if (args.date_from) q = q.gte('order_date', args.date_from);
         if (args.date_to) q = q.lte('order_date', args.date_to);

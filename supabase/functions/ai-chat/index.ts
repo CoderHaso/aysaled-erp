@@ -281,6 +281,41 @@ async function executeTool(supabase: any, name: string, args: any) {
         return { total_items: itemCount, total_products: productCount, total_orders: orderCount, total_invoices: invoiceCount };
       }
 
+      case 'query_invoices': {
+        let q = supabase.from('invoices').select('id,invoice_number,direction,total_amount,vat_amount,currency,customer_name,invoice_date,status').order('invoice_date', { ascending: false }).limit(args.limit || 200);
+        if (args.direction && args.direction !== 'all') q = q.eq('direction', args.direction);
+        if (args.date_from) q = q.gte('invoice_date', args.date_from);
+        if (args.date_to) q = q.lte('invoice_date', args.date_to);
+        if (args.customer_name) q = q.ilike('customer_name', `%${args.customer_name}%`);
+        const { data, error } = await q;
+        if (error) throw error;
+        const invoices = data || [];
+        const inbound = invoices.filter(i => i.direction === 'inbound');
+        const outbound = invoices.filter(i => i.direction === 'outbound');
+        const sumAmount = (arr: any[]) => arr.reduce((s, i) => s + (Number(i.total_amount) || 0), 0);
+        const sumVat = (arr: any[]) => arr.reduce((s, i) => s + (Number(i.vat_amount) || 0), 0);
+        return {
+          count: invoices.length,
+          summary: {
+            inbound_count: inbound.length, outbound_count: outbound.length,
+            inbound_total: sumAmount(inbound).toFixed(2), outbound_total: sumAmount(outbound).toFixed(2),
+            grand_total: sumAmount(invoices).toFixed(2)
+          },
+          data: invoices
+        };
+      }
+
+      case 'query_orders': {
+        let q = supabase.from('orders').select('id,order_number,customer_name,status,total,vat_total,grand_total,currency,order_date').order('order_date', { ascending: false }).limit(args.limit || 200);
+        if (args.customer_name) q = q.ilike('customer_name', `%${args.customer_name}%`);
+        if (args.status) q = q.eq('status', args.status);
+        if (args.date_from) q = q.gte('order_date', args.date_from);
+        if (args.date_to) q = q.lte('order_date', args.date_to);
+        const { data, error } = await q;
+        if (error) throw error;
+        return { count: data?.length || 0, data: data || [] };
+      }
+
       case 'create_quote': {
         const { customer_name, products, currency = 'TRY', notes = '', vat_rate = 20 } = args;
         if (!customer_name || !products || !Array.isArray(products)) return { error: 'Müşteri adı ve ürünler gereklidir.' };
@@ -744,6 +779,40 @@ const TOOLS = [
       name: 'query_customers',
       description: 'Müşteri (Cari) arar.',
       parameters: { type: 'object', properties: { search: { type: 'string' }, limit: { type: 'integer' } } }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'query_invoices',
+      description: 'Müşteri adına veya tarihe göre faturaları (inbound/outbound) sorgular.',
+      parameters: {
+        type: 'object',
+        properties: {
+          customer_name: { type: 'string', description: 'Müşteri veya tedarikçi adı' },
+          direction: { type: 'string', enum: ['inbound', 'outbound'], description: 'inbound (gelen), outbound (giden)' },
+          date_from: { type: 'string', description: 'Başlangıç tarihi YYYY-MM-DD' },
+          date_to: { type: 'string', description: 'Bitiş tarihi YYYY-MM-DD' },
+          limit: { type: 'integer' }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'query_orders',
+      description: 'Müşteri adına veya sipariş durumuna göre siparişleri sorgular.',
+      parameters: {
+        type: 'object',
+        properties: {
+          customer_name: { type: 'string' },
+          status: { type: 'string' },
+          date_from: { type: 'string', description: 'YYYY-MM-DD' },
+          date_to: { type: 'string', description: 'YYYY-MM-DD' },
+          limit: { type: 'integer' }
+        }
+      }
     }
   },
   {
