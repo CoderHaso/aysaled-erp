@@ -12,8 +12,9 @@ import {
   Loader2, Bot, User, Wrench, ChevronDown, ChevronRight,
   Trash2, History, ToggleLeft, ToggleRight, Sparkles,
   AlertCircle, Copy, Check, ArrowLeft, Settings, Cpu,
-  ImagePlus, XCircle,
+  ImagePlus, XCircle, Printer
 } from 'lucide-react';
+import { printCustomHTML } from '../lib/printService';
 
 // ── Markdown-light renderer ──────────────────────────────────────────────────
 function renderMarkdown(text) {
@@ -163,6 +164,20 @@ function MessageBubble({ msg, c, currentColor, isDark, onContinue, isContinuing 
             ) : (
               <><ChevronRight size={12} /> Devam Et</>
             )}
+          </button>
+        )}
+
+        {/* Rapor Yazdır / Paylaş Butonu */}
+        {msg.reportData && !msg.isError && (
+          <button
+            onClick={() => printCustomHTML(msg.reportData.html, msg.reportData.title)}
+            className="flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all hover:scale-[1.02]"
+            style={{
+              background: currentColor,
+              color: '#fff',
+              border: `1px solid ${currentColor}`,
+            }}>
+            <Printer size={12} /> Yazdır / Paylaş
           </button>
         )}
 

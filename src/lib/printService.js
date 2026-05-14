@@ -90,72 +90,178 @@ function renderTemplate(template, data) {
   return html;
 }
 
+// ─── Ortak CSS Stilleri (yazdırma penceresi için) ────────────────────────────
+const PRINT_STYLES = `
+  @page { margin: 12mm; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } .no-print { display: none !important; } }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; font-size: 12px; color: #1e293b; line-height: 1.5; }
+  .print-container { max-width: 210mm; margin: 0 auto; padding: 8mm; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+  th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #e2e8f0; font-size: 11px; }
+  th { background: #f8fafc; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; }
+  .text-right { text-align: right; }
+  .text-center { text-align: center; }
+  .font-bold { font-weight: 700; }
+  .text-sm { font-size: 11px; }
+  .text-xs { font-size: 10px; }
+  .text-lg { font-size: 16px; }
+  .text-xl { font-size: 20px; }
+  .text-muted { color: #64748b; }
+  .mt-2 { margin-top: 8px; }
+  .mt-4 { margin-top: 16px; }
+  .mb-2 { margin-bottom: 8px; }
+  .mb-4 { margin-bottom: 16px; }
+  .py-1 { padding-top: 4px; padding-bottom: 4px; }
+  .border-t { border-top: 1px solid #e2e8f0; }
+  .border-b { border-bottom: 1px solid #e2e8f0; }
+  .border-2 { border-top: 2px solid #1e293b; }
+  .flex { display: flex; }
+  .justify-between { justify-content: space-between; }
+  .items-center { align-items: center; }
+  .gap-2 { gap: 8px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #1e293b; }
+  .header h1 { font-size: 20px; font-weight: 800; }
+  .header .company { font-size: 10px; color: #64748b; }
+  .footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #e2e8f0; font-size: 10px; color: #94a3b8; text-align: center; }
+  .total-row td { font-weight: 700; border-top: 2px solid #1e293b; font-size: 12px; }
+  .stamp-area { display: flex; justify-content: space-between; margin-top: 40px; }
+  .stamp-box { width: 45%; text-align: center; }
+  .stamp-box .line { border-top: 1px solid #94a3b8; margin-top: 50px; padding-top: 4px; font-size: 10px; color: #64748b; }
+  .no-print { display: none; }
+  @media screen { 
+    body { background: #f1f5f9; padding: 20px; }
+    .print-container { background: white; padding: 32px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+    .no-print { display: flex; position: fixed; top: 16px; right: 16px; z-index: 999; gap: 8px; align-items: center; }
+    .no-print button { padding: 10px 24px; color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 14px; transition: background 0.2s; }
+    .btn-print { background: #3b82f6; }
+    .btn-print:hover { background: #2563eb; }
+    .btn-share { background: #10b981; }
+    .btn-share:hover { background: #059669; }
+  }
+`;
+
+// ─── Toolbar HTML (Yazdır + Paylaş butonları) ────────────────────────────────
+function getToolbarHTML(title) {
+  return `
+    <div class="no-print">
+      <button class="btn-print" onclick="window.print()">🖨️ Yazdır</button>
+      <button class="btn-share" onclick="window.__sharePDF()">📤 Paylaş</button>
+    </div>
+  `;
+}
+
+// ─── PDF Paylaşım Script (yazdırma penceresine enjekte edilir) ────────────────
+function getShareScript(title) {
+  return `
+    <script>
+      window.__sharePDF = async function() {
+        var btn = document.querySelector('.btn-share');
+        var origText = btn.textContent;
+        btn.textContent = '⏳ Hazırlanıyor...';
+        btn.disabled = true;
+        try {
+          var el = document.querySelector('.print-container');
+          var { default: html2canvas } = await import('https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.esm.js');
+          var { jsPDF } = await import('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/+esm');
+          var canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+          var pdf = new jsPDF('p', 'mm', 'a4');
+          var pw = 210, ph = 297;
+          var imgW = pw, imgH = (canvas.height * imgW) / canvas.width;
+          var imgData = canvas.toDataURL('image/jpeg', 0.92);
+          var y = 0;
+          while (y < imgH) { if (y > 0) pdf.addPage(); pdf.addImage(imgData, 'JPEG', 0, -y, imgW, imgH); y += ph; }
+          var blob = pdf.output('blob');
+          var file = new File([blob], '${title}.pdf', { type: 'application/pdf' });
+          if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({ title: '${title}', files: [file] });
+          } else {
+            var link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = '${title}.pdf';
+            link.click();
+            URL.revokeObjectURL(link.href);
+          }
+        } catch(e) {
+          console.error('Paylaşım hatası:', e);
+          alert('Paylaşım yapılamadı: ' + e.message);
+        } finally {
+          btn.textContent = origText;
+          btn.disabled = false;
+        }
+      };
+    <\/script>
+  `;
+}
+
 // ─── Yazdırma Penceresi ─────────────────────────────────────────────────────
 export function printHTML(html, title = 'Yazdır') {
   const printWindow = window.open('', '_blank', 'width=800,height=600');
   if (!printWindow) { alert('Popup engelleyici yazdırma penceresini engelledi!'); return; }
+  const safeTitle = (title || 'Belge').replace(/'/g, '');
   printWindow.document.write(`
     <!DOCTYPE html>
     <html lang="tr">
     <head>
       <meta charset="UTF-8">
       <title>${title}</title>
-      <style>
-        @page { margin: 12mm; }
-        @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; font-size: 12px; color: #1e293b; line-height: 1.5; }
-        .print-container { max-width: 210mm; margin: 0 auto; padding: 8mm; }
-        table { width: 100%; border-collapse: collapse; margin: 8px 0; }
-        th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid #e2e8f0; font-size: 11px; }
-        th { background: #f8fafc; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; }
-        .text-right { text-align: right; }
-        .text-center { text-align: center; }
-        .font-bold { font-weight: 700; }
-        .text-sm { font-size: 11px; }
-        .text-xs { font-size: 10px; }
-        .text-lg { font-size: 16px; }
-        .text-xl { font-size: 20px; }
-        .text-muted { color: #64748b; }
-        .mt-2 { margin-top: 8px; }
-        .mt-4 { margin-top: 16px; }
-        .mb-2 { margin-bottom: 8px; }
-        .mb-4 { margin-bottom: 16px; }
-        .py-1 { padding-top: 4px; padding-bottom: 4px; }
-        .border-t { border-top: 1px solid #e2e8f0; }
-        .border-b { border-bottom: 1px solid #e2e8f0; }
-        .border-2 { border-top: 2px solid #1e293b; }
-        .flex { display: flex; }
-        .justify-between { justify-content: space-between; }
-        .items-center { align-items: center; }
-        .gap-2 { gap: 8px; }
-        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 2px solid #1e293b; }
-        .header h1 { font-size: 20px; font-weight: 800; }
-        .header .company { font-size: 10px; color: #64748b; }
-        .footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #e2e8f0; font-size: 10px; color: #94a3b8; text-align: center; }
-        .total-row td { font-weight: 700; border-top: 2px solid #1e293b; font-size: 12px; }
-        .stamp-area { display: flex; justify-content: space-between; margin-top: 40px; }
-        .stamp-box { width: 45%; text-align: center; }
-        .stamp-box .line { border-top: 1px solid #94a3b8; margin-top: 50px; padding-top: 4px; font-size: 10px; color: #64748b; }
-        .no-print { display: none; }
-        @media screen { 
-          body { background: #f1f5f9; padding: 20px; }
-          .print-container { background: white; padding: 32px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
-          .no-print { display: block; position: fixed; top: 16px; right: 16px; z-index: 999; }
-          .no-print button { padding: 10px 24px; background: #3b82f6; color: white; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 14px; }
-          .no-print button:hover { background: #2563eb; }
-        }
-      </style>
+      <style>${PRINT_STYLES}</style>
     </head>
     <body>
-      <div class="no-print"><button onclick="window.print()">🖨️ Yazdır</button></div>
+      ${getToolbarHTML(title)}
       <div class="print-container">
         ${html}
       </div>
+      ${getShareScript(safeTitle)}
     </body>
     </html>
   `);
   printWindow.document.close();
+}
+
+// ─── AI Özel HTML Yazdırma (şablon motoru olmadan, ham HTML) ─────────────────
+export function printCustomHTML(html, title = 'AI Raporu') {
+  printHTML(html, title);
+}
+
+// ─── PDF Oluştur & Web Share API ile Paylaş (sayfa içi kullanım) ─────────────
+export async function sharePDF(elementId, title = 'Belge') {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  try {
+    const { default: html2canvas } = await import('html2canvas');
+    const { jsPDF } = await import('jspdf');
+    const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pageW = 210, pageH = 297;
+    const imgW = pageW;
+    const imgH = (canvas.height * imgW) / canvas.width;
+    const imgData = canvas.toDataURL('image/jpeg', 0.92);
+    let yOffset = 0;
+    while (yOffset < imgH) {
+      if (yOffset > 0) pdf.addPage();
+      pdf.addImage(imgData, 'JPEG', 0, -yOffset, imgW, imgH);
+      yOffset += pageH;
+    }
+    const pdfBlob = pdf.output('blob');
+    const fileName = `${title}.pdf`;
+    const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
+
+    // Web Share API — hem mobil hem Windows 10/11 destekler
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ title, files: [file] });
+    } else {
+      // Fallback: PDF indir
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(pdfBlob);
+      link.download = fileName;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    }
+  } catch (err) {
+    console.error('PDF paylaşım hatası:', err);
+    throw err;
+  }
 }
 
 // ─── Şablonları Yönet ───────────────────────────────────────────────────────

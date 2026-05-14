@@ -131,6 +131,7 @@ export function AIChatProvider({ children }) {
         fallback: data.fallback || false,
         rateLimited: data.rateLimited || false,
         truncated: data.truncated || false,
+        reportData: data.reportData || null,
         timestamp: new Date().toISOString(),
       };
 
@@ -217,6 +218,7 @@ export function AIChatProvider({ children }) {
               ...updated[i],
               content: updated[i].content + continuedContent,
               truncated: data.truncated || false,
+              reportData: data.reportData || updated[i].reportData,
               // toolsUsed birleştir
               toolsUsed: [...(updated[i].toolsUsed || []), ...(data.toolsUsed || [])],
             };
@@ -285,6 +287,7 @@ export function AIChatProvider({ children }) {
           content: m.content,
           toolsUsed: m.tools_used || [],
           pageContext: m.page_context,
+          reportData: m.reportData || null, // Assuming you might save it to DB later, otherwise it's just null on reload for now
           timestamp: m.created_at,
         })));
         setError(null);

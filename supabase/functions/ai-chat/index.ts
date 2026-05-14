@@ -44,6 +44,7 @@ serve(async (req) => {
     const currentMessages: any[] = [{ role: 'system', content: systemPrompt }, ...formattedMessages]
     const model = modelMode || 'deepseek-v4-pro'
     let toolsUsed = []
+    let reportData = null
     const startTime = Date.now();
 
     for (let round = 0; round < 15; round++) {
@@ -69,7 +70,7 @@ serve(async (req) => {
       if (!msg.tool_calls) {
         const content = msg.content || ''
         if (conversationId) await saveConversation(supabase, conversationId, messages, content, toolsUsed, pageContext)
-        return new Response(JSON.stringify({ message: content, toolsUsed, model }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        return new Response(JSON.stringify({ message: content, toolsUsed, model, reportData }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
       }
 
       currentMessages.push(msg)
@@ -79,11 +80,14 @@ serve(async (req) => {
         try { fnArgs = JSON.parse(toolCall.function.arguments) } catch (_) {}
         toolsUsed.push({ name: fnName, args: fnArgs })
         const result = await executeTool(supabase, fnName, fnArgs)
+        if (fnName === 'generate_report' && result.report) {
+          reportData = { title: result.title, html: result.html }
+        }
         currentMessages.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify(result) })
       }
     }
     
-    return new Response(JSON.stringify({ message: "⚠️ İşlem çok uzun sürdü veya çok fazla adım gerektirdi.", toolsUsed, model }), { headers: corsHeaders })
+    return new Response(JSON.stringify({ message: "⚠️ İşlem çok uzun sürdü veya çok fazla adım gerektirdi.", toolsUsed, model, reportData }), { headers: corsHeaders })
     
   } catch (err: any) {
     return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders })
@@ -510,6 +514,22 @@ async function executeTool(supabase: any, name: string, args: any) {
         return { success: true, message: `✅ "${data.name}" hammaddesi oluşturuldu.`, item_id: data.id };
       }
       
+      case 'generate_report': {
+        if (!args.title || !args.html) {
+          return { error: 'Rapor başlığı (title) ve HTML içeriği (html) gereklidir.' };
+        }
+        const cleanHTML = args.html
+          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+          .replace(/on\w+\s*=/gi, '');
+        return {
+          success: true,
+          report: true,
+          title: args.title,
+          html: cleanHTML,
+          message: `📄 "${args.title}" raporu oluşturuldu. Yazdır/Paylaş butonlarını kullanabilirsiniz.`
+        };
+      }
+
       default: return { error: `Bilinmeyen fonksiyon: ${name}` }
     }
   } catch (err: any) { return { error: err.message } }
@@ -560,7 +580,31 @@ Bugünün tarihi: {{TODAY_DATE}}
 ⏱️ PARÇALI ÇALIŞMA:
 - Uzun işlemleri parçala, her adımda bilgilendir ve onay al.
 
-💲 Para birimi USD ise sale_currency ve base_currency'yi USD yap.`
+💲 Para birimi USD ise sale_currency ve base_currency'yi USD yap.
+
+══════════════════════════════════════════════════════════════════
+RAPOR OLUŞTURMA (generate_report) KURALLARI:
+══════════════════════════════════════════════════════════════════
+
+Kullanıcı "yazdır", "PDF oluştur", "rapor hazırla", "çıktı al" gibi ifadeler kullandığında:
+1. ÖNCE gerekli verileri ilgili query_ tool'larıyla topla (stok, fatura, müşteri vb.)
+2. SONRA generate_report tool'unu çağırarak profesyonel HTML rapor oluştur
+3. Frontend raporu otomatik olarak yazdırma penceresinde açacak
+
+HTML RAPOR FORMATI:
+- Sadece <div>, <table>, <h1>-<h4>, <p>, <span> gibi standart HTML elementleri kullan
+- <html>, <head>, <body>, <style> YAZMA — bunlar otomatik eklenir
+- Mevcut CSS sınıflarını kullan: header, footer, text-right, text-center, font-bold, text-sm, text-xs, text-lg, text-xl, text-muted, mt-2, mt-4, mb-2, mb-4, border-t, border-b, total-row, stamp-area, stamp-box
+- Tablolarda <table>, <thead>, <tbody>, <tr>, <th>, <td> kullan
+- Raporun üstünde başlık ve tarih olsun: <div class="header"><h1>RAPOR BAŞLIĞI</h1><div class="company">Tarih bilgisi</div></div>
+- Raporun altında footer olsun: <div class="footer">A-ERP Sistemi · Otomatik Rapor</div>
+- Sayısal değerleri sağa yasla: class="text-right"
+- Toplam satırlarını kalın yap: class="total-row"
+
+ÖRNEK RAPOR HTML:
+<div class="header"><h1>Mayıs 2026 Satış Raporu</h1><div class="company">Oluşturma: 14 Mayıs 2026</div></div>
+<table><thead><tr><th>Müşteri</th><th>Fatura No</th><th class="text-right">Tutar</th></tr></thead><tbody><tr><td>ABC Ltd</td><td>FAT-001</td><td class="text-right">₺15.000</td></tr></tbody></table>
+<div class="footer">A-ERP Sistemi · Otomatik Rapor</div>`
 
 const TOOLS = [
   {
@@ -793,6 +837,21 @@ const TOOLS = [
           category: { type: 'string' }
         },
         required: ['name']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_report',
+      description: 'Yazdırılabilir / paylaşılabilir A4 HTML raporu oluşturur. Kullanıcı "yazdır", "PDF oluştur", "rapor hazırla", "çıktı al" gibi ifadeler kullandığında bu tool\'u çağır.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Rapor başlığı' },
+          html: { type: 'string', description: 'A4 baskıya uygun profesyonel HTML içerik. Sadece body içeriği.' }
+        },
+        required: ['title', 'html']
       }
     }
   }

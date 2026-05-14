@@ -10,6 +10,7 @@ import { supabase } from '../lib/supabaseClient';
 import CustomDialog from '../components/CustomDialog';
 import MediaPickerModal from '../components/MediaPickerModal';
 import { useFxRates } from '../hooks/useFxRates';
+import { sharePDF } from '../lib/printService';
 import { trNorm } from '../lib/trNorm';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -336,79 +337,9 @@ export function QuotePreview({ quote, onClose, colWidths = {}, rowHeight = 58 })
         <div className="no-print flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-gray-50">
           <p className="font-bold text-gray-700">Teklif Önizleme · {quote.quote_no}</p>
           <div className="flex gap-2">
-            <button onClick={async () => {
-              const el = document.getElementById('quote-print');
-              if (!el) return;
-              try {
-                const { default: html2canvas } = await import('html2canvas');
-                const { jsPDF } = await import('jspdf');
-                const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-                
-                // A4 PDF oluştur
-                const pdf = new jsPDF('p', 'mm', 'a4');
-                const pageW = 210;
-                const pageH = 297;
-                const imgW = pageW;
-                const imgH = (canvas.height * imgW) / canvas.width;
-                const imgData = canvas.toDataURL('image/jpeg', 0.92);
-                
-                // Sayfa taşması varsa birden fazla sayfa ekle
-                let yOffset = 0;
-                while (yOffset < imgH) {
-                  if (yOffset > 0) pdf.addPage();
-                  pdf.addImage(imgData, 'JPEG', 0, -yOffset, imgW, imgH);
-                  yOffset += pageH;
-                }
-                
-                const pdfBlob = pdf.output('blob');
-                const fileName = `${quote.quote_no || 'Teklif'}.pdf`;
-                const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
-                
-                // Mobil mi kontrol et (sadece mobilde Web Share API kullan)
-                const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-                
-                if (isMobile && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-                  await navigator.share({
-                    title: `Teklif - ${quote.quote_no}`,
-                    text: `${quote.company_name || ''} - ${quote.quote_no} Teklif`,
-                    files: [file],
-                  });
-                } else {
-                  // PDF indir + WhatsApp Web aç
-                  const phone = (quote.phone || '').replace(/\D/g, '');
-                  const fullPhone = phone ? `90${phone.startsWith('0') ? phone.slice(1) : phone}` : '';
-                  const msg = encodeURIComponent(
-                    `Merhaba, ${quote.company_name || ''} adına hazırlanan ${quote.quote_no} numaralı teklifimiz ektedir. İyi günler.`
-                  );
-                  const waUrl = fullPhone 
-                    ? `https://web.whatsapp.com/send?phone=${fullPhone}&text=${msg}`
-                    : `https://web.whatsapp.com/send?text=${msg}`;
-                  
-                  // Önce PDF indir
-                  const link = document.createElement('a');
-                  link.href = URL.createObjectURL(pdfBlob);
-                  link.download = fileName;
-                  link.click();
-                  URL.revokeObjectURL(link.href);
-                  
-                  // Sonra WhatsApp Web aç
-                  setTimeout(() => window.open(waUrl, '_blank'), 500);
-                }
-              } catch (err) {
-                console.error('WhatsApp paylaşım hatası:', err);
-                const phone = (quote.phone || '').replace(/\D/g, '');
-                const fullPhone = phone ? `90${phone.startsWith('0') ? phone.slice(1) : phone}` : '';
-                const msg = encodeURIComponent(
-                  `Merhaba, ${quote.company_name || ''} adına hazırlanan ${quote.quote_no} numaralı teklifimiz hakkında bilgi vermek istiyoruz.`
-                );
-                const waUrl = fullPhone 
-                  ? `https://web.whatsapp.com/send?phone=${fullPhone}&text=${msg}`
-                  : `https://web.whatsapp.com/send?text=${msg}`;
-                window.open(waUrl, '_blank');
-              }
-            }}
+            <button onClick={() => sharePDF('quote-print', `Teklif-${quote.quote_no || 'Belge'}`)}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700">
-              <Send size={15} /> WhatsApp Paylaş
+              <Send size={15} /> Paylaş
             </button>
             <button onClick={() => window.print()}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-700 text-white text-sm font-semibold hover:bg-green-800">

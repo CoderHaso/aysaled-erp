@@ -50,6 +50,9 @@ const DATA_KEYWORDS = [
   'stoğa ekle', 'stok gir', 'reçete oluştur', 'ürün ekle', 'kaydet',
   'yeni ürün', 'yeni müşteri', 'yeni tedarikçi', 'yeni reçete',
   'evet', 'onay', 'tamam', 'onayla', 'başla', 'yap',
+  // Rapor / yazdırma anahtar kelimeleri
+  'yazdır', 'pdf', 'rapor oluştur', 'çıktı al', 'baskı', 'rapor hazırla',
+  'print', 'çıktı', 'belge oluştur', 'tablo oluştur',
 ];
 
 function classifyIntent(text) {
@@ -478,6 +481,28 @@ Kullanıcıdan ONAY aldıktan sonra çağır. Planı göster, onay al, sonra bu 
           },
         },
         required: ['products'],
+      },
+    },
+  },
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ── RAPOR OLUŞTURMA ARACI ─────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    type: 'function',
+    function: {
+      name: 'generate_report',
+      description: `Yazdırılabilir / paylaşılabilir A4 HTML raporu oluşturur. Kullanıcı "yazdır", "PDF oluştur", "rapor hazırla", "çıktı al" gibi ifadeler kullandığında bu tool'u çağır.
+Önce gerekli verileri diğer query_ tool'larıyla topla, sonra bu tool'a profesyonel HTML olarak ver.
+HTML, A4 kağıda basılacak şekilde tasarlanmalıdır.
+Kullanılabilir CSS sınıfları: header, footer, text-right, text-center, font-bold, text-sm, text-xs, text-lg, text-xl, text-muted, mt-2, mt-4, mb-2, mb-4, border-t, border-b, border-2, flex, justify-between, items-center, gap-2, stamp-area, stamp-box, total-row.
+Tablo için standart HTML <table>, <th>, <td> kullan.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Rapor başlığı (örn: "Mayıs 2026 Satış Raporu")' },
+          html: { type: 'string', description: 'A4 baskıya uygun profesyonel HTML içerik. Sadece body içeriği — <html>, <head>, <style> YAZMA, bunlar otomatik eklenir.' },
+        },
+        required: ['title', 'html'],
       },
     },
   },
@@ -1073,6 +1098,26 @@ async function executeTool(name, rawArgs) {
         };
       }
 
+      // ═══════════════════════════════════════════════════════════════════════
+      // ── RAPOR OLUŞTURMA ───────────────────────────────────────────────────
+      // ═══════════════════════════════════════════════════════════════════════
+      case 'generate_report': {
+        if (!args.title || !args.html) {
+          return { error: 'Rapor başlığı (title) ve HTML içeriği (html) gereklidir.' };
+        }
+        // HTML'i temizle — script injection önleme
+        const cleanHTML = args.html
+          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+          .replace(/on\w+\s*=/gi, '');
+        return {
+          success: true,
+          report: true,
+          title: args.title,
+          html: cleanHTML,
+          message: `📄 "${args.title}" raporu oluşturuldu. Yazdır/Paylaş butonlarını kullanabilirsiniz.`,
+        };
+      }
+
       default:
         return { error: `Bilinmeyen fonksiyon: ${name}` };
     }
@@ -1192,7 +1237,31 @@ PARA BİRİMLERİ: TRY (₺), USD ($), EUR (€), GBP (£)
 - "Gelen fatura" = Alış faturası → direction: inbound
 - Hammadde: item_type != 'product'
 - Mamül/Ürün: item_type == 'product'
-- Tarih filtresi: date_from/date_to argümanlarını YYYY-MM-DD formatında kullan`;
+- Tarih filtresi: date_from/date_to argümanlarını YYYY-MM-DD formatında kullan
+
+══════════════════════════════════════════════════════════════════
+RAPOR OLUŞTURMA (generate_report) KURALLARI:
+══════════════════════════════════════════════════════════════════
+
+Kullanıcı "yazdır", "PDF oluştur", "rapor hazırla", "çıktı al" gibi ifadeler kullandığında:
+1. ÖNCE gerekli verileri ilgili query_ tool'larıyla topla (stok, fatura, müşteri vb.)
+2. SONRA generate_report tool'unu çağırarak profesyonel HTML rapor oluştur
+3. Frontend raporu otomatik olarak yazdırma penceresinde açacak
+
+HTML RAPOR FORMATI:
+- Sadece <div>, <table>, <h1>-<h4>, <p>, <span> gibi standart HTML elementleri kullan
+- <html>, <head>, <body>, <style> YAZMA — bunlar otomatik eklenir
+- Mevcut CSS sınıflarını kullan: header, footer, text-right, text-center, font-bold, text-sm, text-xs, text-lg, text-xl, text-muted, mt-2, mt-4, mb-2, mb-4, border-t, border-b, total-row, stamp-area, stamp-box
+- Tablolarda <table>, <thead>, <tbody>, <tr>, <th>, <td> kullan
+- Raporun üstünde başlık ve tarih olsun: <div class="header"><h1>RAPOR BAŞLIĞI</h1><div class="company">Tarih bilgisi</div></div>
+- Raporun altında footer olsun: <div class="footer">A-ERP Sistemi · Otomatik Rapor</div>
+- Sayısal değerleri sağa yasla: class="text-right"
+- Toplam satırlarını kalın yap: class="total-row"
+
+ÖRNEK RAPOR HTML:
+<div class="header"><h1>Mayıs 2026 Satış Raporu</h1><div class="company">Oluşturma: 14 Mayıs 2026</div></div>
+<table><thead><tr><th>Müşteri</th><th>Fatura No</th><th class="text-right">Tutar</th></tr></thead><tbody><tr><td>ABC Ltd</td><td>FAT-001</td><td class="text-right">₺15.000</td></tr></tbody></table>
+<div class="footer">A-ERP Sistemi · Otomatik Rapor</div>`;
 
 // ── Main handler ─────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
@@ -1266,6 +1335,7 @@ export default async function handler(req, res) {
 
   let model = selectedModel;
   let toolsUsed = [];
+  let reportData = null; // generate_report tool sonucu
   const MAX_TOOL_ROUNDS = 12; // Yazma işlemleri için yükseltildi (ürün+reçete+kalemler = çok adım)
 
   // Chat-only model kullanıyorsak: NO TOOLS, ama sahte veri uyduramaz
@@ -1378,7 +1448,7 @@ export default async function handler(req, res) {
         if (conversationId) {
           await saveConversation(conversationId, messages, content, toolsUsed, pageContext);
         }
-        return res.json({ message: content, toolsUsed, model, intent, truncated: isTruncated });
+        return res.json({ message: content, toolsUsed, model, intent, truncated: isTruncated, reportData });
       }
 
       currentMessages.push(msg);
@@ -1389,6 +1459,9 @@ export default async function handler(req, res) {
         try { fnArgs = JSON.parse(toolCall.function.arguments); } catch (_) {}
         toolsUsed.push({ name: fnName, args: fnArgs });
         const result = await executeTool(fnName, fnArgs);
+        if (fnName === 'generate_report' && result.report) {
+          reportData = { title: result.title, html: result.html };
+        }
         currentMessages.push({
           role: 'tool',
           tool_call_id: toolCall.id,
@@ -1405,6 +1478,7 @@ export default async function handler(req, res) {
     return res.json({
       message: partialMsg,
       toolsUsed, model, intent,
+      reportData
     });
 
   } catch (err) {
