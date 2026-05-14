@@ -594,23 +594,24 @@ async function executeTool(name, rawArgs) {
       }
 
       case 'query_invoices': {
-        // Sadece gerekli sütunları seç — raw_detail, items vs. gibi ağır alanları ALMA
-        let q = supabase.from('invoices').select('id,invoice_number,direction,total_amount,vat_amount,currency,customer_name,invoice_date,status').order('invoice_date', { ascending: false }).limit(args.limit || 200);
-        if (args.direction && args.direction !== 'all') q = q.eq('direction', args.direction);
-        if (args.date_from) q = q.gte('invoice_date', args.date_from);
-        if (args.date_to) q = q.lte('invoice_date', args.date_to);
+        // invoices: id, type, invoice_id, vkntckn, cari_name, amount, currency, issue_date, status
+        let q = supabase.from('invoices').select('id,type,invoice_id,vkntckn,cari_name,amount,currency,issue_date,status').order('issue_date', { ascending: false }).limit(args.limit || 200);
+        if (args.direction && args.direction !== 'all') {
+          q = q.eq('type', args.direction === 'inbound' ? 'inbox' : 'outbox');
+        }
+        if (args.date_from) q = q.gte('issue_date', args.date_from);
+        if (args.date_to) q = q.lte('issue_date', args.date_to);
         if (args.customer_id) q = q.eq('customer_id', args.customer_id);
-        if (args.customer_name) q = q.ilike('customer_name', `%${args.customer_name}%`);
-        if (args.search) q = q.or(`invoice_number.ilike.%${args.search}%,customer_name.ilike.%${args.search}%`);
+        if (args.customer_name) q = q.ilike('cari_name', `%${args.customer_name}%`);
+        if (args.search) q = q.or(`invoice_id.ilike.%${args.search}%,cari_name.ilike.%${args.search}%`);
         const { data, error } = await q;
         if (error) throw error;
         const invoices = data || [];
 
         // ── Otomatik özet hesapla (AI'ın tekrar çağırmasına gerek kalmaz) ──
-        const inbound = invoices.filter(i => i.direction === 'inbound');
-        const outbound = invoices.filter(i => i.direction === 'outbound');
-        const sumAmount = (arr) => arr.reduce((s, i) => s + (Number(i.total_amount) || 0), 0);
-        const sumVat = (arr) => arr.reduce((s, i) => s + (Number(i.vat_amount) || 0), 0);
+        const inbound = invoices.filter(i => i.type === 'inbox');
+        const outbound = invoices.filter(i => i.type === 'outbox');
+        const sumAmount = (arr) => arr.reduce((s, i) => s + (Number(i.amount) || 0), 0);
 
         return {
           count: invoices.length,
@@ -619,23 +620,21 @@ async function executeTool(name, rawArgs) {
             inbound_count: inbound.length,
             outbound_count: outbound.length,
             inbound_total: sumAmount(inbound).toFixed(2),
-            inbound_vat: sumVat(inbound).toFixed(2),
             outbound_total: sumAmount(outbound).toFixed(2),
-            outbound_vat: sumVat(outbound).toFixed(2),
             grand_total: sumAmount(invoices).toFixed(2),
-            grand_vat: sumVat(invoices).toFixed(2),
           },
           data: invoices,
         };
       }
 
       case 'query_orders': {
-        let q = supabase.from('orders').select('id,order_number,customer_name,status,total,vat_total,grand_total,currency,order_date').order('order_date', { ascending: false }).limit(args.limit || 200);
+        // orders: id, order_number, customer_id, customer_name, status, currency, created_at, subtotal, tax_total, grand_total
+        let q = supabase.from('orders').select('id,order_number,customer_name,status,subtotal,tax_total,grand_total,currency,created_at').order('created_at', { ascending: false }).limit(args.limit || 200);
         if (args.customer_id) q = q.eq('customer_id', args.customer_id);
         if (args.customer_name) q = q.ilike('customer_name', `%${args.customer_name}%`);
         if (args.status) q = q.eq('status', args.status);
-        if (args.date_from) q = q.gte('order_date', args.date_from);
-        if (args.date_to) q = q.lte('order_date', args.date_to);
+        if (args.date_from) q = q.gte('created_at', args.date_from);
+        if (args.date_to) q = q.lte('created_at', args.date_to);
         const { data, error } = await q;
         if (error) throw error;
         const orders = data || [];

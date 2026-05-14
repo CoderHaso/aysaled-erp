@@ -282,18 +282,19 @@ async function executeTool(supabase: any, name: string, args: any) {
       }
 
       case 'query_invoices': {
-        let q = supabase.from('invoices').select('id,invoice_number,direction,total_amount,vat_amount,currency,customer_name,invoice_date,status').order('invoice_date', { ascending: false }).limit(args.limit || 200);
-        if (args.direction && args.direction !== 'all') q = q.eq('direction', args.direction);
-        if (args.date_from) q = q.gte('invoice_date', args.date_from);
-        if (args.date_to) q = q.lte('invoice_date', args.date_to);
-        if (args.customer_name) q = q.ilike('customer_name', `%${args.customer_name}%`);
+        let q = supabase.from('invoices').select('id,type,invoice_id,vkntckn,cari_name,amount,currency,issue_date,status').order('issue_date', { ascending: false }).limit(args.limit || 200);
+        if (args.direction && args.direction !== 'all') {
+          q = q.eq('type', args.direction === 'inbound' ? 'inbox' : 'outbox');
+        }
+        if (args.date_from) q = q.gte('issue_date', args.date_from);
+        if (args.date_to) q = q.lte('issue_date', args.date_to);
+        if (args.customer_name) q = q.ilike('cari_name', `%${args.customer_name}%`);
         const { data, error } = await q;
         if (error) throw error;
         const invoices = data || [];
-        const inbound = invoices.filter(i => i.direction === 'inbound');
-        const outbound = invoices.filter(i => i.direction === 'outbound');
-        const sumAmount = (arr: any[]) => arr.reduce((s, i) => s + (Number(i.total_amount) || 0), 0);
-        const sumVat = (arr: any[]) => arr.reduce((s, i) => s + (Number(i.vat_amount) || 0), 0);
+        const inbound = invoices.filter(i => i.type === 'inbox');
+        const outbound = invoices.filter(i => i.type === 'outbox');
+        const sumAmount = (arr: any[]) => arr.reduce((s, i) => s + (Number(i.amount) || 0), 0);
         return {
           count: invoices.length,
           summary: {
@@ -306,11 +307,11 @@ async function executeTool(supabase: any, name: string, args: any) {
       }
 
       case 'query_orders': {
-        let q = supabase.from('orders').select('id,order_number,customer_name,status,total,vat_total,grand_total,currency,order_date').order('order_date', { ascending: false }).limit(args.limit || 200);
+        let q = supabase.from('orders').select('id,order_number,customer_name,status,subtotal,tax_total,grand_total,currency,created_at').order('created_at', { ascending: false }).limit(args.limit || 200);
         if (args.customer_name) q = q.ilike('customer_name', `%${args.customer_name}%`);
         if (args.status) q = q.eq('status', args.status);
-        if (args.date_from) q = q.gte('order_date', args.date_from);
-        if (args.date_to) q = q.lte('order_date', args.date_to);
+        if (args.date_from) q = q.gte('created_at', args.date_from);
+        if (args.date_to) q = q.lte('created_at', args.date_to);
         const { data, error } = await q;
         if (error) throw error;
         return { count: data?.length || 0, data: data || [] };
