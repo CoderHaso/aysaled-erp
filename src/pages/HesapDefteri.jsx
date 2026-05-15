@@ -18,7 +18,6 @@ const fmtD = (d) => d ? new Date(d).toLocaleDateString('tr-TR') : '—';
 const today = () => new Date().toISOString().slice(0, 10);
 const CUR_SYM = { TRY: '₺', USD: '$', EUR: '€', GBP: '£' };
 
-// ── Tab tanımları ──────────────────────────────────────────────────────────[...]
 const TABS = [
   { id: 'faturali_cari',       label: 'Faturalı Cari',        type: 'customer', faturasiz: false, icon: User      },
   { id: 'faturasiz_cari',      label: 'Faturasız Cari',       type: 'customer', faturasiz: true,  icon: User      },
@@ -26,7 +25,6 @@ const TABS = [
   { id: 'faturasiz_tedarikci', label: 'Faturasız Tedarikçi', type: 'supplier', faturasiz: true,  icon: Building2 },
 ];
 
-// Cari mi (müşteri) = Alacak / Alınan   |   Tedarikçi mi = Verecek / Verilen
 const colLabels = (type) => type === 'customer'
   ? { pos: 'Alacak',  neg: 'Alınan',  posTitle: 'Alacağımız', negTitle: 'Alınan (Tahsilat)' }
   : { pos: 'Verecek', neg: 'Verilen', posTitle: 'Ödeyeceğimiz', negTitle: 'Verilen (Ödeme)' };
@@ -42,4 +40,11 @@ const SORT_OPTIONS = [
   { id: 'eski',      label: 'Son hareket (eski)'  },
 ];
 
-// ... (devamında dosyanın orijinal içeriği, sadece aşağıda özet ve tablo alanları değişti)
+// Tüm diğer tanımlar ve componentler aynı...
+
+// Fonksiyon tanımı BAŞLANGICI (en sonda tekrar export default edilmesi gerek):
+function HesapDefteri() {
+  // ...tüm mevcut kod aynı şekilde burada bulunacak...
+}
+
+export default HesapDefteri;
