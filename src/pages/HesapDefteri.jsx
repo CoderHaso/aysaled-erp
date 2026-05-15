@@ -18,7 +18,7 @@ const fmtD = (d) => d ? new Date(d).toLocaleDateString('tr-TR') : '—';
 const today = () => new Date().toISOString().slice(0, 10);
 const CUR_SYM = { TRY: '₺', USD: '$', EUR: '€', GBP: '£' };
 
-// ── Tab tanımları ────────────────────────────────────────────────────────[...]
+// ── Tab tanımları ──────────────────────────────────────────────────────────────
 const TABS = [
   { id: 'faturali_cari',       label: 'Faturalı Cari',        type: 'customer', faturasiz: false, icon: User      },
   { id: 'faturasiz_cari',      label: 'Faturasız Cari',       type: 'customer', faturasiz: true,  icon: User      },
@@ -42,7 +42,7 @@ const SORT_OPTIONS = [
   { id: 'eski',      label: 'Son hareket (eski)'  },
 ];
 
-// ── Hareket formu modal ───────────────────────────────────────────────────────[...]
+// ── Hareket formu modal ────────────────────────────────────────────────────────
 function HareketModal({ contact, contactType, onClose, onSaved, prefill, editData }) {
   const { currentColor } = useTheme();
   const isEdit = !!editData?.id;
@@ -124,7 +124,7 @@ function HareketModal({ contact, contactType, onClose, onSaved, prefill, editDat
         <div className="grid grid-cols-2 gap-3">
         {[
           { label: contactType === 'customer' ? 'Alacak (Alacağımız)' : 'Verecek (Ödeyeceğimiz)', field: 'borc',   color: contactType === 'customer' ? '#10b981' : '#ef4444', icon: contactType === 'customer' ? TrendingUp : TrendingDown },
-          { label: contactType === 'customer' ? 'Alınan (Tahsilat)'   : 'Verilen (Ödeme)',         field: 'alacak', color: contactType === 'customer' ? '#3b82f6' : '#f97316',  icon: contactType === 'customer' ? TrendingDown : TrendingUp }
+          { label: contactType === 'customer' ? 'Alınan (Tahsilat)'   : 'Verilen (Ödeme)',         field: 'alacak', color: contactType === 'customer' ? '#3b82f6' : '#f97316',  icon: contactType === 'customer' ? TrendingDown : TrendingUp },
         ].map(({ label, field, color, icon: Ic }) => (
             <div key={field}>
               <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color }}>{label}</p>
@@ -191,9 +191,11 @@ function HareketModal({ contact, contactType, onClose, onSaved, prefill, editDat
 }
 
 // ── Bakiye gösterge helper ─────────────────────────────────────────────────────
-function BalanceChip({ value, compact = false, currencyTotals, mainCurrency }) {
-  const color  = value > 0 ? '#10b981' : value < 0 ? '#ef4444' : '#64748b';
-  const label  = value > 0 ? 'Alacak'  : value < 0 ? 'Verecek'  : 'Eşit';
+function BalanceChip({ value, compact = false, currencyTotals, mainCurrency, contactType }) {
+  const isCust = contactType === 'customer';
+  const color = value > 0 ? (isCust ? '#10b981' : '#ef4444') : value < 0 ? (isCust ? '#ef4444' : '#10b981') : '#64748b';
+  const label = value > 0 ? (isCust ? 'Alacak' : 'Verecek')  : value < 0 ? (isCust ? 'Verecek' : 'Alacak')  : 'Eşit';
+  
   // Birden fazla döviz varsa kısa gösterim
   const hasFx = currencyTotals && Object.keys(currencyTotals).some(c => c !== 'TRY' && currencyTotals[c] !== 0);
   return (
@@ -202,7 +204,7 @@ function BalanceChip({ value, compact = false, currencyTotals, mainCurrency }) {
         {value === 0 ? '—' : `${fmtN(Math.abs(value))} ${mainCurrency ? (CUR_SYM[mainCurrency] || mainCurrency) : '₺'}`}
       </p>
       {hasFx && Object.entries(currencyTotals).filter(([c, v]) => c !== 'TRY' && v !== 0).map(([c, v]) => (
-        <p key={c} className="text-[10px] font-semibold" style={{ color: v > 0 ? '#10b981' : '#ef4444' }}>
+        <p key={c} className="text-[10px] font-semibold" style={{ color: v > 0 ? (isCust ? '#10b981' : '#ef4444') : (isCust ? '#ef4444' : '#10b981') }}>
           {CUR_SYM[c] || c}{fmtN(Math.abs(v))}
         </p>
       ))}
@@ -322,7 +324,7 @@ function ContactRow({ contact, contactType, color, preloadedTotals, externalOpen
           <p className="text-sm font-semibold truncate" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{contact.name}</p>
           <p className="text-[11px] truncate" style={{ color: '#64748b' }}>{contact.phone || contact.vkntckn || '—'}</p>
         </div>
-        <BalanceChip value={totalBalance} currencyTotals={isSingleCur ? {} : activeTotals} mainCurrency={isSingleCur ? mainCur : 'TRY'} />
+        <BalanceChip value={totalBalance} currencyTotals={isSingleCur ? {} : activeTotals} mainCurrency={isSingleCur ? mainCur : 'TRY'} contactType={contactType} />
         <ChevronDown size={15} className="text-slate-500 shrink-0 transition-transform"
           style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}/>
       </button>
@@ -378,8 +380,9 @@ function ContactRow({ contact, contactType, color, preloadedTotals, externalOpen
                     </thead>
                     <tbody>
                       {rows.map((h, i) => {
-                        const balColor = h.snapshot > 0 ? '#10b981' : h.snapshot < 0 ? '#ef4444' : '#64748b';
-                        const balLabel = h.snapshot > 0 ? 'Alacak' : h.snapshot < 0 ? 'Verecek' : 'Eşit';
+                        const isCust = contactType === 'customer';
+                        const balColor = h.snapshot > 0 ? (isCust ? '#10b981' : '#ef4444') : h.snapshot < 0 ? (isCust ? '#ef4444' : '#10b981') : '#64748b';
+                        const balLabel = h.snapshot > 0 ? (isCust ? 'Alacak' : 'Verecek') : h.snapshot < 0 ? (isCust ? 'Verecek' : 'Alacak') : 'Eşit';
                         return (
                           <motion.tr key={h.id}
                             initial={{ opacity: 0 }} animate={{ opacity: 1 }}
@@ -397,12 +400,12 @@ function ContactRow({ contact, contactType, color, preloadedTotals, externalOpen
                             </td>
                             <td className="py-2 px-1 font-mono text-right whitespace-nowrap">
                               {h.borc > 0
-                                ? <span className="text-[12px]" style={{ color: '#10b981' }}>{CUR_SYM[h.currency] || '₺'}{fmtN(h.borc)}</span>
+                                ? <span className="text-[12px]" style={{ color: contactType === 'customer' ? '#10b981' : '#ef4444' }}>{CUR_SYM[h.currency] || '₺'}{fmtN(h.borc)}</span>
                                 : <span className="text-[11px]" style={{ color: '#94a3b8' }}>—</span>}
                             </td>
                             <td className="py-2 px-1 font-mono text-right whitespace-nowrap">
                               {h.alacak > 0
-                                ? <span className="text-[12px]" style={{ color: '#ef4444' }}>{CUR_SYM[h.currency] || '₺'}{fmtN(h.alacak)}</span>
+                                ? <span className="text-[12px]" style={{ color: contactType === 'customer' ? '#3b82f6' : '#f97316' }}>{CUR_SYM[h.currency] || '₺'}{fmtN(h.alacak)}</span>
                                 : <span className="text-[11px]" style={{ color: '#94a3b8' }}>—</span>}
                             </td>
                             <td className="py-2 px-1 font-mono text-right whitespace-nowrap">
@@ -436,7 +439,7 @@ function ContactRow({ contact, contactType, color, preloadedTotals, externalOpen
                     <tfoot>
                       <tr style={{ borderTop: `2px solid ${isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0'}` }}>
                          <td colSpan={2} className="pt-2 pb-1 px-1 text-[10px] font-bold uppercase tracking-wider" style={{ color: '#64748b' }}>Net Bakiye</td>
-                        <td className="pt-2 pb-1 px-1 font-mono font-bold text-right text-emerald-500 text-[11px]">
+                        <td className="pt-2 pb-1 px-1 font-mono font-bold text-right text-[11px]" style={{ color: contactType === 'customer' ? '#10b981' : '#ef4444' }}>
                           {fmtN(rows.reduce((s, h) => s + (h.borcTRY || 0), 0))} ₺
                           <span className="block text-[9px] font-normal text-slate-400">{contactType === 'customer' ? 'Alacak' : 'Verecek'}</span>
                         </td>
@@ -446,11 +449,11 @@ function ContactRow({ contact, contactType, color, preloadedTotals, externalOpen
                           <span className="block text-[9px] font-normal text-slate-400">{contactType === 'customer' ? 'Alınan' : 'Verilen'}</span>
                         </td>
                         <td className="pt-2 pb-1 px-1 font-mono font-bold text-right text-[11px]"
-                          style={{ color: totalBalance > 0 ? '#10b981' : totalBalance < 0 ? '#ef4444' : '#64748b' }}>
+                          style={{ color: totalBalance > 0 ? (contactType === 'customer' ? '#10b981' : '#ef4444') : totalBalance < 0 ? (contactType === 'customer' ? '#ef4444' : '#10b981') : '#64748b' }}>
                           {fmtN(Math.abs(totalBalance))} {isSingleCur ? (CUR_SYM[mainCur] || mainCur) : '₺'}
                           <span className="block text-[9px] font-semibold"
-                            style={{ color: totalBalance > 0 ? '#10b981' : totalBalance < 0 ? '#ef4444' : '#64748b' }}>
-                            {totalBalance > 0 ? 'Alacak' : totalBalance < 0 ? 'Verecek' : 'Eşit'}
+                            style={{ color: totalBalance > 0 ? (contactType === 'customer' ? '#10b981' : '#ef4444') : totalBalance < 0 ? (contactType === 'customer' ? '#ef4444' : '#10b981') : '#64748b' }}>
+                            {totalBalance > 0 ? (contactType === 'customer' ? 'Alacak' : 'Verecek') : totalBalance < 0 ? (contactType === 'customer' ? 'Verecek' : 'Alacak') : 'Eşit'}
                           </span>
                         </td>
                         <td/>
@@ -522,7 +525,7 @@ function ContactRow({ contact, contactType, color, preloadedTotals, externalOpen
   );
 }
 
-// ── Ana Sayfa ──────────────────────────────────────────────────────────[...]
+// ── Ana Sayfa ──────────────────────────────────────────────────────────────
 export default function HesapDefteri() {
   const { currentColor, effectiveMode } = useTheme();
   const isDark = effectiveMode === 'dark';
@@ -678,24 +681,30 @@ export default function HesapDefteri() {
         {!loading && (totalAlacak !== 0 || totalVerecek !== 0) && (
           <div className="flex gap-3 mt-3">
             <div className="flex-1 flex items-start justify-between px-3 py-2 rounded-xl"
-              style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.15)' }}>
+              style={{ 
+                background: tab?.type === 'customer' ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)', 
+                border: `1px solid ${tab?.type === 'customer' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)'}` 
+              }}>
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#059669' }}>
+                <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: tab?.type === 'customer' ? '#059669' : '#dc2626' }}>
                   {tab?.type === 'customer' ? 'Toplam Alacak' : 'Toplam Verecek'}
                 </p>
                 <p className="text-[10px] text-slate-500">{tab?.type === 'customer' ? 'Müşterilerden alacağımız' : 'Tedarikçilere ödeyeceğimiz'}</p>
               </div>
-              <p className="text-sm font-bold" style={{ color: '#10b981' }}>{fmtN(totalAlacak)} ₺</p>
+              <p className="text-sm font-bold" style={{ color: tab?.type === 'customer' ? '#10b981' : '#ef4444' }}>{fmtN(totalAlacak)} ₺</p>
             </div>
             <div className="flex-1 flex items-start justify-between px-3 py-2 rounded-xl"
-              style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)' }}>
+              style={{ 
+                background: tab?.type === 'customer' ? 'rgba(239,68,68,0.08)' : 'rgba(16,185,129,0.08)', 
+                border: `1px solid ${tab?.type === 'customer' ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.15)'}` 
+              }}>
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#dc2626' }}>
+                <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: tab?.type === 'customer' ? '#dc2626' : '#059669' }}>
                   {tab?.type === 'customer' ? 'Toplam Alınan' : 'Toplam Verilen'}
                 </p>
                 <p className="text-[10px] text-slate-500">{tab?.type === 'customer' ? 'Müşteriden alınan (tahsilat)' : 'Tedarikçiye verilen (ödeme)'}</p>
               </div>
-              <p className="text-sm font-bold" style={{ color: '#ef4444' }}>{fmtN(Math.abs(totalVerecek))} ₺</p>
+              <p className="text-sm font-bold" style={{ color: tab?.type === 'customer' ? '#ef4444' : '#10b981' }}>{fmtN(Math.abs(totalVerecek))} ₺</p>
             </div>
           </div>
         )}
@@ -713,7 +722,7 @@ export default function HesapDefteri() {
               // Müşteri: pozitif = alacak (düz), negatif = alınan (-)
               // Tedarikçi: pozitif = verecek (-), negatif = verilen (düz)
               const display = isCust ? bal : -bal;
-              const color = display >= 0 ? '#10b981' : '#ef4444';
+              const color = display >= 0 ? (isCust ? '#10b981' : '#ef4444') : (isCust ? '#ef4444' : '#10b981');
               return `<tr>
                 <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:13px">${contact.name}</td>
                 <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:13px">${contact.phone || '—'}</td>
@@ -744,7 +753,7 @@ export default function HesapDefteri() {
                 <tbody>${rows}</tbody>
                 <tfoot><tr style="background:#f8fafc;font-weight:700">
                   <td colspan="2" style="padding:8px 12px;border:1px solid #e2e8f0;font-size:13px">TOPLAM</td>
-                  <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:13px;text-align:right;color:${totalNet >= 0 ? '#10b981' : '#ef4444'}">
+                  <td style="padding:8px 12px;border:1px solid #e2e8f0;font-size:13px;text-align:right;color:${totalNet >= 0 ? (isCust ? '#10b981' : '#ef4444') : (isCust ? '#ef4444' : '#10b981')}">
                     ${totalNet < 0 ? '-' : ''}₺${fmtN(Math.abs(totalNet))}
                   </td>
                 </tr></tfoot>
