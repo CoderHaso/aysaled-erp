@@ -60,16 +60,24 @@ function HareketModal({ contact, contactType, onClose, onSaved, prefill, editDat
   // Prefill: dışardan gelen ön-doldurma (Ödemeye Geçir butonundan)
   useEffect(() => {
     if (!prefill || isEdit) return;
+    
+    // Yön tespiti (Müşteri ve Tedarikçi için aynı mantık):
+    // borc inputu: Borç/Alacak/Verecek/Fatura tutarını ifade eder
+    // alacak inputu: Alınan/Verilen/Tahsilat/Ödeme tutarını ifade eder
+    const dir = prefill.direction?.toLowerCase() || '';
+    const isBorcField = ['receivable', 'alacak', 'payable', 'verecek'].includes(dir);
+    const isAlacakField = ['received', 'alinan', 'paid', 'verilen'].includes(dir);
+
     setForm(f => ({
       ...f,
       baslik:   prefill.baslik   || prefill.description || '',
-      borc:     prefill.borc     || (prefill.direction === 'receivable' || prefill.direction === 'alacak' ? (prefill.amount || '') : ''),
-      alacak:   prefill.alacak   || (prefill.direction === 'verecek' || prefill.direction === 'payable'  ? (prefill.amount || '') : ''),
+      borc:     prefill.borc     || (isBorcField ? (prefill.amount || '') : ''),
+      alacak:   prefill.alacak   || (isAlacakField ? (prefill.amount || '') : ''),
       currency: prefill.currency || 'TRY',
       aciklama: prefill.aciklama || '',
       tarih:    prefill.tarih    || today(),
     }));
-  }, [prefill]);
+  }, [prefill, isEdit]);
 
   const handleSave = async () => {
     if (!form.baslik.trim())        return setErr('Başlık zorunlu');
