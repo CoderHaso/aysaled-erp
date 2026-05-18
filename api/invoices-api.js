@@ -272,13 +272,12 @@ async function handleCreate(body, res) {
 
   // Ayni invoice_id zaten varsa kontrol et
   const { data: existing } = await supabase.from('invoices')
-    .select('invoice_id, status').eq('invoice_id', invoice_id).eq('type', type).maybeSingle();
+    .select('invoice_id, status, document_id').eq('invoice_id', invoice_id).eq('type', type).maybeSingle();
   if (existing) {
-    if (existing.status !== 'Draft' && existing.status !== 'Cancelled' && existing.status !== 'Canceled') {
+    if (!['Draft', 'Cancelled', 'Canceled', 'Queued'].includes(existing.status)) {
       // Gonderilmis veya resmilesmis ise degistirme
       return res.json({ success: true, invoice_id, already_exists: true });
     }
-    // Eger Cancelled veya Draft ise upsert ile uzerine yazacagiz
   }
 
   const lineItems = lines.map((l, i) => ({
@@ -300,7 +299,9 @@ async function handleCreate(body, res) {
     type, invoice_id, vkntckn, cari_name,
     issue_date: issue_date || new Date().toISOString().slice(0, 10),
     amount: grandTotal, tax_exclusive_amount: subtotal, tax_total: taxTotal,
-    currency, status: 'Draft', line_items: lineItems,
+    currency, status: existing?.status === 'Queued' ? 'Queued' : 'Draft', line_items: lineItems,
+    document_id: existing?.document_id || null, // Taslak güncellenirken mevcut UUID'yi koruyoruz
+    uyumsoft_number: existing?.uyumsoft_number || null,
     message: notes || null,  // colum yoksa Supabase ignore eder ama deneriz
     notes: notes || null,    // alternatif kolon adı
     updated_at: new Date().toISOString()
@@ -337,7 +338,7 @@ async function handleFormalize(body, res) {
     .from('invoices').select('*').eq('invoice_id', invoiceId).single();
   if (fetchErr || !inv) return res.status(404).json({ success: false, error: 'Fatura bulunamadı' });
 
-  if (inv.status !== 'Draft') {
+  if (inv.status !== 'Draft' && inv.status !== 'Queued') {
     return res.status(400).json({ success: false, error: `Yalnızca taslak faturalar gönderilebilir (mevcut durum: ${inv.status})` });
   }
 
@@ -397,6 +398,7 @@ async function handleFormalize(body, res) {
       <cbc:CustomizationID>TR1.2.1</cbc:CustomizationID>
       <cbc:ProfileID>TEMELFATURA</cbc:ProfileID>
       <cbc:ID>${encodeXml(invoiceId)}</cbc:ID>
+      ${inv.document_id ? `<cbc:UUID>${encodeXml(inv.document_id)}</cbc:UUID>` : ''}
       <cbc:CopyIndicator>false</cbc:CopyIndicator>
       <cbc:IssueDate>${issueDate}</cbc:IssueDate>
       <cbc:IssueTime>${trTime}</cbc:IssueTime>
