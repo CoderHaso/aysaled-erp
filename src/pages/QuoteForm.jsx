@@ -337,7 +337,7 @@ export function QuotePreview({ quote, onClose, colWidths = {}, rowHeight = 58 })
         <div className="no-print flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-gray-50">
           <p className="font-bold text-gray-700">Teklif Önizleme · {quote.quote_no}</p>
           <div className="flex gap-2">
-            <button onClick={() => sharePDF('quote-print', `Teklif-${quote.quote_no || 'Belge'}`)}
+            <button onClick={() => sharePDF('quote-print', `AYS-${quote.quote_no || 'Belge'}`)}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700">
               <Send size={15} /> Paylaş
             </button>

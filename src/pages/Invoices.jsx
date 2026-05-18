@@ -1727,7 +1727,7 @@ export default function Invoices({ type = 'inbox' }) {
                               title={`İşlendi: ${inv.islendi_at ? new Date(inv.islendi_at).toLocaleDateString('tr-TR') : ''}`}>
                               <CheckCircle2 size={10}/> İşlendi
                             </span>
-                          ) : inv.is_islendi === false && !(inv.type === 'outbox' && ['Draft','Queued'].includes(inv.status)) ? (
+                          ) : !inv.is_islendi && !(inv.type === 'outbox' && ['Draft','Queued'].includes(inv.status)) ? (
                             fetchingDetailsId === inv.invoice_id ? (
                               <button disabled className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap opacity-70"
                                 style={{ background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }}>
