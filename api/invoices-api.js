@@ -602,16 +602,14 @@ async function handleCancelDraft(body, res) {
 }
 
 /**
- * delete — Taslağı iptal et (Uyumsoft'taki taslağı CancelDraft ile iptal, Supabase'de Cancelled olarak işaretle)
+ * delete — Taslağı Uyumsoft'tan iptal et + Supabase'den sil
  * Body: { invoiceId }
- * NOT: Supabase'den silmek yerine status='Cancelled' yapıyoruz çünkü
- *      sync-invoices tekrar çalıştığında silinen kaydı yeniden oluşturuyor.
  */
 async function handleDelete(body, res) {
   const { invoiceId } = body;
   if (!invoiceId) return res.status(400).json({ error: 'invoiceId gerekli' });
 
-  const { data: inv } = await supabase.from('invoices').select('document_id, status')
+  const { data: inv } = await supabase.from('invoices').select('document_id, status, invoice_id')
     .eq('invoice_id', invoiceId).single();
   if (!inv) return res.status(404).json({ success: false, error: 'Fatura bulunamadı.' });
 
@@ -619,27 +617,42 @@ async function handleDelete(body, res) {
     return res.status(400).json({ success: false, error: 'Resmileştirilmiş faturalar silinemez.' });
   }
 
+  let uyumsoftCancelled = false;
+
   try {
-    // Eğer Uyumsoft'ta taslak olarak varsa iptal kodunu çağır
-    if (inv.document_id && (inv.status === 'Queued' || inv.status === 'Draft')) {
+    // Eğer Uyumsoft'ta taslak olarak varsa CancelDraft ile iptal et
+    if (inv.document_id) {
       try {
         const client = await createUyumsoftClient();
-        await callSoap(client, 'CancelDraft', { invoiceIds: { string: [inv.document_id] } });
+        console.log(`[delete] CancelDraft çağrılıyor — document_id: ${inv.document_id}, invoice_id: ${inv.invoice_id}`);
+        const result = await callSoap(client, 'CancelDraft', { invoiceIds: { string: [inv.document_id] } });
+        const r = result?.CancelDraftResult;
+        const ok = String(r?.attributes?.IsSucceded ?? 'true').toLowerCase() !== 'false';
+        console.log(`[delete] CancelDraft sonucu — ok: ${ok}, message: ${r?.attributes?.Message || 'yok'}, raw:`, JSON.stringify(r?.attributes || r || 'boş'));
+        
+        if (!ok) {
+          console.warn(`[delete] CancelDraft başarısız: ${r?.attributes?.Message || 'Bilinmeyen hata'}`);
+          // Başarısız olsa bile Supabase'den silmeye devam ediyoruz
+        } else {
+          uyumsoftCancelled = true;
+        }
       } catch (err) {
-        console.warn('[delete] Uyumsoft iptali esnasında hata (belki zaten iptal edilmiş):', err.message);
+        console.error('[delete] CancelDraft çağrısı exception:', err.message);
+        // Uyumsoft hatası olsa bile Supabase'den silmeye devam et
       }
     }
 
-    // Supabase'de Cancelled olarak işaretle (silmiyoruz — sync tekrar oluşturmasın)
-    const { error: updErr } = await supabase.from('invoices').update({
-      status: 'Cancelled',
-      document_id: null,
-      uyumsoft_number: null,
-      updated_at: new Date().toISOString()
-    }).eq('invoice_id', invoiceId);
-    if (updErr) throw updErr;
+    // Supabase'den sil
+    const { error: delErr } = await supabase.from('invoices').delete().eq('invoice_id', invoiceId);
+    if (delErr) throw delErr;
 
-    return res.json({ success: true, message: 'Fatura başarıyla iptal edildi.' });
+    const msg = uyumsoftCancelled
+      ? 'Fatura Uyumsoft\'tan iptal edildi ve sistemden silindi.'
+      : inv.document_id
+        ? 'Fatura sistemden silindi. Uyumsoft iptal işlemi başarısız olmuş olabilir, panelden kontrol edin.'
+        : 'Fatura sistemden silindi.';
+
+    return res.json({ success: true, message: msg, uyumsoftCancelled });
   } catch (err) {
     console.error('[invoices-api][delete]', err.message);
     return res.status(500).json({ success: false, error: err.message });
