@@ -260,7 +260,12 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, onAddN
       {/* BR */}
       <td className={cell} style={{ overflow: 'hidden' }}>
         <select value={line.unit} onChange={e => upd('unit', e.target.value)} className={`${inp} cursor-pointer`}>
-          {['Adet','Mt','Kg','M²','Rulo','Paket','Set'].map(u => <option key={u}>{u}</option>)}
+          {(() => {
+            const base = ['Adet','Mt','Metre','Kg','M²','m²','Rulo','Paket','Set','Takım'];
+            const current = line.unit;
+            const opts = base.includes(current) ? base : [current, ...base];
+            return opts.map(u => <option key={u} value={u}>{u}</option>);
+          })()}
         </select>
       </td>
 
