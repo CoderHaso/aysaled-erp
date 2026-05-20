@@ -257,17 +257,32 @@ export default async function handler(req, res) {
 
     const newCount = basePayload.filter(r => !existingSet.has(r.invoice_id)).length;
 
+    // Yerel olarak iptal edilmiş (document_id=null, status=Cancelled) faturaları sync'ten çıkar
+    // Bunlar kullanıcı tarafından bilinçli olarak iptal edilmiş, Uyumsoft verisiyle ezilmemeli
+    const locallyCancelledIds = new Set();
+    if (existingIds.length > 0) {
+      for (const [invId, old] of Object.entries(oldStatusMap)) {
+        if (old.status === 'Cancelled' && !old.document_id) {
+          locallyCancelledIds.add(invId);
+        }
+      }
+    }
+    const filteredPayload = basePayload.filter(r => !locallyCancelledIds.has(r.invoice_id));
+
     // Batch upsert: 20'şerlik gruplar halinde — raw_data büyük olduğu için
     // tek seferde 100+ kayıt göndermek Supabase statement timeout'a yol açıyor
     const BATCH = 20;
-    for (let b = 0; b < basePayload.length; b += BATCH) {
-      const chunk = basePayload.slice(b, b + BATCH);
+    for (let b = 0; b < filteredPayload.length; b += BATCH) {
+      const chunk = filteredPayload.slice(b, b + BATCH);
       const { error: upsertErr } = await supabase
         .from('invoices')
         .upsert(chunk, { onConflict: 'invoice_id,type' });
       if (upsertErr) throw new Error('Supabase upsert: ' + upsertErr.message);
     }
-    console.log(`[sync] ${basePayload.length} fatura kaydedildi.`);
+    if (locallyCancelledIds.size > 0) {
+      console.log(`[sync] ${locallyCancelledIds.size} yerel iptal fatura senkronizasyondan çıkarıldı.`);
+    }
+    console.log(`[sync] ${filteredPayload.length} fatura kaydedildi.`);
 
     // Status veya document_id değişen faturaların detayını yeniden çek
     const resetIds = basePayload.filter(r => {

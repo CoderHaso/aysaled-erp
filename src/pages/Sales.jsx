@@ -799,9 +799,10 @@ function OrderForm({ order, customers, allItems, setAllItems, allRecipes = [], o
         if (qErr) console.warn('[quote accept] failed:', qErr.message);
       }
 
-      // ── UYUMSOFT INVOICE DRAFT CREATION ──
+      // ── UYUMSOFT INVOICE DRAFT CREATION / UPDATE ──
       // Geçmiş siparişlerde fatura sistemi çağrılmaz, sadece DB'ye faturalı olarak yazılır.
-      if (invoiceToggle && !isEdit && !form.is_history) {
+      // isEdit durumunda da fatura güncellenir (API mevcut UUID ile Uyumsoft taslağını günceller)
+      if (invoiceToggle && !form.is_history) {
         try {
           // Fatura ayarlarını oku
           let invSettings = { show_amount_words: true, custom_note: '' };
@@ -853,8 +854,9 @@ function OrderForm({ order, customers, allItems, setAllItems, allRecipes = [], o
              const r_form = await fetch('/api/invoices-api?action=formalize', { method: 'POST', body: JSON.stringify({ invoiceId: d_create.invoice_id }), headers: {'Content-Type': 'application/json'} });
              const d_form = await r_form.json();
              if (d_form.success) {
+               const actionLabel = isEdit ? 'Güncellendi' : 'Oluşturuldu';
                setDialog({ 
-                 open: true, title: '✓ Sipariş Oluşturuldu', message: "Sipariş kaydedildi ve Uyumsoft tarafında fatura taslağı başarıyla oluşturuldu!", type: 'alert',
+                 open: true, title: `✓ Sipariş ${actionLabel}`, message: `Sipariş kaydedildi ve Uyumsoft tarafında fatura taslağı başarıyla ${isEdit ? 'güncellendi' : 'oluşturuldu'}!`, type: 'alert',
                  onConfirm: () => { setDialog({ open: false }); closeClean(); }
                });
              } else {
