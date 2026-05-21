@@ -849,35 +849,8 @@ function OrderForm({ order, customers, allItems, setAllItems, allRecipes = [], o
               };
             })
           };
-
-          // Düzenleme modunda: mevcut Uyumsoft taslağını iptal et, sonra güncel verilerle yeniden oluştur
-          if (isEdit && order?.invoice_id) {
-            try {
-              // Mevcut taslağın Uyumsoft document_id'sini al
-              const { data: existingInv } = await supabase.from('invoices')
-                .select('document_id, status')
-                .eq('invoice_id', order.invoice_id)
-                .maybeSingle();
-              
-              // Eğer Uyumsoft'ta taslak olarak gönderilmişse, önce iptal et
-              if (existingInv?.document_id && ['Queued', 'Draft'].includes(existingInv.status)) {
-                await fetch('/api/invoices-api?action=cancelDraft', {
-                  method: 'POST',
-                  body: JSON.stringify({ invoiceId: order.invoice_id }),
-                  headers: { 'Content-Type': 'application/json' }
-                });
-                // İptal sonrası Supabase kaydını Draft'a geri al ki create tekrar çalışabilsin
-                await supabase.from('invoices').update({ 
-                  status: 'Draft', 
-                  document_id: null,
-                  updated_at: new Date().toISOString() 
-                }).eq('invoice_id', order.invoice_id);
-              }
-            } catch (cancelErr) {
-              console.warn('[order update] Mevcut taslak iptal hatası (devam ediliyor):', cancelErr.message);
-            }
-          }
           
+
           const r_create = await fetch('/api/invoices-api?action=create', { method: 'POST', body: JSON.stringify(invBody), headers: {'Content-Type': 'application/json'} });
           const d_create = await r_create.json();
           if (d_create.success && d_create.invoice_id) {
