@@ -256,11 +256,12 @@ async function handleCreate(body, res) {
   // Eger body'den invoice_id geldiyse onu kullan; yoksa yeni uret
   let invoice_id = body.invoice_id;
   if (!invoice_id) {
-    // MAX ile paralel istek guvenli. Iptalleri atla.
+    // MAX ile paralel istek guvenli.
+    // NOT: Cancelled faturaları da sayıyoruz — atlanırsa aynı invoice_id yeniden üretilir
+    //      ve eski iptal edilmiş UUID Uyumsoft'a gönderilip reddedilir.
     const { data: seqRows } = await supabase.from('invoices')
       .select('invoice_id')
       .ilike('invoice_id', `${prefix}%`)
-      .not('status', 'in', '("Cancelled","Canceled")')
       .order('invoice_id', { ascending: false }).limit(20);
     let maxSeq = 0;
     (seqRows || []).forEach(r => {
@@ -272,13 +273,17 @@ async function handleCreate(body, res) {
 
   // Ayni invoice_id zaten varsa kontrol et
   const { data: existing } = await supabase.from('invoices')
-    .select('invoice_id, status, document_id').eq('invoice_id', invoice_id).eq('type', type).maybeSingle();
+    .select('invoice_id, status, document_id, uyumsoft_number').eq('invoice_id', invoice_id).eq('type', type).maybeSingle();
   if (existing) {
     if (!['Draft', 'Cancelled', 'Canceled', 'Queued'].includes(existing.status)) {
       // Gonderilmis veya resmilesmis ise degistirme
       return res.json({ success: true, invoice_id, already_exists: true });
     }
   }
+
+  // Eğer mevcut kayıt iptal edilmiş ise eski UUID'yi kullanma
+  // Uyumsoft iptal edilen UUID'yi reddeder, temiz başlamalıyız
+  const isReusedCancelled = existing && ['Cancelled', 'Canceled'].includes(existing.status);
 
   const lineItems = lines.map((l, i) => ({
     id: String(i + 1), name: l.name, item_code: l.item_code || null,
@@ -299,11 +304,14 @@ async function handleCreate(body, res) {
     type, invoice_id, vkntckn, cari_name,
     issue_date: issue_date || new Date().toISOString().slice(0, 10),
     amount: grandTotal, tax_exclusive_amount: subtotal, tax_total: taxTotal,
-    currency, status: existing?.status === 'Queued' ? 'Queued' : 'Draft', line_items: lineItems,
-    document_id: existing?.document_id || null, // Taslak güncellenirken mevcut UUID'yi koruyoruz
-    uyumsoft_number: existing?.uyumsoft_number || null,
-    message: notes || null,  // colum yoksa Supabase ignore eder ama deneriz
-    notes: notes || null,    // alternatif kolon adı
+    currency,
+    status: isReusedCancelled ? 'Draft' : (existing?.status === 'Queued' ? 'Queued' : 'Draft'),
+    line_items: lineItems,
+    // İptal edilmiş kaydın UUID'sini KESİNLİKLE kullanma — Uyumsoft reddeder
+    document_id: isReusedCancelled ? null : (existing?.document_id || null),
+    uyumsoft_number: isReusedCancelled ? null : (existing?.uyumsoft_number || null),
+    message: notes || null,
+    notes: notes || null,
     updated_at: new Date().toISOString()
   };
   // Döviz kuru varsa ekle

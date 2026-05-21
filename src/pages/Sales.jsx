@@ -851,6 +851,9 @@ function OrderForm({ order, customers, allItems, setAllItems, allRecipes = [], o
           const r_create = await fetch('/api/invoices-api?action=create', { method: 'POST', body: JSON.stringify(invBody), headers: {'Content-Type': 'application/json'} });
           const d_create = await r_create.json();
           if (d_create.success && d_create.invoice_id) {
+             // Fatura ID'sini siparişe kaydet — iptal veya güncelleme sırasında doğrudan bulabilelim
+             await supabase.from('orders').update({ invoice_id: d_create.invoice_id }).eq('id', orderId);
+
              const r_form = await fetch('/api/invoices-api?action=formalize', { method: 'POST', body: JSON.stringify({ invoiceId: d_create.invoice_id }), headers: {'Content-Type': 'application/json'} });
              const d_form = await r_form.json();
              if (d_form.success) {
@@ -2270,19 +2273,26 @@ export default function Sales() {
 
                     // 3. Taslak fatura varsa bul ve iptal et
                     try {
-                        const { data: inv } = await supabase
-                            .from('invoices')
-                            .select('invoice_id, document_id, status')
-                            .ilike('cari_name', `%${order.customer_name}%`)
-                            .in('status', ['Draft', 'Queued'])
-                            .limit(1)
-                            .maybeSingle();
-                        if (inv?.invoice_id) {
+                        let invId = order.invoice_id; // Siparişe bağlı fatura ID'si
+
+                        // Eski siparişlerde invoice_id olmayabilir — geri dönüş: isim araması
+                        if (!invId) {
+                            const { data: inv } = await supabase
+                                .from('invoices')
+                                .select('invoice_id')
+                                .ilike('cari_name', `%${order.customer_name}%`)
+                                .in('status', ['Draft', 'Queued'])
+                                .limit(1)
+                                .maybeSingle();
+                            invId = inv?.invoice_id;
+                        }
+
+                        if (invId) {
                             // delete action: Uyumsoft iptal + Supabase silme
                             await fetch('/api/invoices-api?action=delete', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ invoiceId: inv.invoice_id })
+                                body: JSON.stringify({ invoiceId: invId })
                             });
                             try { sessionStorage.removeItem('page_cache_invoices_outbox'); } catch(e){}
                         }
