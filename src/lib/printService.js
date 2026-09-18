@@ -153,7 +153,11 @@ function getToolbarHTML(title) {
 
 // ─── PDF Paylaşım Script (yazdırma penceresine enjekte edilir) ────────────────
 function getShareScript(title) {
+  // Title'ı JS string-safe yap
+  const safeT = (title || 'Belge').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
   return `
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"><\/script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"><\/script>
     <script>
       window.__sharePDF = async function() {
         var btn = document.querySelector('.btn-share');
@@ -161,26 +165,34 @@ function getShareScript(title) {
         btn.textContent = '⏳ Hazırlanıyor...';
         btn.disabled = true;
         try {
+          // Kütüphanelerin yüklenmesini bekle (max 15sn)
+          var waited = 0;
+          while ((!window.html2canvas || !window.jspdf) && waited < 15000) {
+            await new Promise(function(r) { setTimeout(r, 200); });
+            waited += 200;
+          }
+          if (!window.html2canvas) throw new Error('html2canvas yüklenemedi');
+          if (!window.jspdf) throw new Error('jsPDF yüklenemedi');
+
           var el = document.querySelector('.print-container');
-          var { default: html2canvas } = await import('https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.esm.js');
-          var { jsPDF } = await import('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/+esm');
-          var canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-          var pdf = new jsPDF('p', 'mm', 'a4');
+          var canvas = await window.html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+          var pdf = new window.jspdf.jsPDF('p', 'mm', 'a4');
           var pw = 210, ph = 297;
           var imgW = pw, imgH = (canvas.height * imgW) / canvas.width;
           var imgData = canvas.toDataURL('image/jpeg', 0.92);
           var y = 0;
           while (y < imgH) { if (y > 0) pdf.addPage(); pdf.addImage(imgData, 'JPEG', 0, -y, imgW, imgH); y += ph; }
           var blob = pdf.output('blob');
-          var file = new File([blob], '${title}.pdf', { type: 'application/pdf' });
+          var fileName = '${safeT}.pdf';
+          var file = new File([blob], fileName, { type: 'application/pdf' });
           if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-            await navigator.share({ title: '${title}', files: [file] });
+            await navigator.share({ title: '${safeT}', files: [file] });
           } else {
             var link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
-            link.download = '${title}.pdf';
+            link.download = fileName;
             link.click();
-            URL.revokeObjectURL(link.href);
+            setTimeout(function() { URL.revokeObjectURL(link.href); }, 1000);
           }
         } catch(e) {
           console.error('Paylaşım hatası:', e);
