@@ -503,11 +503,11 @@ function InvoiceTable({ items, currency = 'TRY' }) {
                   <p className="font-semibold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{item.name}</p>
                   {item.note && <p className="text-slate-500 mt-0.5 italic text-[10px]">{item.note}</p>}
                 </td>
-                <td className="px-3 py-3 text-right text-slate-300 whitespace-nowrap">
+                <td className={`px-3 py-3 text-right whitespace-nowrap ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
                   {item.quantity != null ? fmt(item.quantity) : '-'}
                   {item.unit && <span className="text-slate-500 ml-1">{unitLabel(item.unit)}</span>}
                 </td>
-                <td className="px-3 py-3 text-right text-slate-300 whitespace-nowrap">{fmt(item.unit_price)} <span className="text-slate-500">{sym}</span></td>
+                <td className={`px-3 py-3 text-right whitespace-nowrap ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{fmt(item.unit_price)} <span className="text-slate-500">{sym}</span></td>
                 {hasDiscount && (
                   <td className="px-3 py-3 text-right text-slate-400 whitespace-nowrap">
                     {item.discount_rate ? `%${fmt(item.discount_rate)}` : '-'}
@@ -518,8 +518,8 @@ function InvoiceTable({ items, currency = 'TRY' }) {
                     {item.discount_amount ? fmt(item.discount_amount) : '-'}
                   </td>
                 )}
-                <td className="px-3 py-3 text-right text-slate-300 whitespace-nowrap">%{item.tax_percent || 0}</td>
-                <td className="px-3 py-3 text-right text-slate-300 whitespace-nowrap">{fmt(item.tax_amount)} <span className="text-slate-500">{sym}</span></td>
+                <td className={`px-3 py-3 text-right whitespace-nowrap ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>%{item.tax_percent || 0}</td>
+                <td className={`px-3 py-3 text-right whitespace-nowrap ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>{fmt(item.tax_amount)} <span className="text-slate-500">{sym}</span></td>
                 <td className="px-3 py-3 text-right font-bold whitespace-nowrap" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{fmt(item.line_total)} <span className="text-slate-400 font-normal text-[10px]">{sym}</span></td>
               </tr>
             ))}
@@ -554,12 +554,14 @@ function InvoiceTable({ items, currency = 'TRY' }) {
 }
 
 function SumRow({ label, value, muted, bold, color, accent }) {
+  const { effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
   return (
     <div className="flex justify-between items-center px-4 py-2.5 gap-8"
       style={{ borderBottom: '1px solid rgba(148,163,184,0.07)' }}>
       <span className={`text-xs ${muted ? 'text-slate-500' : 'text-slate-400'} ${bold ? 'font-bold' : ''}`}>{label}</span>
       <span className={`text-sm font-bold tabular-nums whitespace-nowrap`}
-        style={{ color: accent ? '#34d399' : (color || (bold ? '#f1f5f9' : '#94a3b8')) }}>
+        style={{ color: accent ? '#34d399' : (color || (bold ? (isDark ? '#f1f5f9' : '#0f172a') : (isDark ? '#94a3b8' : '#475569'))) }}>
         {value}
       </span>
     </div>

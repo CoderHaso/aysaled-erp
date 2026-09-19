@@ -122,7 +122,7 @@ function HareketModal({ contact, contactType, onClose, onSaved, prefill, editDat
 
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>{isEdit ? 'Hareket Düzenle' : 'Yeni Hareket'}</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>{isEdit ? 'Hareket Düzenle' : 'Yeni Hareket'}</p>
             <h3 className="text-sm font-bold mt-0.5" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{contact.name}</h3>
           </div>
           <button onClick={onClose}><X size={16} style={{ color: '#94a3b8' }}/></button>
@@ -835,7 +835,7 @@ export default function HesapDefteri() {
                     className="w-full text-left px-3 py-2 text-xs transition-colors"
                     style={{
                       background: sort === opt.id ? `${tabColor}20` : 'transparent',
-                      color: sort === opt.id ? tabColor : '#94a3b8',
+                      color: sort === opt.id ? tabColor : (isDark ? '#94a3b8' : '#475569'),
                     }}>
                     {sort === opt.id && <span className="mr-1">✓</span>}
                     {opt.label}

@@ -170,7 +170,7 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
               <div className="flex items-center gap-2">
                 {!isNew && (
                   <button onClick={() => setEditing(v => !v)}
-                    className="p-2 rounded-xl transition-colors text-slate-400 hover:text-white"
+                    className={`p-2 rounded-xl transition-colors text-slate-400 ${isDark ? 'hover:text-white' : 'hover:text-slate-900'}`}
                     style={{ background: editing ? `${currentColor}20` : 'transparent' }}>
                     <Edit3 size={15} style={{ color: editing ? currentColor : undefined }} />
                   </button>
@@ -292,12 +292,12 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
                         <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">{l}</p>
                         {(editing || isNew) ? (
                           <input className="w-full rounded-xl px-3 py-2 text-sm outline-none"
-                            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)', color: '#f1f5f9' }}
+                            style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', border: '1px solid rgba(148,163,184,0.15)', color: isDark ? '#f1f5f9' : '#1e293b' }}
                             placeholder={ph} value={form[k] || ''}
                             onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} />
                         ) : (
                           <p className="text-sm px-3 py-2 rounded-xl"
-                            style={{ background: 'rgba(255,255,255,0.03)', color: form[k] ? '#f1f5f9' : '#475569' }}>
+                            style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', color: form[k] ? (isDark ? '#f1f5f9' : '#1e293b') : '#475569' }}>
                             {form[k] || <span className="text-slate-600 italic">—</span>}
                           </p>
                         )}
@@ -312,12 +312,12 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
                     <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Adres / Konum</p>
                     {(editing || isNew) ? (
                       <textarea className="w-full rounded-xl px-3 py-2 text-sm outline-none resize-none"
-                        style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)', color: '#f1f5f9' }}
+                        style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', border: '1px solid rgba(148,163,184,0.15)', color: isDark ? '#f1f5f9' : '#1e293b' }}
                         rows={2} placeholder="Mahalle, semt, şehir... (serbest format)"
                         value={form.address || ''} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} />
                     ) : (
                       <p className="text-sm px-3 py-2 rounded-xl"
-                        style={{ background: 'rgba(255,255,255,0.03)', color: form.address ? '#f1f5f9' : '#475569' }}>
+                        style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', color: form.address ? (isDark ? '#f1f5f9' : '#1e293b') : '#475569' }}>
                         {form.address || <span className="text-slate-600 italic">—</span>}
                       </p>
                     )}
@@ -329,12 +329,12 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
                   <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Notlar</p>
                   {(editing || isNew) ? (
                     <textarea className="w-full rounded-xl px-3 py-2 text-sm outline-none resize-none"
-                      style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)', color: '#f1f5f9' }}
+                      style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', border: '1px solid rgba(148,163,184,0.15)', color: isDark ? '#f1f5f9' : '#1e293b' }}
                       rows={2} placeholder="Ek bilgiler..."
                       value={form.notes || ''} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
                   ) : (
                     <p className="text-sm px-3 py-2 rounded-xl"
-                      style={{ background: 'rgba(255,255,255,0.03)', color: form.notes ? '#f1f5f9' : '#475569' }}>
+                      style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', color: form.notes ? (isDark ? '#f1f5f9' : '#1e293b') : '#475569' }}>
                       {form.notes || <span className="text-slate-600 italic">—</span>}
                     </p>
                   )}
@@ -346,7 +346,7 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
                     {!isNew && (
                       <button onClick={() => { setEditing(false); setForm({ ...customer }); }}
                         className="flex-1 py-2 rounded-xl text-sm font-semibold text-slate-400"
-                        style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)' }}>
+                        style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f8fafc', border: '1px solid rgba(148,163,184,0.15)' }}>
                         İptal
                       </button>
                     )}
@@ -390,7 +390,7 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
                       initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: i * 0.04 }}
                       className="rounded-2xl p-4 group transition-all"
-                      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(148,163,184,0.08)' }}
+                      style={{ background: isDark ? 'rgba(255,255,255,0.04)' : '#f8fafc', border: '1px solid rgba(148,163,184,0.08)' }}
                       onMouseEnter={e => e.currentTarget.style.borderColor = `${currentColor}40`}
                       onMouseLeave={e => e.currentTarget.style.borderColor = 'rgba(148,163,184,0.08)'}
                     >
@@ -418,7 +418,7 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
                           {inv.line_items.slice(0, 3).map((item, j) => (
                             <div key={j} className="flex justify-between items-center py-0.5">
                               <span className="text-[10px] text-slate-400 flex-1 truncate">{item.name}</span>
-                              <span className="text-[10px] font-semibold text-slate-300 ml-2 whitespace-nowrap">
+                              <span className={`text-[10px] font-semibold ml-2 whitespace-nowrap ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
                                 {item.quantity ? `${item.quantity} ${item.unit}` : ''} — {fmt(item.line_total)}
                               </span>
                             </div>
@@ -482,7 +482,7 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
                   const sc = statusColors[ord.status] || '#94a3b8';
                   return (
                     <div key={ord.id} className="rounded-2xl p-4 transition-all"
-                      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(148,163,184,0.08)' }}>
+                      style={{ background: isDark ? 'rgba(255,255,255,0.04)' : '#f8fafc', border: '1px solid rgba(148,163,184,0.08)' }}>
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-xs font-mono font-bold" style={{ color: currentColor }}>{ord.order_number || ord.id.slice(0,8)}</p>
@@ -710,8 +710,8 @@ export default function Customers() {
             <button key={f.id} onClick={() => setFilterSource(f.id)}
               className="px-3 py-1 rounded-lg text-xs font-semibold transition-all"
               style={{
-                background: filterSource === f.id ? currentColor : 'rgba(255,255,255,0.06)',
-                color: filterSource === f.id ? '#fff' : '#94a3b8',
+                background: filterSource === f.id ? currentColor : (isDark ? 'rgba(255,255,255,0.06)' : '#f1f5f9'),
+                color: filterSource === f.id ? '#fff' : (isDark ? '#94a3b8' : '#475569'),
               }}>{f.label}</button>
           ))}
         </div>

@@ -1426,9 +1426,9 @@ function SectionCard({ title, icon: Icon, isDark = false, children }) {
         border: `1px solid ${isDark ? 'rgba(148,163,184,0.08)' : '#e8ecf0'}`
       }}>
       <div className="flex items-center gap-2">
-        <Icon size={14} style={{ color: isDark ? '#64748b' : '#94a3b8' }} />
+        <Icon size={14} style={{ color: isDark ? '#94a3b8' : '#64748b' }} />
         <h3 className="text-xs font-bold uppercase tracking-widest"
-          style={{ color: isDark ? '#64748b' : '#94a3b8' }}>{title}</h3>
+          style={{ color: isDark ? '#94a3b8' : '#64748b' }}>{title}</h3>
       </div>
       {children}
     </div>

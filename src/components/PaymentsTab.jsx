@@ -366,8 +366,8 @@ function PaymentFormModal({ payment, entityId, entityName, entityType, invoices,
             <div className="p-3 rounded-xl" style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.15)' }}>
               {fetchingRate
                 ? <p className="text-xs text-blue-400 flex items-center gap-1"><Loader2 size={11} className="animate-spin" />Kur çekiliyor...</p>
-                : <p className="text-xs text-blue-300">
-                    TL karşılığı: <strong className="text-blue-100">₺{fmt(form.amount_try || 0)}</strong>
+                : <p className={`text-xs ${isDark ? 'text-blue-300' : 'text-blue-700'}`}>
+                    TL karşılığı: <strong className={isDark ? 'text-blue-100' : 'text-blue-800'}>₺{fmt(form.amount_try || 0)}</strong>
                     {form.exchange_rate ? ` (1 ${form.currency} = ₺${form.exchange_rate})` : ''}
                   </p>}
             </div>
@@ -413,7 +413,7 @@ function PaymentFormModal({ payment, entityId, entityName, entityType, invoices,
               style={{ background: 'rgba(255,255,255,0.03)' }}>
               <div className="flex items-center gap-2">
                 <Bell size={13} style={{ color: color }} />
-                <span className="text-sm font-semibold text-slate-300">Hatırlatma Bildirimleri</span>
+                <span className={`text-sm font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Hatırlatma Bildirimleri</span>
               </div>
               <div className="flex items-center gap-2">
                 {form.reminder_settings?.enabled && (
@@ -441,7 +441,7 @@ function PaymentFormModal({ payment, entityId, entityName, entityType, invoices,
                         }}>
                         <div className="flex items-center justify-between">
                           <div>
-                            <p className="text-xs font-semibold" style={{ color: active ? color : '#e2e8f0' }}>{preset.label}</p>
+                            <p className="text-xs font-semibold" style={{ color: active ? color : (isDark ? '#e2e8f0' : '#94a3b8') }}>{preset.label}</p>
                             <p className="text-[10px] text-slate-500 mt-0.5">{preset.desc}</p>
                           </div>
                           {active && <Check size={13} style={{ color }} />}
@@ -481,8 +481,8 @@ function MarkPaidModal({ payment, onConfirm, onClose, color }) {
   const isPartial = parseFloat(paidAmt) < payment.amount;
 
   const inp = {
-    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(148,163,184,0.15)',
-    borderRadius: 10, color: '#f1f5f9', padding: '8px 12px', fontSize: 13, outline: 'none', width: '100%',
+    background: isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9', border: '1px solid rgba(148,163,184,0.15)',
+    borderRadius: 10, color: isDark ? '#f1f5f9' : '#1e293b', padding: '8px 12px', fontSize: 13, outline: 'none', width: '100%',
   };
 
   return (
@@ -534,7 +534,8 @@ function MarkPaidModal({ payment, onConfirm, onClose, color }) {
 
 // ─── Ana PaymentsTab ──────────────────────────────────────────────────────────
 export default function PaymentsTab({ entityId, entityName, entityType, payments, onPaymentsChange, setDialog, invoices, prefill, onPrefillUsed }) {
-  const { currentColor } = useTheme();
+  const { currentColor, effectiveMode } = useTheme();
+  const isDark = effectiveMode === 'dark';
   const [showForm,     setShowForm]     = useState(false);
   const [editing,      setEditing]      = useState(null);
   const [markingPaid,  setMarkingPaid]  = useState(null);
@@ -622,7 +623,7 @@ export default function PaymentsTab({ entityId, entityName, entityType, payments
           },
         ].map((s, i) => (
           <div key={i} className="rounded-xl p-2.5 text-center"
-            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(148,163,184,0.08)' }}>
+            style={{ background: isDark ? 'rgba(255,255,255,0.04)' : '#f1f5f9', border: '1px solid rgba(148,163,184,0.08)' }}>
             <p className="text-xs font-bold" style={{ color: s.color }}>{s.value}</p>
             <p className="text-[10px] text-slate-500 mt-0.5">{s.label}</p>
           </div>
@@ -652,8 +653,8 @@ export default function PaymentsTab({ entityId, entityName, entityType, payments
             <button key={f.id} onClick={() => setFilterStatus(f.id)}
               className="px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all"
               style={{
-                background: filterStatus === f.id ? currentColor : 'rgba(255,255,255,0.05)',
-                color: filterStatus === f.id ? '#fff' : '#94a3b8',
+                background: filterStatus === f.id ? currentColor : (isDark ? 'rgba(255,255,255,0.05)' : '#f1f5f9'),
+                color: filterStatus === f.id ? '#fff' : (isDark ? '#94a3b8' : '#64748b'),
               }}>
               {f.l}
             </button>

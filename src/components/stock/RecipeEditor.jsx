@@ -12,6 +12,7 @@ import { Plus, Trash2, Copy, ChevronDown, ChevronRight, Search, X, Check, AlertC
 import { useTheme } from '../../contexts/ThemeContext';
 import { useFxRates } from '../../hooks/useFxRates';
 import { trNorm } from '../../lib/trNorm';
+import { printDocument } from '../../lib/printService';
 
 const UNITS = ['Adet','Metre','cm','mm','Kg','g','Litre','ml','m²','m³','Rulo','Paket','Kutu','Set','Takım'];
 const CURRENCY_SYM = { TRY: '₺', USD: '$', EUR: '€' };
@@ -376,46 +377,42 @@ function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
         </div>
         <div className="flex items-center gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
           <button onClick={() => {
-            const html = `
-              <div style="font-family:sans-serif;color:#1e293b;padding:20px;">
-                <h2 style="margin-bottom:20px;font-size:24px;border-bottom:2px solid #e2e8f0;padding-bottom:10px">
-                  ${recipe.name}
-                </h2>
-                <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
-                  <thead>
-                    <tr style="background:#f8fafc">
-                      <th style="padding:10px;border:1px solid #e2e8f0;text-align:left;font-size:14px">#</th>
-                      <th style="padding:10px;border:1px solid #e2e8f0;text-align:left;font-size:14px">Malzeme</th>
-                      <th style="padding:10px;border:1px solid #e2e8f0;text-align:right;font-size:14px">Miktar</th>
-                      <th style="padding:10px;border:1px solid #e2e8f0;text-align:left;font-size:14px">Birim</th>
-                      <th style="padding:10px;border:1px solid #e2e8f0;text-align:right;font-size:14px">B. Maliyet</th>
-                      <th style="padding:10px;border:1px solid #e2e8f0;text-align:right;font-size:14px">Tutar</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${(recipe.recipe_items || []).map((ri, i) => {
-                      const qty = Number(ri.quantity || 1);
-                      const price = Number(ri.item?.purchase_price || 0);
-                      const sym = CURRENCY_SYM[ri.item?.base_currency || 'TRY'] || '₺';
-                      return `<tr>
-                        <td style="padding:10px;border:1px solid #e2e8f0;font-size:13px">${i+1}</td>
-                        <td style="padding:10px;border:1px solid #e2e8f0;font-size:13px">${ri.item_name}</td>
-                        <td style="padding:10px;border:1px solid #e2e8f0;font-size:13px;text-align:right">${qty}</td>
-                        <td style="padding:10px;border:1px solid #e2e8f0;font-size:13px">${ri.unit}</td>
-                        <td style="padding:10px;border:1px solid #e2e8f0;font-size:13px;text-align:right">${sym}${price.toFixed(2)}</td>
-                        <td style="padding:10px;border:1px solid #e2e8f0;font-size:13px;text-align:right;font-weight:bold">${sym}${(qty*price).toFixed(2)}</td>
-                      </tr>`;
-                    }).join('')}
-                  </tbody>
-                </table>
-                <div style="text-align:right;font-size:18px;font-weight:bold;margin-top:20px;color:#10b981">
-                  Maliyet Toplamı: ${CURRENCY_SYM[productCurrency || 'TRY'] || '₺'}${totalCost.toFixed(2)}
-                </div>
-              </div>
-            `;
-            const printWindow = window.open('', '_blank');
-            printWindow.document.write('<html><head><title>Reçete Yazdır</title></head><body onload="window.print();window.close()">' + html + '</body></html>');
-            printWindow.document.close();
+            const baseCur = productCurrency || 'TRY';
+            const baseSym = CURRENCY_SYM[baseCur] || '₺';
+            const convertedIngredients = (recipe.recipe_items || []).map(ri => {
+              const rawCost = Number(ri.item?.purchase_price || 0);
+              const riCur = ri.item?.base_currency || 'TRY';
+              const convertedUnitCost = convert(rawCost, riCur, baseCur);
+              return {
+                item_name: ri.item_name,
+                quantity: ri.quantity,
+                unit: ri.unit || 'Adet',
+                unit_cost: convertedUnitCost,
+                total_cost: convertedUnitCost * Number(ri.quantity || 1),
+                currency_sym: baseSym,
+              };
+            });
+            // Diğer Giderler (işçilik vs.) dahil et
+            (recipe.other_costs || []).forEach(oc => {
+              const costConverted = convert(Number(oc.amount) || 0, oc.currency || 'TRY', baseCur);
+              convertedIngredients.push({
+                item_name: oc.type,
+                quantity: 1,
+                unit: 'Adet',
+                unit_cost: costConverted,
+                total_cost: costConverted,
+                currency_sym: baseSym,
+              });
+            });
+            const printTotal = convertedIngredients.reduce((s, ci) => s + ci.total_cost, 0);
+            printDocument('recipe', {
+              product_name: productName,
+              recipe_name: recipe.name,
+              tags: (recipe.tags || []).join(', '),
+              currency_sym: baseSym,
+              ingredients: convertedIngredients,
+              total_cost: printTotal,
+            }, `Reçete - ${productName} (${recipe.name})`);
           }}
             className="p-1.5 rounded-lg hover:bg-emerald-500/10 transition-colors"
             title="Reçeteyi Yazdır" style={{ color: '#10b981' }}>
