@@ -240,6 +240,7 @@ export default function RecipeEditor({ productId, productName, productCurrency, 
           fxRates={fxRates}
           productCurrency={productCurrency}
           c={c} currentColor={currentColor} isDark={isDark}
+          productName={productName}
         />
       ))}
 
@@ -259,7 +260,7 @@ export default function RecipeEditor({ productId, productName, productCurrency, 
 // ═══════════════════════ RECIPE CARD ═══════════════════════
 function RecipeCard({ recipe, index, expanded, onToggle, onUpdateMeta, onDelete,
   onAddItem, onUpdateItem, onSaveItem, onDeleteItem, onToggleTag, onCopyThisRecipe,
-  rawItems, costTypes, convert, fxRates, productCurrency, c, currentColor, isDark }) {
+  rawItems, costTypes, convert, fxRates, productCurrency, c, currentColor, isDark, productName }) {
 
   const [tagInput, setTagInput] = useState('');
   const [editingName, setEditingName] = useState(false);
