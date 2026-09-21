@@ -1052,6 +1052,7 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
   const [recipeStocks, setRecipeStocks] = React.useState([]);
   const [customRecipeStocks, setCustomRecipeStocks] = React.useState([]); // özel reçeteden üretilenler
   const [rcpLoading, setRcpLoading] = React.useState(false);
+  const [recipeSalesData, setRecipeSalesData] = React.useState({ sales: [], orderMap: {} }); // satış verileri
   const isProduct = item.item_type === 'product';
 
   const [qe, setQe] = React.useState(false);
@@ -1231,7 +1232,14 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
           .eq('item_id', item.id)
           .not('custom_recipe_data', 'is', null)
           .order('created_at', { ascending: false }),
-      ]).then(([sRes, mvRes]) => {
+        // Satış hareketlerini çek (maliyet/kâr analizi için)
+        supabase.from('stock_movements')
+          .select('*')
+          .eq('item_id', item.id)
+          .eq('source', 'sale')
+          .order('created_at', { ascending: false })
+          .limit(100),
+      ]).then(async ([sRes, mvRes, saleRes]) => {
         setRecipeStocks(sRes.data || []);
         // Özel reçeteleri grupla (custom_recipe_data JSON hash'ine göre)
         const customMap = {};
@@ -1248,6 +1256,26 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
           customMap[key].movements.push(mv);
         });
         setCustomRecipeStocks(Object.values(customMap).filter(c => c.count > 0));
+
+        // Satış verilerini zenginleştir (sipariş detayları + müşteri)
+        const saleMvs = saleRes.data || [];
+        const saleIds = [...new Set(saleMvs.map(m => m.source_id).filter(Boolean))];
+        let orderMap = {};
+        if (saleIds.length > 0) {
+          const [oiRes, ordRes] = await Promise.all([
+            supabase.from('order_items').select('order_id, unit_price, quantity').in('order_id', saleIds).eq('item_id', item.id),
+            supabase.from('orders').select('id, order_number, currency, contact_name').in('id', saleIds),
+          ]);
+          (oiRes.data || []).forEach(oi => {
+            const ord = (ordRes.data || []).find(o => o.id === oi.order_id);
+            orderMap[oi.order_id] = {
+              unit_price: oi.unit_price, quantity: oi.quantity,
+              order_number: ord?.order_number, currency: ord?.currency,
+              contact_name: ord?.contact_name,
+            };
+          });
+        }
+        setRecipeSalesData({ sales: saleMvs, orderMap });
         setRcpLoading(false);
       });
     }
@@ -1549,7 +1577,47 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
           )}
 
           {/* Reçeteler tab — sadece mamül ürünlerde */}
-          {tab === 'recipes' && isProduct && (
+          {tab === 'recipes' && isProduct && (() => {
+            // Satış analiz verileri hesapla
+            const { sales: saleMvs, orderMap } = recipeSalesData;
+            const fmtP = (n) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const totalSaleQty = saleMvs.reduce((s, m) => s + Math.abs(Number(m.delta) || 0), 0);
+            // Reçete bazlı maliyet hesapla
+            const getRecipeCost = (r) => {
+              let cost = (r.recipe_items || []).reduce((s, ri) => {
+                const itemVal = Number(ri.item?.purchase_price || 0) * Number(ri.quantity || 1);
+                return s + convert(itemVal, ri.item?.base_currency || 'TRY', item.base_currency || 'TRY');
+              }, 0);
+              cost += (r.other_costs || []).reduce((s, oc) => {
+                return s + convert(Number(oc.amount) || 0, oc.currency || 'TRY', item.base_currency || 'TRY');
+              }, 0);
+              return cost;
+            };
+            // Satış geliri hesapla
+            let totalRevenue = 0; let totalCostSold = 0;
+            saleMvs.forEach(m => {
+              const info = orderMap[m.source_id];
+              const qty = Math.abs(Number(m.delta) || 0);
+              const unitPrice = info?.unit_price ?? item.sale_price ?? 0;
+              const saleCur = info?.currency || item.sale_currency || 'TRY';
+              totalRevenue += convert(unitPrice * qty, saleCur, item.base_currency || 'TRY');
+              // Bu satışın reçete maliyeti
+              const rcp = m.recipe_id ? recipes.find(r => r.id === m.recipe_id) : recipes[0];
+              if (rcp) totalCostSold += getRecipeCost(rcp) * qty;
+              else if (avgCost) totalCostSold += Number(avgCost) * qty;
+            });
+            const totalProfit = totalRevenue - totalCostSold;
+            const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0;
+            // Toplam stok değeri
+            const totalStockCount = recipeStocks.reduce((s, rs) => s + (Number(rs.stock_count) || 0), 0)
+              + customRecipeStocks.reduce((s, cs) => s + (Number(cs.count) || 0), 0);
+            let totalStockValue = 0;
+            recipes.forEach(r => {
+              const rs = recipeStocks.find(s => s.recipe_id === r.id);
+              totalStockValue += getRecipeCost(r) * (rs?.stock_count || 0);
+            });
+
+            return (
             <div className="px-4 py-3 space-y-3">
               {rcpLoading && (
                 <div className="flex items-center justify-center py-12">
@@ -1562,9 +1630,64 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
                   <p className="text-xs" style={{ color: c.muted }}>Henüz reçete tanımlanmamış</p>
                 </div>
               )}
+
+              {/* ── GENEL ÖZET KUTUSU ── */}
+              {!rcpLoading && (recipes.length > 0 || customRecipeStocks.length > 0) && (
+                <div className="rounded-xl p-3 space-y-2" style={{ background: isDark ? 'rgba(139,92,246,0.06)' : 'rgba(139,92,246,0.04)', border: `1px solid ${isDark ? 'rgba(139,92,246,0.15)' : 'rgba(139,92,246,0.12)'}` }}>
+                  <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#a78bfa' }}>📊 Reçete Özeti</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: 'Toplam Stok', value: `${totalStockCount} ${item.unit}`, color: '#10b981' },
+                      { label: 'Stok Değeri', value: `${sym}${fmtP(totalStockValue)}`, color: '#a78bfa' },
+                      { label: 'Toplam Satış', value: `${totalSaleQty} ${item.unit}`, color: '#3b82f6' },
+                      { label: 'Satış Geliri', value: `${sym}${fmtP(totalRevenue)}`, color: '#3b82f6' },
+                      { label: 'Toplam Maliyet', value: `${sym}${fmtP(totalCostSold)}`, color: '#f59e0b' },
+                      { label: 'Kâr', value: `${sym}${fmtP(totalProfit)}`, color: totalProfit >= 0 ? '#10b981' : '#ef4444' },
+                    ].map((s, i) => (
+                      <div key={i} className="rounded-lg px-2.5 py-1.5" style={{ background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.8)' }}>
+                        <p className="text-[9px]" style={{ color: c.muted }}>{s.label}</p>
+                        <p className="text-[11px] font-black" style={{ color: s.color }}>{s.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {totalRevenue > 0 && (
+                    <div className="flex items-center gap-2 pt-1">
+                      <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: isDark ? 'rgba(255,255,255,0.06)' : '#e2e8f0' }}>
+                        <div className="h-full rounded-full" style={{ width: `${Math.min(100, Math.max(0, profitMargin))}%`, background: profitMargin >= 0 ? '#10b981' : '#ef4444' }}/>
+                      </div>
+                      <span className="text-[10px] font-black" style={{ color: profitMargin >= 0 ? '#10b981' : '#ef4444' }}>
+                        %{fmtP(profitMargin)} kâr
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── REÇETE KARTLARI ── */}
               {!rcpLoading && recipes.map(r => {
                 const rs = recipeStocks.find(s => s.recipe_id === r.id);
                 const stk = rs?.stock_count || 0;
+                const costInBase = getRecipeCost(r);
+                const salePrice = Number(item.sale_price || 0);
+                const salePriceConverted = salePrice > 0 ? convert(salePrice, item.sale_currency || 'TRY', item.base_currency || 'TRY') : 0;
+                const unitProfit = salePriceConverted - costInBase;
+                const unitMargin = salePriceConverted > 0 ? (unitProfit / salePriceConverted * 100) : 0;
+                // Bu reçetenin satış hareketleri
+                const recipeSales = saleMvs.filter(m => m.recipe_id === r.id);
+                const noRecipeSales = saleMvs.filter(m => !m.recipe_id);
+                const relevantSales = recipeSales.length > 0 ? recipeSales : (recipes.length === 1 ? noRecipeSales : []);
+                const recSaleQty = relevantSales.reduce((s, m) => s + Math.abs(Number(m.delta) || 0), 0);
+                let recRevenue = 0;
+                relevantSales.forEach(m => {
+                  const info = orderMap[m.source_id];
+                  const qty = Math.abs(Number(m.delta) || 0);
+                  const up = info?.unit_price ?? salePrice;
+                  const sCur = info?.currency || item.sale_currency || 'TRY';
+                  recRevenue += convert(up * qty, sCur, item.base_currency || 'TRY');
+                });
+                const recCost = costInBase * recSaleQty;
+                const recProfit = recRevenue - recCost;
+
                 return (
                   <div key={r.id} className="rounded-xl overflow-hidden"
                     style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#fff', border: `1px solid ${isDark ? 'rgba(139,92,246,0.15)' : 'rgba(139,92,246,0.2)'}` }}>
@@ -1614,24 +1737,86 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
                         ))}
                       </div>
                     )}
-                    {(() => {
-                      let costInBase = (r.recipe_items || []).reduce((s, ri) => {
-                        const itemVal = Number(ri.item?.purchase_price || 0) * Number(ri.quantity || 1);
-                        return s + convert(itemVal, ri.item?.base_currency || 'TRY', item.base_currency || 'TRY');
-                      }, 0);
-                      costInBase += (r.other_costs || []).reduce((s, oc) => {
-                        return s + convert(Number(oc.amount) || 0, oc.currency || 'TRY', item.base_currency || 'TRY');
-                      }, 0);
-                      return costInBase > 0 ? (
-                        <div className="px-3 pb-2 flex items-center justify-between" style={{ borderTop: '1px solid rgba(139,92,246,0.06)' }}>
-                          <span className="text-[9px] font-bold" style={{ color: '#94a3b8' }}>Birim Maliyet ({sym})</span>
-                          <span className="text-[10px] font-black flex items-center gap-1" style={{ color: '#a78bfa' }}>
-                            {sym}{costInBase.toFixed(2)}
-                            {r.other_costs?.length > 0 && <span className="text-[8px] opacity-70">(giderler dahil)</span>}
+
+                    {/* ── MALİYET & KÂR ANALİZİ ── */}
+                    {costInBase > 0 && (
+                      <div className="px-3 py-2 space-y-1.5" style={{ borderTop: `1px solid ${isDark ? 'rgba(139,92,246,0.1)' : 'rgba(139,92,246,0.08)'}`, background: isDark ? 'rgba(0,0,0,0.15)' : 'rgba(248,250,252,0.8)' }}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] font-bold" style={{ color: '#94a3b8' }}>Birim Maliyet</span>
+                          <span className="text-[10px] font-black" style={{ color: '#a78bfa' }}>
+                            {sym}{fmtP(costInBase)}
+                            {r.other_costs?.length > 0 && <span className="text-[8px] opacity-70 ml-1">(giderler dahil)</span>}
                           </span>
                         </div>
-                      ) : null;
-                    })()}
+                        {salePriceConverted > 0 && (
+                          <>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[9px] font-bold" style={{ color: '#94a3b8' }}>Satış Fiyatı</span>
+                              <span className="text-[10px] font-black" style={{ color: '#3b82f6' }}>{sym}{fmtP(salePriceConverted)}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[9px] font-bold" style={{ color: '#94a3b8' }}>Birim Kâr</span>
+                              <span className="text-[10px] font-black" style={{ color: unitProfit >= 0 ? '#10b981' : '#ef4444' }}>
+                                {unitProfit >= 0 ? '+' : ''}{sym}{fmtP(unitProfit)} <span className="text-[8px] opacity-80">(%{fmtP(unitMargin)})</span>
+                              </span>
+                            </div>
+                            {stk > 0 && (
+                              <div className="flex items-center justify-between pt-1" style={{ borderTop: '1px dashed rgba(148,163,184,0.15)' }}>
+                                <span className="text-[9px] font-bold" style={{ color: '#94a3b8' }}>Stok Değeri</span>
+                                <span className="text-[10px] font-black" style={{ color: '#a78bfa' }}>{sym}{fmtP(costInBase * stk)}</span>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── SATIŞ GEÇMİŞİ ── */}
+                    {relevantSales.length > 0 && (
+                      <div className="px-3 py-2 space-y-1.5" style={{ borderTop: `1px solid ${isDark ? 'rgba(59,130,246,0.1)' : 'rgba(59,130,246,0.08)'}`, background: isDark ? 'rgba(59,130,246,0.04)' : 'rgba(59,130,246,0.02)' }}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#3b82f6' }}>📈 Satış Özeti</span>
+                          <span className="text-[10px] font-black" style={{ color: '#3b82f6' }}>{recSaleQty} {item.unit}</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-[9px]" style={{ color: c.muted }}>Gelir: <strong style={{ color: '#3b82f6' }}>{sym}{fmtP(recRevenue)}</strong></span>
+                          <span className="text-[9px]" style={{ color: c.muted }}>Maliyet: <strong style={{ color: '#f59e0b' }}>{sym}{fmtP(recCost)}</strong></span>
+                          <span className="text-[9px]" style={{ color: c.muted }}>Kâr: <strong style={{ color: recProfit >= 0 ? '#10b981' : '#ef4444' }}>{sym}{fmtP(recProfit)}</strong></span>
+                        </div>
+                        {/* Son satışlar */}
+                        <div className="space-y-1 pt-1">
+                          {relevantSales.slice(0, 5).map((m, si) => {
+                            const info = orderMap[m.source_id];
+                            const qty = Math.abs(Number(m.delta) || 0);
+                            const up = info?.unit_price ?? salePrice;
+                            const sCur = info?.currency || item.sale_currency || 'TRY';
+                            const sCurSym = CURRENCY_SYM[sCur] || '₺';
+                            const dt = new Date(m.created_at);
+                            return (
+                              <div key={si} className="flex items-center justify-between text-[9px] py-0.5 rounded-md px-1.5"
+                                style={{ background: isDark ? 'rgba(59,130,246,0.06)' : 'rgba(59,130,246,0.04)' }}>
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span style={{ color: c.muted }}>{dt.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' })}</span>
+                                  {info?.contact_name && (
+                                    <span className="font-bold truncate" style={{ color: isDark ? '#e2e8f0' : '#1e293b', maxWidth: '100px' }}>{info.contact_name}</span>
+                                  )}
+                                  {info?.order_number && (
+                                    <span className="font-semibold px-1 py-0.5 rounded-full" style={{ background: 'rgba(59,130,246,0.08)', color: '#3b82f6', fontSize: 8 }}>#{info.order_number}</span>
+                                  )}
+                                </div>
+                                <span className="font-bold flex-shrink-0" style={{ color: '#3b82f6' }}>
+                                  {qty}× {sCurSym}{fmtP(up)}
+                                </span>
+                              </div>
+                            );
+                          })}
+                          {relevantSales.length > 5 && (
+                            <p className="text-[9px] text-center pt-0.5" style={{ color: c.muted }}>+{relevantSales.length - 5} daha...</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Reçete Yazdır */}
                     <div className="px-3 pb-2.5 pt-1" style={{ borderTop: '1px solid rgba(139,92,246,0.06)' }}>
                       <button onClick={(e) => {
@@ -1683,6 +1868,7 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
                   </div>
                 );
               })}
+
               {/* Özel reçete stokları (stock_movements'tan hesaplanan) */}
               {!rcpLoading && customRecipeStocks.length > 0 && (
                 <div className="space-y-2">
@@ -1691,6 +1877,20 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
                   </p>
                   {customRecipeStocks.map((cs, idx) => {
                     const baseRecipe = recipes.find(r => r.id === cs.recipe_id);
+                    // Özel reçete maliyet hesabı
+                    let customCost = 0;
+                    (cs.items || []).forEach(ri => {
+                      if (ri._isOtherCost) {
+                        customCost += convert(Number(ri.purchase_price || 0), ri.base_currency || 'TRY', item.base_currency || 'TRY');
+                      } else {
+                        const itemVal = Number(ri.purchase_price || 0) * Number(ri.quantity || 1);
+                        customCost += convert(itemVal, ri.base_currency || 'TRY', item.base_currency || 'TRY');
+                      }
+                    });
+                    const salePriceC = Number(item.sale_price || 0);
+                    const salePriceConv = salePriceC > 0 ? convert(salePriceC, item.sale_currency || 'TRY', item.base_currency || 'TRY') : 0;
+                    const customProfit = salePriceConv - customCost;
+
                     return (
                       <div key={idx} className="rounded-xl overflow-hidden"
                         style={{ background: 'rgba(245,158,11,0.04)', border: '1px solid rgba(245,158,11,0.2)' }}>
@@ -1750,6 +1950,29 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
                             </>
                           )}
                         </div>
+                        {/* Özel reçete maliyet analizi */}
+                        {customCost > 0 && (
+                          <div className="px-3 py-2 space-y-1" style={{ borderTop: '1px solid rgba(245,158,11,0.15)', background: isDark ? 'rgba(0,0,0,0.15)' : 'rgba(248,250,252,0.8)' }}>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[9px] font-bold" style={{ color: '#94a3b8' }}>Birim Maliyet</span>
+                              <span className="text-[10px] font-black" style={{ color: '#f59e0b' }}>{sym}{fmtP(customCost)}</span>
+                            </div>
+                            {salePriceConv > 0 && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-[9px] font-bold" style={{ color: '#94a3b8' }}>Birim Kâr</span>
+                                <span className="text-[10px] font-black" style={{ color: customProfit >= 0 ? '#10b981' : '#ef4444' }}>
+                                  {customProfit >= 0 ? '+' : ''}{sym}{fmtP(customProfit)} <span className="text-[8px] opacity-80">(%{fmtP(salePriceConv > 0 ? customProfit/salePriceConv*100 : 0)})</span>
+                                </span>
+                              </div>
+                            )}
+                            {cs.count > 0 && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-[9px] font-bold" style={{ color: '#94a3b8' }}>Stok Değeri</span>
+                                <span className="text-[10px] font-black" style={{ color: '#f59e0b' }}>{sym}{fmtP(customCost * cs.count)}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -1772,7 +1995,8 @@ function ItemDetailPanel({ item, allMaterials, c, currentColor, isDark, onClose,
                 </div>
               ))}
             </div>
-          )}
+            );
+          })()}
 
           {/* Fiyat Geçmişi tab */}
           {tab === 'prices' && (
