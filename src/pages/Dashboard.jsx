@@ -79,7 +79,8 @@ function StatCard({ label, value, sub, icon: Icon, color, trend, isDark }) {
 }
 
 /* ─── Report Table ────────────────────────────────────────────────────────── */
-function ReportTable({ columns, rows, isDark, emptyText = 'Veri bulunamadı' }) {
+function ReportTable({ columns, rows, isDark, emptyText = 'Veri bulunamadı', expandable, renderExpand }) {
+  const [expandedIdx, setExpandedIdx] = React.useState(null);
   const c = {
     headerBg: isDark ? 'rgba(30,41,59,0.7)' : '#f1f5f9',
     rowHover: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
@@ -106,17 +107,28 @@ function ReportTable({ columns, rows, isDark, emptyText = 'Veri bulunamadı' }) 
                 {emptyText}
               </td></tr>
             ) : rows.map((row, ri) => (
-              <tr key={ri} className="border-t transition-colors"
-                style={{ borderColor: c.border }}
-                onMouseEnter={e => e.currentTarget.style.background = c.rowHover}
-                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                {columns.map((col, ci) => (
-                  <td key={ci} className={`px-4 py-3 text-xs ${col.align === 'right' ? 'text-right font-mono' : ''} ${col.bold ? 'font-semibold' : ''}`}
-                    style={{ color: col.color?.(row) || c.text }}>
-                    {col.render ? col.render(row) : row[col.key]}
-                  </td>
-                ))}
-              </tr>
+              <React.Fragment key={ri}>
+                <tr className="border-t transition-colors"
+                  style={{ borderColor: c.border, cursor: expandable?.(row) ? 'pointer' : 'default' }}
+                  onClick={() => expandable?.(row) && setExpandedIdx(expandedIdx === ri ? null : ri)}
+                  onMouseEnter={e => e.currentTarget.style.background = c.rowHover}
+                  onMouseLeave={e => e.currentTarget.style.background = expandedIdx === ri ? c.rowHover : 'transparent'}>
+                  {columns.map((col, ci) => (
+                    <td key={ci} className={`px-4 py-3 text-xs ${col.align === 'right' ? 'text-right font-mono' : ''} ${col.bold ? 'font-semibold' : ''}`}
+                      style={{ color: col.color?.(row) || c.text }}>
+                      {ci === 0 && expandable?.(row) && (
+                        <span className="mr-1.5 text-[10px] opacity-50">{expandedIdx === ri ? '▼' : '▶'}</span>
+                      )}
+                      {col.render ? col.render(row) : row[col.key]}
+                    </td>
+                  ))}
+                </tr>
+                {expandedIdx === ri && renderExpand && (
+                  <tr><td colSpan={columns.length} style={{ padding: 0, borderTop: `1px solid ${c.border}` }}>
+                    {renderExpand(row)}
+                  </td></tr>
+                )}
+              </React.Fragment>
             ))}
           </tbody>
           {rows.length > 0 && columns.some(c => c.total) && (
@@ -392,10 +404,10 @@ export default function Dashboard() {
   const renderReceteli = () => {
     // İş emirlerinden ürün bazlı gruplama
     const statusLabels = { pending: '⏳ Bekliyor', in_progress: '⚡ Üretimde', completed: '✅ Tamamlandı', cancelled: '❌ İptal' };
-    const orderMap = Object.fromEntries(filteredOrders.map(o => [o.id, o]));
+    const orderLookup = Object.fromEntries(filteredOrders.map(o => [o.id, o]));
     // Satır bazlı gösterim — her iş emri bir satır
-    const rows = workOrders.map(wo => {
-      const order = orderMap[wo.order_id];
+    const woRows = workOrders.map(wo => {
+      const order = orderLookup[wo.order_id];
       const stockItem = itemMap[wo.item_id];
       return {
         product: stockItem?.name || wo.item_name || 'Bilinmeyen',
@@ -408,7 +420,7 @@ export default function Dashboard() {
         date: wo.created_at ? new Date(wo.created_at).toLocaleDateString('tr-TR') : '',
       };
     });
-    const sorted = rows.sort((a, b) => {
+    const sortedWo = woRows.sort((a, b) => {
       const order = { pending: 0, in_progress: 1, completed: 2, cancelled: 3 };
       return (order[a.status] ?? 9) - (order[b.status] ?? 9);
     });
@@ -416,14 +428,147 @@ export default function Dashboard() {
     const pending = workOrders.filter(w => w.status === 'pending').length;
     const inProg = workOrders.filter(w => w.status === 'in_progress').length;
     const done = workOrders.filter(w => w.status === 'completed').length;
+
+    // ── ÜRÜN BAZLI MALİYET / SATIŞ / KÂR ANALİZİ ──
+    const productGrouped = {};
+    filteredOrderItems.forEach(oi => {
+      if (!isRecipeProduct(oi.item_id)) return;
+      const key = oi.item_id || oi.item_name;
+      const itm = itemMap[oi.item_id];
+      const order = filteredOrders.find(o => o.id === oi.order_id);
+      if (!productGrouped[key]) productGrouped[key] = {
+        name: oi.item_name,
+        qty: 0, revenue: 0,
+        unitCost: recipeCost(oi.item_id),
+        salePrice: itm?.sale_price || 0,
+        saleCurrency: itm?.sale_currency || 'TRY',
+        currency: itm?.base_currency || 'TRY',
+        recordedCost: 0, hasRecordedCost: false,
+        customers: {},
+      };
+      const qty = Number(oi.quantity || 0);
+      productGrouped[key].qty += qty;
+      const unitPrice = Number(oi.unit_price || 0);
+      const orderCur = order?.currency || 'TRY';
+      productGrouped[key].revenue += convert(unitPrice * qty, orderCur, 'TRY');
+      // Kayıtlı maliyet varsa kullan
+      if (oi.cost_at_sale > 0) {
+        productGrouped[key].recordedCost += oi.cost_at_sale * qty;
+        productGrouped[key].hasRecordedCost = true;
+      }
+      // Müşteri bazlı gruplama
+      const custName = order?.customer_name || 'Bilinmeyen';
+      if (!productGrouped[key].customers[custName]) {
+        productGrouped[key].customers[custName] = { qty: 0, revenue: 0 };
+      }
+      productGrouped[key].customers[custName].qty += qty;
+      productGrouped[key].customers[custName].revenue += convert(unitPrice * qty, orderCur, 'TRY');
+    });
+    // Özel reçeteli ürünler (item_id olmayan)
+    filteredOrderItems.forEach(oi => {
+      if (oi.item_id || !oi.cost_details) return;
+      let costDetails = oi.cost_details;
+      if (typeof costDetails === 'string') try { costDetails = JSON.parse(costDetails); } catch(_) { return; }
+      if (!costDetails?.recipe_items && !costDetails?.materials) return;
+      const key = `adhoc_${oi.item_name}`;
+      const order = filteredOrders.find(o => o.id === oi.order_id);
+      if (!productGrouped[key]) productGrouped[key] = {
+        name: `📌 ${oi.item_name}`,
+        qty: 0, revenue: 0,
+        unitCost: 0,
+        salePrice: 0,
+        saleCurrency: 'TRY',
+        currency: 'TRY',
+        recordedCost: 0, hasRecordedCost: false,
+        customers: {},
+        isAdHoc: true,
+      };
+      const qty = Number(oi.quantity || 0);
+      const orderCur = order?.currency || 'TRY';
+      productGrouped[key].qty += qty;
+      productGrouped[key].revenue += convert(Number(oi.unit_price || 0) * qty, orderCur, 'TRY');
+      if (oi.cost_at_sale > 0) {
+        productGrouped[key].recordedCost += oi.cost_at_sale * qty;
+        productGrouped[key].hasRecordedCost = true;
+      }
+      const custName = order?.customer_name || 'Bilinmeyen';
+      if (!productGrouped[key].customers[custName]) productGrouped[key].customers[custName] = { qty: 0, revenue: 0 };
+      productGrouped[key].customers[custName].qty += qty;
+      productGrouped[key].customers[custName].revenue += convert(Number(oi.unit_price || 0) * qty, orderCur, 'TRY');
+    });
+
+    Object.values(productGrouped).forEach(g => {
+      if (g.hasRecordedCost) {
+        g.cost = g.recordedCost;
+      } else {
+        g.cost = g.unitCost * g.qty;
+      }
+      g.profit = g.revenue - g.cost;
+      g.margin = g.revenue > 0 ? (g.profit / g.revenue * 100) : 0;
+      // Müşteri listesi
+      g.customerList = Object.entries(g.customers)
+        .map(([name, d]) => ({ name, qty: d.qty, revenue: d.revenue }))
+        .sort((a, b) => b.revenue - a.revenue);
+    });
+    const productSorted = Object.values(productGrouped).sort((a, b) => b.revenue - a.revenue);
+    const totalRevenue = productSorted.reduce((s, p) => s + p.revenue, 0);
+    const totalCost = productSorted.reduce((s, p) => s + p.cost, 0);
+    const totalProfit = totalRevenue - totalCost;
+
     return (
       <div className="space-y-4">
+        {/* Özet Kartları */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <StatCard label="Toplam İş Emri" value={fmtInt(workOrders.length)} icon={Package} color="#8b5cf6" isDark={isDark} />
           <StatCard label="Bekleyen" value={fmtInt(pending)} icon={Clock} color="#f59e0b" isDark={isDark} />
           <StatCard label="Üretimde" value={fmtInt(inProg)} icon={RefreshCw} color="#3b82f6" isDark={isDark} />
           <StatCard label="Tamamlanan" value={fmtInt(done)} icon={CheckCircle2} color="#22c55e" isDark={isDark} />
         </div>
+
+        {/* Finansal Özet */}
+        {productSorted.length > 0 && (
+          <div className="grid grid-cols-3 gap-3">
+            <StatCard label="Satış Geliri" value={`₺${fmt(totalRevenue)}`} icon={TrendingUp} color="#3b82f6" isDark={isDark} />
+            <StatCard label="Toplam Maliyet" value={`₺${fmt(totalCost)}`} icon={Calculator} color="#f59e0b" isDark={isDark} />
+            <StatCard label="Net Kâr" value={`₺${fmt(totalProfit)}`}
+              sub={totalRevenue > 0 ? `%${fmt(totalProfit / totalRevenue * 100)} marj` : ''}
+              icon={TrendingUp} color={totalProfit >= 0 ? '#22c55e' : '#ef4444'} isDark={isDark} />
+          </div>
+        )}
+
+        {/* Ürün Bazlı Maliyet/Satış/Kâr Tablosu */}
+        <ReportTable isDark={isDark} emptyText="Bu ay reçeteli ürün satışı yok"
+          columns={[
+            { label: 'Ürün', key: 'name', bold: true },
+            { label: 'Miktar', key: 'qty', align: 'right', total: true, render: r => fmtInt(r.qty) },
+            { label: 'B. Maliyet', key: 'unitCost', align: 'right', render: r => `₺${fmt(r.unitCost)}` },
+            { label: 'Maliyet', key: 'cost', align: 'right', total: true, render: r => `₺${fmt(r.cost)}` },
+            { label: 'Satış', key: 'revenue', align: 'right', total: true, render: r => `₺${fmt(r.revenue)}` },
+            { label: 'Kâr', key: 'profit', align: 'right', total: true,
+              render: r => `₺${fmt(r.profit)}`,
+              color: r => r.profit >= 0 ? '#22c55e' : '#ef4444' },
+            { label: 'Marj', key: 'margin', align: 'right',
+              render: r => `%${fmt(r.margin)}`,
+              color: r => r.margin >= 0 ? '#22c55e' : '#ef4444' },
+          ]}
+          rows={productSorted}
+          expandable={r => r.customerList?.length > 0}
+          renderExpand={r => (
+            <div className="px-4 py-2 space-y-1" style={{ background: isDark ? 'rgba(139,92,246,0.04)' : 'rgba(139,92,246,0.02)' }}>
+              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#8b5cf6' }}>Müşteri Dağılımı</p>
+              {r.customerList.map((cust, ci) => (
+                <div key={ci} className="flex items-center justify-between text-[11px]">
+                  <span style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}>{cust.name}</span>
+                  <span style={{ color: '#94a3b8' }}>
+                    {fmtInt(cust.qty)} adet · <strong style={{ color: '#3b82f6' }}>₺{fmt(cust.revenue)}</strong>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        />
+
+        {/* İş Emirleri Tablosu */}
         <ReportTable isDark={isDark} emptyText="Bu ay iş emri yok"
           columns={[
             { label: 'Ürün', key: 'product', bold: true,
@@ -436,7 +581,7 @@ export default function Dashboard() {
               color: r => r.status === 'completed' ? '#22c55e' : r.status === 'in_progress' ? '#3b82f6' : r.status === 'cancelled' ? '#ef4444' : '#f59e0b' },
             { label: 'Tarih', key: 'date' },
           ]}
-          rows={sorted}
+          rows={sortedWo}
         />
       </div>
     );
