@@ -324,6 +324,74 @@ export default function Dashboard() {
     }, 0);
   };
 
+  // Work orders by order_id lookup map
+  const woByOrder = useMemo(() => {
+    const map = {};
+    workOrders.forEach(wo => {
+      if (!wo.order_id) return;
+      if (!map[wo.order_id]) map[wo.order_id] = [];
+      map[wo.order_id].push(wo);
+    });
+    return map;
+  }, [workOrders]);
+
+  // Helper: is order item a recipe product (Standard, Custom, or Work Order item)
+  const isRecipeItem = useCallback((oi) => {
+    if (oi.item_id && isRecipeProduct(oi.item_id)) return true;
+    if (oi.custom_recipe_items && (Array.isArray(oi.custom_recipe_items) ? oi.custom_recipe_items.length > 0 : true)) return true;
+    if (oi.recipe_id || oi.recipe_key || oi.recipe_note) return true;
+    const matchWo = (woByOrder[oi.order_id] || []).find(w => 
+      (oi.item_id && w.item_id === oi.item_id) ||
+      (w.item_name && oi.item_name && w.item_name.trim().toLowerCase() === oi.item_name.trim().toLowerCase())
+    );
+    if (matchWo) return true;
+    if (oi.cost_details) return true;
+    return false;
+  }, [isRecipeProduct, woByOrder]);
+
+  // Helper: calculate unit cost for any order item
+  const getItemUnitCost = useCallback((oi) => {
+    if (Number(oi.cost_at_sale) > 0) return Number(oi.cost_at_sale);
+    if (oi.custom_recipe_items) {
+      const c = calcCustomRecipeCost(oi.custom_recipe_items);
+      if (c > 0) return c;
+    }
+    const matchWo = (woByOrder[oi.order_id] || []).find(w => 
+      (oi.item_id && w.item_id === oi.item_id) ||
+      (w.item_name && oi.item_name && w.item_name.trim().toLowerCase() === oi.item_name.trim().toLowerCase())
+    );
+    if (matchWo?.custom_recipe_items) {
+      const c = calcCustomRecipeCost(matchWo.custom_recipe_items);
+      if (c > 0) return c;
+    }
+    if (oi.item_id && isRecipeProduct(oi.item_id)) {
+      return recipeCost(oi.item_id);
+    }
+    if (oi.cost_details) {
+      const c = calcCustomRecipeCost(oi.cost_details);
+      if (c > 0) return c;
+    }
+    if (oi.item_id && itemMap[oi.item_id]) {
+      const itm = itemMap[oi.item_id];
+      return convert(itm.purchase_price || 0, itm.base_currency || 'TRY', 'TRY');
+    }
+    return 0;
+  }, [woByOrder, isRecipeProduct, recipeCost, itemMap, convert]);
+
+  // Helper: calculate total cost for an order
+  const getOrderCost = useCallback((orderId) => {
+    const ois = orderItems.filter(oi => oi.order_id === orderId);
+    return ois.reduce((sum, oi) => {
+      const qty = Number(oi.quantity || 0);
+      return sum + (getItemUnitCost(oi) * qty);
+    }, 0);
+  }, [orderItems, getItemUnitCost]);
+
+  // Helper: calculate total cost for a list of orders
+  const calcOrdersCost = useCallback((ords) => {
+    return ords.reduce((sum, o) => sum + getOrderCost(o.id), 0);
+  }, [getOrderCost]);
+
   // ── RENDER MODES ──────────────────────────────────────────────────────────
 
   const renderOzet = () => {
@@ -432,53 +500,6 @@ export default function Dashboard() {
     // İş emirlerinden ürün bazlı gruplama
     const statusLabels = { pending: '⏳ Bekliyor', in_progress: '⚡ Üretimde', completed: '✅ Tamamlandı', cancelled: '❌ İptal' };
     const orderLookup = Object.fromEntries(filteredOrders.map(o => [o.id, o]));
-
-    // Work orders by order_id lookup map
-    const woByOrder = {};
-    workOrders.forEach(wo => {
-      if (!wo.order_id) return;
-      if (!woByOrder[wo.order_id]) woByOrder[wo.order_id] = [];
-      woByOrder[wo.order_id].push(wo);
-    });
-
-    // Helper: is order item a recipe / work order item
-    const isRecipeItem = (oi) => {
-      if (oi.item_id && isRecipeProduct(oi.item_id)) return true;
-      if (oi.custom_recipe_items && (Array.isArray(oi.custom_recipe_items) ? oi.custom_recipe_items.length > 0 : true)) return true;
-      if (oi.recipe_id || oi.recipe_key || oi.recipe_note) return true;
-      const matchWo = (woByOrder[oi.order_id] || []).find(w => 
-        (oi.item_id && w.item_id === oi.item_id) ||
-        (w.item_name && oi.item_name && w.item_name.trim().toLowerCase() === oi.item_name.trim().toLowerCase())
-      );
-      if (matchWo) return true;
-      if (oi.cost_details) return true;
-      return false;
-    };
-
-    // Helper: calculate unit cost for order item
-    const getItemUnitCost = (oi) => {
-      if (Number(oi.cost_at_sale) > 0) return Number(oi.cost_at_sale);
-      if (oi.custom_recipe_items) {
-        const c = calcCustomRecipeCost(oi.custom_recipe_items);
-        if (c > 0) return c;
-      }
-      const matchWo = (woByOrder[oi.order_id] || []).find(w => 
-        (oi.item_id && w.item_id === oi.item_id) ||
-        (w.item_name && oi.item_name && w.item_name.trim().toLowerCase() === oi.item_name.trim().toLowerCase())
-      );
-      if (matchWo?.custom_recipe_items) {
-        const c = calcCustomRecipeCost(matchWo.custom_recipe_items);
-        if (c > 0) return c;
-      }
-      if (oi.item_id && isRecipeProduct(oi.item_id)) {
-        return recipeCost(oi.item_id);
-      }
-      if (oi.cost_details) {
-        const c = calcCustomRecipeCost(oi.cost_details);
-        if (c > 0) return c;
-      }
-      return 0;
-    };
 
     // Satır bazlı gösterim — her iş emri bir satır (Maliyet & Satış bilgileri dahil)
     const woRows = workOrders.map(wo => {
@@ -720,14 +741,12 @@ export default function Dashboard() {
 
     // 1) Her faturaya en yakın siparişi eşle
     validInvoicesOut.forEach(inv => {
-      // vkntckn ile kesin eşleşme dene
       let matchedOrder = null;
       if (inv.vkntckn) {
         matchedOrder = invOrders.find(o =>
           !matchedOrderIds.has(o.id) && o.customer_vkntckn === inv.vkntckn
         );
       }
-      // vkntckn yoksa cari_name ile dene
       if (!matchedOrder) {
         const invName = (inv.cari_name || '').toLowerCase().trim();
         matchedOrder = invOrders.find(o =>
@@ -738,12 +757,27 @@ export default function Dashboard() {
         matchedOrderIds.add(matchedOrder.id);
         matchedInvIds.add(inv.id);
       }
+      const total = Number(inv.amount || 0);
+      const tax = Number(inv.tax_total || 0);
+      const matrah = Number(inv.tax_exclusive_amount || (total - tax));
+      const cost = matchedOrder ? getOrderCost(matchedOrder.id) : 0;
+      const profit = matrah - cost;
+      const margin = matrah > 0 ? (profit / matrah * 100) : 0;
+      const ois = matchedOrder ? orderItems.filter(oi => oi.order_id === matchedOrder.id) : [];
+
       rows.push({
+        id: inv.id,
         cari: inv.cari_name,
         faturaNo: inv.invoice_id || '',
         siparisNo: matchedOrder?.order_number || '',
-        total: Number(inv.amount || 0),
-        tax: Number(inv.tax_total || 0),
+        total,
+        tax,
+        matrah,
+        cost,
+        profit,
+        margin,
+        hasCost: !!matchedOrder,
+        items: ois,
         source: matchedOrder ? 'linked' : 'invoice_only',
         date: inv.issue_date || '',
       });
@@ -752,27 +786,49 @@ export default function Dashboard() {
     // 2) Eşleşmemiş faturalı siparişleri ekle
     invOrders.forEach(o => {
       if (matchedOrderIds.has(o.id)) return;
+      const cur = o.currency || 'TRY';
+      const total = convert(Number(o.grand_total || 0), cur, 'TRY');
+      const tax = convert(Number(o.tax_total || 0), cur, 'TRY');
+      const matrah = convert(Number(o.subtotal || (total - tax)), cur, 'TRY');
+      const cost = getOrderCost(o.id);
+      const profit = matrah - cost;
+      const margin = matrah > 0 ? (profit / matrah * 100) : 0;
+      const ois = orderItems.filter(oi => oi.order_id === o.id);
+
       rows.push({
+        id: o.id,
         cari: o.customer_name,
         faturaNo: '',
         siparisNo: o.order_number || '',
-        total: Number(o.grand_total || 0),
-        tax: Number(o.tax_total || 0),
+        total,
+        tax,
+        matrah,
+        cost,
+        profit,
+        margin,
+        hasCost: true,
+        items: ois,
         source: 'order_only',
         date: o.created_at ? o.created_at.slice(0, 10) : '',
       });
     });
 
     const sorted = rows.sort((a, b) => b.total - a.total);
-    const totalAmt = sorted.reduce((s, r) => s + r.total, 0);
+    const totalMatrah = sorted.reduce((s, r) => s + r.matrah, 0);
     const totalTax = sorted.reduce((s, r) => s + r.tax, 0);
+    const totalCost = sorted.reduce((s, r) => s + r.cost, 0);
+    const totalNetProfit = totalMatrah - totalCost;
+    const overallMargin = totalMatrah > 0 ? (totalNetProfit / totalMatrah * 100) : 0;
 
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <StatCard label="Giden Fatura" value={fmtInt(validInvoicesOut.length)} icon={ArrowUp} color="#10b981" isDark={isDark} />
-          <StatCard label="Faturalı Sipariş" value={fmtInt(invOrders.length)} icon={Receipt} color="#3b82f6" isDark={isDark} />
-          <StatCard label="Toplam Tutar" value={`₺${fmt(totalAmt)}`} sub={`KDV: ₺${fmt(totalTax)}`} icon={DollarSign} color="#8b5cf6" isDark={isDark} />
+          <StatCard label="Faturalı Ciro (Matrah)" value={`₺${fmt(totalMatrah)}`} sub={`KDV: ₺${fmt(totalTax)}`} icon={DollarSign} color="#3b82f6" isDark={isDark} />
+          <StatCard label="Toplam Maliyet" value={`₺${fmt(totalCost)}`} icon={Calculator} color="#f59e0b" isDark={isDark} />
+          <StatCard label="Net Kâr" value={`₺${fmt(totalNetProfit)}`}
+            sub={totalMatrah > 0 ? `%${fmt(overallMargin)} marj` : ''}
+            icon={TrendingUp} color={totalNetProfit >= 0 ? '#22c55e' : '#ef4444'} isDark={isDark} />
         </div>
         <ReportTable isDark={isDark} emptyText="Bu ay faturalı kayıt yok"
           columns={[
@@ -784,10 +840,42 @@ export default function Dashboard() {
               render: r => r.siparisNo || '—',
               color: r => r.siparisNo ? '#3b82f6' : '#94a3b8' },
             { label: 'Tarih', key: 'date' },
+            { label: 'Matrah', key: 'matrah', align: 'right', total: true, render: r => `₺${fmt(r.matrah)}` },
             { label: 'KDV', key: 'tax', align: 'right', total: true, render: r => `₺${fmt(r.tax)}` },
+            { label: 'Maliyet', key: 'cost', align: 'right', total: true, render: r => `₺${fmt(r.cost)}` },
+            { label: 'Kâr', key: 'profit', align: 'right', total: true,
+              render: r => `₺${fmt(r.profit)}`,
+              color: r => r.profit >= 0 ? '#22c55e' : '#ef4444' },
+            { label: 'Marj', key: 'margin', align: 'right',
+              render: r => `%${fmt(r.margin)}`,
+              color: r => r.margin >= 0 ? '#22c55e' : '#ef4444' },
             { label: 'Toplam', key: 'total', align: 'right', total: true, render: r => `₺${fmt(r.total)}` },
           ]}
           rows={sorted}
+          expandable={r => r.items && r.items.length > 0}
+          renderExpand={r => (
+            <div className="px-4 py-2 space-y-1" style={{ background: isDark ? 'rgba(16,185,129,0.04)' : 'rgba(16,185,129,0.02)' }}>
+              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#10b981' }}>Sipariş Kalemleri & Maliyet Detayı</p>
+              {r.items.map((oi, ii) => {
+                const uCost = getItemUnitCost(oi);
+                const qty = Number(oi.quantity || 0);
+                const uPrice = Number(oi.unit_price || 0);
+                const lineCost = uCost * qty;
+                const lineRev = uPrice * qty;
+                const lineProfit = lineRev - lineCost;
+                return (
+                  <div key={ii} className="flex items-center justify-between text-[11px] py-0.5">
+                    <span style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}>
+                      • {oi.item_name} <span className="opacity-60">({fmtInt(qty)} {oi.unit || 'Adet'})</span>
+                    </span>
+                    <span style={{ color: '#94a3b8' }}>
+                      Birim Satış: <strong>₺{fmt(uPrice)}</strong> · Birim Mal.: <strong>₺{fmt(uCost)}</strong> · Kâr: <strong style={{ color: lineProfit >= 0 ? '#22c55e' : '#ef4444' }}>₺{fmt(lineProfit)}</strong>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         />
       </div>
     );
@@ -795,23 +883,91 @@ export default function Dashboard() {
 
   const renderFaturasiz = () => {
     const noInvOrders = filteredOrders.filter(o => !o.is_invoiced);
-    const grouped = {};
-    noInvOrders.forEach(o => {
-      const key = o.customer_id || o.customer_name;
-      if (!grouped[key]) grouped[key] = { name: o.customer_name, count: 0, total: 0 };
-      grouped[key].count++;
-      grouped[key].total += Number(o.grand_total || 0);
+    
+    // Her faturasız sipariş
+    const rows = noInvOrders.map(o => {
+      const cur = o.currency || 'TRY';
+      const revenue = convert(Number(o.grand_total || 0), cur, 'TRY');
+      const cost = getOrderCost(o.id);
+      const profit = revenue - cost;
+      const margin = revenue > 0 ? (profit / revenue * 100) : 0;
+      const ois = orderItems.filter(oi => oi.order_id === o.id);
+      const itemCount = ois.reduce((s, oi) => s + Number(oi.quantity || 0), 0);
+
+      return {
+        id: o.id,
+        orderNo: o.order_number || '',
+        customer: o.customer_name || 'Bilinmeyen',
+        itemCount,
+        revenue,
+        cost,
+        profit,
+        margin,
+        items: ois,
+        date: o.created_at ? o.created_at.slice(0, 10) : '',
+      };
     });
-    const sorted = Object.values(grouped).sort((a, b) => b.total - a.total);
+
+    const sorted = rows.sort((a, b) => b.revenue - a.revenue);
+    const totalRevenue = sorted.reduce((s, r) => s + r.revenue, 0);
+    const totalCost = sorted.reduce((s, r) => s + r.cost, 0);
+    const totalProfit = totalRevenue - totalCost;
+    const overallMargin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0;
+
     return (
-      <ReportTable isDark={isDark} emptyText="Bu ay faturasız satış yok"
-        columns={[
-          { label: 'Müşteri', key: 'name', bold: true },
-          { label: 'Sipariş', key: 'count', align: 'right', render: r => fmtInt(r.count) },
-          { label: 'Toplam', key: 'total', align: 'right', total: true, render: r => `₺${fmt(r.total)}` },
-        ]}
-        rows={sorted}
-      />
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <StatCard label="Faturasız Sipariş" value={fmtInt(noInvOrders.length)} icon={FileText} color="#ef4444" isDark={isDark} />
+          <StatCard label="Toplam Satış (Ciro)" value={`₺${fmt(totalRevenue)}`} icon={DollarSign} color="#3b82f6" isDark={isDark} />
+          <StatCard label="Toplam Maliyet" value={`₺${fmt(totalCost)}`} icon={Calculator} color="#f59e0b" isDark={isDark} />
+          <StatCard label="Net Kâr" value={`₺${fmt(totalProfit)}`}
+            sub={totalRevenue > 0 ? `%${fmt(overallMargin)} marj` : ''}
+            icon={TrendingUp} color={totalProfit >= 0 ? '#22c55e' : '#ef4444'} isDark={isDark} />
+        </div>
+        <ReportTable isDark={isDark} emptyText="Bu ay faturasız satış yok"
+          columns={[
+            { label: 'Müşteri', key: 'customer', bold: true },
+            { label: 'Sipariş No', key: 'orderNo',
+              render: r => r.orderNo || '—',
+              color: r => r.orderNo ? '#3b82f6' : '#94a3b8' },
+            { label: 'Miktar', key: 'itemCount', align: 'right', total: true, render: r => fmtInt(r.itemCount) },
+            { label: 'Maliyet', key: 'cost', align: 'right', total: true, render: r => `₺${fmt(r.cost)}` },
+            { label: 'Satış', key: 'revenue', align: 'right', total: true, render: r => `₺${fmt(r.revenue)}` },
+            { label: 'Kâr', key: 'profit', align: 'right', total: true,
+              render: r => `₺${fmt(r.profit)}`,
+              color: r => r.profit >= 0 ? '#22c55e' : '#ef4444' },
+            { label: 'Marj', key: 'margin', align: 'right',
+              render: r => `%${fmt(r.margin)}`,
+              color: r => r.margin >= 0 ? '#22c55e' : '#ef4444' },
+            { label: 'Tarih', key: 'date' },
+          ]}
+          rows={sorted}
+          expandable={r => r.items && r.items.length > 0}
+          renderExpand={r => (
+            <div className="px-4 py-2 space-y-1" style={{ background: isDark ? 'rgba(239,68,68,0.04)' : 'rgba(239,68,68,0.02)' }}>
+              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#ef4444' }}>Sipariş Kalemleri & Maliyet Detayı</p>
+              {r.items.map((oi, ii) => {
+                const uCost = getItemUnitCost(oi);
+                const qty = Number(oi.quantity || 0);
+                const uPrice = Number(oi.unit_price || 0);
+                const lineCost = uCost * qty;
+                const lineRev = uPrice * qty;
+                const lineProfit = lineRev - lineCost;
+                return (
+                  <div key={ii} className="flex items-center justify-between text-[11px] py-0.5">
+                    <span style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}>
+                      • {oi.item_name} <span className="opacity-60">({fmtInt(qty)} {oi.unit || 'Adet'})</span>
+                    </span>
+                    <span style={{ color: '#94a3b8' }}>
+                      Birim Satış: <strong>₺{fmt(uPrice)}</strong> · Birim Mal.: <strong>₺{fmt(uCost)}</strong> · Kâr: <strong style={{ color: lineProfit >= 0 ? '#22c55e' : '#ef4444' }}>₺{fmt(lineProfit)}</strong>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        />
+      </div>
     );
   };
 
@@ -882,71 +1038,145 @@ export default function Dashboard() {
   };
 
   const renderKar = () => {
-    // Faturalı: satış KDV dişi - maliyet
     const faturaliOrders = filteredOrders.filter(o => o.is_invoiced);
     const faturasizOrders = filteredOrders.filter(o => !o.is_invoiced);
 
-    const calcOrderCost = (ords) => {
-      const ids = new Set(ords.map(o => o.id));
-      const ois = orderItems.filter(oi => ids.has(oi.order_id));
-      let cost = 0;
-      ois.forEach(oi => {
-        const qty = Number(oi.quantity || 0);
-        // Prefer cost_at_sale if recorded at time of sale
-        if (oi.cost_at_sale > 0) {
-          cost += oi.cost_at_sale * qty;
-        } else if (isRecipeProduct(oi.item_id)) {
-          cost += recipeCost(oi.item_id) * qty;
-        } else {
-          const itm = itemMap[oi.item_id];
-          const rawCur = itm?.base_currency || 'TRY';
-          cost += convert((itm?.purchase_price || 0) * qty, rawCur, 'TRY');
-        }
-      });
-      return cost;
-    };
-
-    const faturaliRevenue = faturaliOrders.reduce((s, o) => s + Number(o.subtotal || o.grand_total - o.tax_total || 0), 0);
-    const faturaliTax = faturaliOrders.reduce((s, o) => s + Number(o.tax_total || 0), 0);
-    const faturaliCost = calcOrderCost(faturaliOrders);
+    // Faturalı: Ciro (KDV Hariç matrah), Maliyet, KDV, Net Kâr
+    const faturaliRevenue = faturaliOrders.reduce((s, o) => {
+      const cur = o.currency || 'TRY';
+      const matrah = Number(o.subtotal || (Number(o.grand_total || 0) - Number(o.tax_total || 0)));
+      return s + convert(matrah, cur, 'TRY');
+    }, 0);
+    const faturaliTax = faturaliOrders.reduce((s, o) => convert(Number(o.tax_total || 0), o.currency || 'TRY', 'TRY'), 0);
+    const faturaliCost = calcOrdersCost(faturaliOrders);
     const faturaliNet = faturaliRevenue - faturaliCost;
+    const faturaliMargin = faturaliRevenue > 0 ? (faturaliNet / faturaliRevenue * 100) : 0;
 
-    const faturasizRevenue = faturasizOrders.reduce((s, o) => s + Number(o.grand_total || 0), 0);
-    const faturasizCost = calcOrderCost(faturasizOrders);
+    // Faturasız: Ciro, Maliyet, Net Kâr
+    const faturasizRevenue = faturasizOrders.reduce((s, o) => {
+      return s + convert(Number(o.grand_total || 0), o.currency || 'TRY', 'TRY');
+    }, 0);
+    const faturasizCost = calcOrdersCost(faturasizOrders);
     const faturasizNet = faturasizRevenue - faturasizCost;
+    const faturasizMargin = faturasizRevenue > 0 ? (faturasizNet / faturasizRevenue * 100) : 0;
 
     const totalRevenue = faturaliRevenue + faturasizRevenue;
     const totalCost = faturaliCost + faturasizCost;
     const totalNet = faturaliNet + faturasizNet;
+    const totalMargin = totalRevenue > 0 ? (totalNet / totalRevenue * 100) : 0;
 
-    const rows = [
-      { label: 'Faturalı Satış (KDV Hariç)', revenue: faturaliRevenue, cost: faturaliCost, profit: faturaliNet },
-      { label: 'Faturasız Satış', revenue: faturasizRevenue, cost: faturasizCost, profit: faturasizNet },
+    const summaryRows = [
+      { label: 'Faturalı Satış (KDV Hariç Matrah)', revenue: faturaliRevenue, cost: faturaliCost, profit: faturaliNet, margin: faturaliMargin },
+      { label: 'Faturasız Satış', revenue: faturasizRevenue, cost: faturasizCost, profit: faturasizNet, margin: faturasizMargin },
     ];
+
+    // Sipariş bazlı ayrıntılı döküm
+    const orderRows = filteredOrders.map(o => {
+      const cur = o.currency || 'TRY';
+      const isInv = o.is_invoiced;
+      const rev = isInv 
+        ? convert(Number(o.subtotal || (Number(o.grand_total || 0) - Number(o.tax_total || 0))), cur, 'TRY')
+        : convert(Number(o.grand_total || 0), cur, 'TRY');
+      const cost = getOrderCost(o.id);
+      const profit = rev - cost;
+      const margin = rev > 0 ? (profit / rev * 100) : 0;
+      const ois = orderItems.filter(oi => oi.order_id === o.id);
+
+      return {
+        id: o.id,
+        orderNo: o.order_number || '',
+        customer: o.customer_name || 'Bilinmeyen',
+        typeLabel: isInv ? '🧾 Faturalı' : '📄 Faturasız',
+        isInv,
+        revenue: rev,
+        cost,
+        profit,
+        margin,
+        items: ois,
+        date: o.created_at ? o.created_at.slice(0, 10) : '',
+      };
+    }).sort((a, b) => b.revenue - a.revenue);
 
     return (
       <div className="space-y-6">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <StatCard label="Toplam Ciro" value={`₺${fmt(totalRevenue)}`}
+          <StatCard label="Toplam Ciro (Net Matrah)" value={`₺${fmt(totalRevenue)}`}
             sub={`Faturalı: ₺${fmt(faturaliRevenue)} · Faturasız: ₺${fmt(faturasizRevenue)}`}
             icon={DollarSign} color="#3b82f6" isDark={isDark} />
           <StatCard label="Toplam Maliyet" value={`₺${fmt(totalCost)}`}
             icon={Calculator} color="#f59e0b" isDark={isDark} />
           <StatCard label="Net Kâr" value={`₺${fmt(totalNet)}`}
-            sub={totalRevenue > 0 ? `Marj: %${fmt((totalNet / totalRevenue) * 100)}` : ''}
+            sub={totalRevenue > 0 ? `Marj: %${fmt(totalMargin)}` : ''}
             icon={TrendingUp} color={totalNet >= 0 ? '#22c55e' : '#ef4444'} isDark={isDark} />
         </div>
+
+        {/* Kategori Özeti */}
         <ReportTable isDark={isDark}
           columns={[
             { label: 'Kategori', key: 'label', bold: true },
-            { label: 'Ciro', key: 'revenue', align: 'right', total: true, render: r => `₺${fmt(r.revenue)}` },
+            { label: 'Ciro / Matrah', key: 'revenue', align: 'right', total: true, render: r => `₺${fmt(r.revenue)}` },
             { label: 'Maliyet', key: 'cost', align: 'right', total: true, render: r => `₺${fmt(r.cost)}` },
             { label: 'Net Kâr', key: 'profit', align: 'right', total: true,
               render: r => `₺${fmt(r.profit)}`,
               color: r => r.profit >= 0 ? '#22c55e' : '#ef4444' },
+            { label: 'Kâr Marjı', key: 'margin', align: 'right',
+              render: r => `%${fmt(r.margin)}`,
+              color: r => r.margin >= 0 ? '#22c55e' : '#ef4444' },
           ]}
-          rows={rows}
+          rows={summaryRows}
         />
+
+        {/* Sipariş Bazlı Kâr Tablosu */}
+        <div>
+          <h4 className="text-sm font-bold mb-3 flex items-center gap-2" style={{ color: c.text }}>
+            <TrendingUp size={15} style={{ color: '#22c55e' }} /> Sipariş Bazında Kâr Analizi
+          </h4>
+          <ReportTable isDark={isDark} emptyText="Bu ay sipariş kaydı yok"
+            columns={[
+              { label: 'Sipariş No', key: 'orderNo', bold: true,
+                render: r => r.orderNo || '—',
+                color: r => r.orderNo ? '#3b82f6' : '#94a3b8' },
+              { label: 'Müşteri', key: 'customer' },
+              { label: 'Tür', key: 'typeLabel',
+                color: r => r.isInv ? '#10b981' : '#ef4444' },
+              { label: 'Ciro', key: 'revenue', align: 'right', total: true, render: r => `₺${fmt(r.revenue)}` },
+              { label: 'Maliyet', key: 'cost', align: 'right', total: true, render: r => `₺${fmt(r.cost)}` },
+              { label: 'Net Kâr', key: 'profit', align: 'right', total: true,
+                render: r => `₺${fmt(r.profit)}`,
+                color: r => r.profit >= 0 ? '#22c55e' : '#ef4444' },
+              { label: 'Marj', key: 'margin', align: 'right',
+                render: r => `%${fmt(r.margin)}`,
+                color: r => r.margin >= 0 ? '#22c55e' : '#ef4444' },
+              { label: 'Tarih', key: 'date' },
+            ]}
+            rows={orderRows}
+            expandable={r => r.items && r.items.length > 0}
+            renderExpand={r => (
+              <div className="px-4 py-2 space-y-1" style={{ background: isDark ? 'rgba(59,130,246,0.04)' : 'rgba(59,130,246,0.02)' }}>
+                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#3b82f6' }}>Sipariş Kalemleri & Kâr Detayı</p>
+                {r.items.map((oi, ii) => {
+                  const uCost = getItemUnitCost(oi);
+                  const qty = Number(oi.quantity || 0);
+                  const uPrice = Number(oi.unit_price || 0);
+                  const lineCost = uCost * qty;
+                  const lineRev = uPrice * qty;
+                  const lineProfit = lineRev - lineCost;
+                  return (
+                    <div key={ii} className="flex items-center justify-between text-[11px] py-0.5">
+                      <span style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}>
+                        • {oi.item_name} <span className="opacity-60">({fmtInt(qty)} {oi.unit || 'Adet'})</span>
+                      </span>
+                      <span style={{ color: '#94a3b8' }}>
+                        Birim Satış: <strong>₺{fmt(uPrice)}</strong> · Birim Mal.: <strong>₺{fmt(uCost)}</strong> · Kâr: <strong style={{ color: lineProfit >= 0 ? '#22c55e' : '#ef4444' }}>₺{fmt(lineProfit)}</strong>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          />
+        </div>
+
         {faturaliTax > 0 && (
           <div className="rounded-2xl p-4 border" style={{ background: c.card, borderColor: c.border }}>
             <p className="text-xs" style={{ color: c.muted }}>
