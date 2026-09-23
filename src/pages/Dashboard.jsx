@@ -203,7 +203,7 @@ export default function Dashboard() {
           .gte('created_at', startDate).lte('created_at', endDate)
           .not('status', 'eq', 'cancelled'),
         supabase.from('order_items')
-          .select('id, order_id, item_id, item_name, item_type, quantity, unit, unit_price, tax_rate, notes, cost_at_sale, cost_currency, cost_details'),
+          .select('id, order_id, item_id, item_name, item_type, quantity, unit, unit_price, tax_rate, notes, cost_at_sale, cost_currency, cost_details, custom_recipe_items, recipe_id, recipe_key, recipe_note'),
         supabase.from('invoices')
           .select('id, invoice_id, cari_name, vkntckn, amount, tax_exclusive_amount, tax_total, currency, exchange_rate, status, issue_date, is_iade')
           .eq('type', 'inbox')
@@ -215,10 +215,10 @@ export default function Dashboard() {
         supabase.from('customers').select('id, name, vkntckn, is_faturasiz'),
         supabase.from('suppliers').select('id, name, vkntckn, is_faturasiz'),
         supabase.from('items').select('id, name, item_type, purchase_price, sale_price, base_currency, sale_currency, unit, has_bom'),
-        supabase.from('product_recipes').select('id, product_id, name, is_default'),
+        supabase.from('product_recipes').select('id, product_id, name, is_default, other_costs'),
         supabase.from('recipe_items').select('id, recipe_id, item_id, item_name, quantity, unit'),
         supabase.from('work_orders')
-          .select('id, item_id, item_name, order_id, quantity, status, created_at')
+          .select('id, item_id, item_name, order_id, quantity, status, created_at, custom_recipe_items, recipe_id, notes')
           .gte('created_at', startDate).lte('created_at', endDate),
       ]);
 
@@ -283,17 +283,44 @@ export default function Dashboard() {
   // Helper: is item a recipe product
   const isRecipeProduct = (itemId) => !!recipeMap[itemId];
 
-  // Helper: cost of a recipe product (sum of raw materials * purchase_price, converted to TRY)
+  // Helper: cost of a recipe product (sum of raw materials * purchase_price, converted to TRY + other_costs)
   const recipeCost = (itemId) => {
     const recs = recipeMap[itemId];
     if (!recs || recs.length === 0) return 0;
     const defaultRec = recs.find(r => r.is_default) || recs[0];
     const rItems = recipeItems.filter(ri => ri.recipe_id === defaultRec.id);
-    return rItems.reduce((sum, ri) => {
+    let total = rItems.reduce((sum, ri) => {
       const raw = itemMap[ri.item_id];
       const rawCost = (ri.quantity || 0) * (raw?.purchase_price || 0);
       const rawCur = raw?.base_currency || 'TRY';
       return sum + convert(rawCost, rawCur, 'TRY');
+    }, 0);
+    if (defaultRec.other_costs && Array.isArray(defaultRec.other_costs)) {
+      defaultRec.other_costs.forEach(oc => {
+        total += convert(Number(oc.amount || 0), oc.currency || 'TRY', 'TRY');
+      });
+    }
+    return total;
+  };
+
+  // Helper: calculate cost from custom_recipe_items or cost_details array
+  const calcCustomRecipeCost = (items) => {
+    if (!items) return 0;
+    let list = items;
+    if (typeof list === 'string') {
+      try { list = JSON.parse(list); } catch(_) { list = []; }
+    }
+    if (!Array.isArray(list)) return 0;
+    return list.reduce((sum, ri) => {
+      let price = Number(ri.purchase_price ?? ri.unit_cost ?? 0);
+      let cur = ri.base_currency || ri.currency || 'TRY';
+      if (ri.item_id && itemMap[ri.item_id]) {
+        const itm = itemMap[ri.item_id];
+        if (price <= 0) price = Number(itm.purchase_price || 0);
+        if (!ri.base_currency && !ri.currency) cur = itm.base_currency || 'TRY';
+      }
+      const qty = Number(ri.quantity ?? ri.qty ?? 1);
+      return sum + convert(price * qty, cur, 'TRY');
     }, 0);
   };
 
@@ -405,15 +432,86 @@ export default function Dashboard() {
     // İş emirlerinden ürün bazlı gruplama
     const statusLabels = { pending: '⏳ Bekliyor', in_progress: '⚡ Üretimde', completed: '✅ Tamamlandı', cancelled: '❌ İptal' };
     const orderLookup = Object.fromEntries(filteredOrders.map(o => [o.id, o]));
-    // Satır bazlı gösterim — her iş emri bir satır
+
+    // Work orders by order_id lookup map
+    const woByOrder = {};
+    workOrders.forEach(wo => {
+      if (!wo.order_id) return;
+      if (!woByOrder[wo.order_id]) woByOrder[wo.order_id] = [];
+      woByOrder[wo.order_id].push(wo);
+    });
+
+    // Helper: is order item a recipe / work order item
+    const isRecipeItem = (oi) => {
+      if (oi.item_id && isRecipeProduct(oi.item_id)) return true;
+      if (oi.custom_recipe_items && (Array.isArray(oi.custom_recipe_items) ? oi.custom_recipe_items.length > 0 : true)) return true;
+      if (oi.recipe_id || oi.recipe_key || oi.recipe_note) return true;
+      const matchWo = (woByOrder[oi.order_id] || []).find(w => 
+        (oi.item_id && w.item_id === oi.item_id) ||
+        (w.item_name && oi.item_name && w.item_name.trim().toLowerCase() === oi.item_name.trim().toLowerCase())
+      );
+      if (matchWo) return true;
+      if (oi.cost_details) return true;
+      return false;
+    };
+
+    // Helper: calculate unit cost for order item
+    const getItemUnitCost = (oi) => {
+      if (Number(oi.cost_at_sale) > 0) return Number(oi.cost_at_sale);
+      if (oi.custom_recipe_items) {
+        const c = calcCustomRecipeCost(oi.custom_recipe_items);
+        if (c > 0) return c;
+      }
+      const matchWo = (woByOrder[oi.order_id] || []).find(w => 
+        (oi.item_id && w.item_id === oi.item_id) ||
+        (w.item_name && oi.item_name && w.item_name.trim().toLowerCase() === oi.item_name.trim().toLowerCase())
+      );
+      if (matchWo?.custom_recipe_items) {
+        const c = calcCustomRecipeCost(matchWo.custom_recipe_items);
+        if (c > 0) return c;
+      }
+      if (oi.item_id && isRecipeProduct(oi.item_id)) {
+        return recipeCost(oi.item_id);
+      }
+      if (oi.cost_details) {
+        const c = calcCustomRecipeCost(oi.cost_details);
+        if (c > 0) return c;
+      }
+      return 0;
+    };
+
+    // Satır bazlı gösterim — her iş emri bir satır (Maliyet & Satış bilgileri dahil)
     const woRows = workOrders.map(wo => {
       const order = orderLookup[wo.order_id];
       const stockItem = itemMap[wo.item_id];
+      const matchingOi = (filteredOrderItems || []).find(oi => 
+        oi.order_id === wo.order_id && (
+          (wo.item_id && oi.item_id === wo.item_id) ||
+          (wo.item_name && oi.item_name && wo.item_name.trim().toLowerCase() === oi.item_name.trim().toLowerCase())
+        )
+      );
+      const qty = Number(wo.quantity || 1);
+      const unitPrice = Number(matchingOi?.unit_price || 0);
+      const orderCur = order?.currency || 'TRY';
+      const totalSale = unitPrice > 0 ? convert(unitPrice * qty, orderCur, 'TRY') : 0;
+      let unitCost = 0;
+      if (matchingOi) {
+        unitCost = getItemUnitCost(matchingOi);
+      } else if (wo.custom_recipe_items) {
+        unitCost = calcCustomRecipeCost(wo.custom_recipe_items);
+      } else if (wo.item_id && isRecipeProduct(wo.item_id)) {
+        unitCost = recipeCost(wo.item_id);
+      }
+      const totalCost = unitCost * qty;
+
       return {
         product: stockItem?.name || wo.item_name || 'Bilinmeyen',
         orderNo: order?.order_number || '',
         customer: order?.customer_name || '',
-        qty: Number(wo.quantity || 1),
+        qty,
+        unitCost,
+        totalCost,
+        totalSale,
         status: wo.status,
         statusLabel: statusLabels[wo.status] || wo.status,
         isAdHoc: !wo.item_id,
@@ -424,7 +522,8 @@ export default function Dashboard() {
       const order = { pending: 0, in_progress: 1, completed: 2, cancelled: 3 };
       return (order[a.status] ?? 9) - (order[b.status] ?? 9);
     });
-    // Özet kartları
+
+    // Özet sayaçları
     const pending = workOrders.filter(w => w.status === 'pending').length;
     const inProg = workOrders.filter(w => w.status === 'in_progress').length;
     const done = workOrders.filter(w => w.status === 'completed').length;
@@ -432,77 +531,46 @@ export default function Dashboard() {
     // ── ÜRÜN BAZLI MALİYET / SATIŞ / KÂR ANALİZİ ──
     const productGrouped = {};
     filteredOrderItems.forEach(oi => {
-      if (!isRecipeProduct(oi.item_id)) return;
-      const key = oi.item_id || oi.item_name;
-      const itm = itemMap[oi.item_id];
+      if (!isRecipeItem(oi)) return;
+      const isAdHoc = !oi.item_id;
+      const itm = oi.item_id ? itemMap[oi.item_id] : null;
+      const key = oi.item_id ? `prod_${oi.item_id}` : `adhoc_${(oi.item_name || '').trim().toLowerCase()}`;
       const order = filteredOrders.find(o => o.id === oi.order_id);
-      if (!productGrouped[key]) productGrouped[key] = {
-        name: oi.item_name,
-        qty: 0, revenue: 0,
-        unitCost: recipeCost(oi.item_id),
-        salePrice: itm?.sale_price || 0,
-        saleCurrency: itm?.sale_currency || 'TRY',
-        currency: itm?.base_currency || 'TRY',
-        recordedCost: 0, hasRecordedCost: false,
-        customers: {},
-      };
+      const displayName = isAdHoc ? `📌 ${oi.item_name}` : (itm?.name || oi.item_name);
+
+      if (!productGrouped[key]) {
+        productGrouped[key] = {
+          name: displayName,
+          qty: 0,
+          revenue: 0,
+          totalCost: 0,
+          customers: {},
+          isAdHoc,
+        };
+      }
+
       const qty = Number(oi.quantity || 0);
       productGrouped[key].qty += qty;
       const unitPrice = Number(oi.unit_price || 0);
       const orderCur = order?.currency || 'TRY';
-      productGrouped[key].revenue += convert(unitPrice * qty, orderCur, 'TRY');
-      // Kayıtlı maliyet varsa kullan
-      if (oi.cost_at_sale > 0) {
-        productGrouped[key].recordedCost += oi.cost_at_sale * qty;
-        productGrouped[key].hasRecordedCost = true;
-      }
+      const itemRev = convert(unitPrice * qty, orderCur, 'TRY');
+      productGrouped[key].revenue += itemRev;
+
+      const unitCost = getItemUnitCost(oi);
+      productGrouped[key].totalCost += unitCost * qty;
+
       // Müşteri bazlı gruplama
       const custName = order?.customer_name || 'Bilinmeyen';
       if (!productGrouped[key].customers[custName]) {
         productGrouped[key].customers[custName] = { qty: 0, revenue: 0 };
       }
       productGrouped[key].customers[custName].qty += qty;
-      productGrouped[key].customers[custName].revenue += convert(unitPrice * qty, orderCur, 'TRY');
-    });
-    // Özel reçeteli ürünler (item_id olmayan)
-    filteredOrderItems.forEach(oi => {
-      if (oi.item_id || !oi.cost_details) return;
-      let costDetails = oi.cost_details;
-      if (typeof costDetails === 'string') try { costDetails = JSON.parse(costDetails); } catch(_) { return; }
-      if (!costDetails?.recipe_items && !costDetails?.materials) return;
-      const key = `adhoc_${oi.item_name}`;
-      const order = filteredOrders.find(o => o.id === oi.order_id);
-      if (!productGrouped[key]) productGrouped[key] = {
-        name: `📌 ${oi.item_name}`,
-        qty: 0, revenue: 0,
-        unitCost: 0,
-        salePrice: 0,
-        saleCurrency: 'TRY',
-        currency: 'TRY',
-        recordedCost: 0, hasRecordedCost: false,
-        customers: {},
-        isAdHoc: true,
-      };
-      const qty = Number(oi.quantity || 0);
-      const orderCur = order?.currency || 'TRY';
-      productGrouped[key].qty += qty;
-      productGrouped[key].revenue += convert(Number(oi.unit_price || 0) * qty, orderCur, 'TRY');
-      if (oi.cost_at_sale > 0) {
-        productGrouped[key].recordedCost += oi.cost_at_sale * qty;
-        productGrouped[key].hasRecordedCost = true;
-      }
-      const custName = order?.customer_name || 'Bilinmeyen';
-      if (!productGrouped[key].customers[custName]) productGrouped[key].customers[custName] = { qty: 0, revenue: 0 };
-      productGrouped[key].customers[custName].qty += qty;
-      productGrouped[key].customers[custName].revenue += convert(Number(oi.unit_price || 0) * qty, orderCur, 'TRY');
+      productGrouped[key].customers[custName].revenue += itemRev;
     });
 
     Object.values(productGrouped).forEach(g => {
-      if (g.hasRecordedCost) {
-        g.cost = g.recordedCost;
-      } else {
-        g.cost = g.unitCost * g.qty;
-      }
+      g.cost = g.totalCost;
+      g.unitCost = g.qty > 0 ? (g.totalCost / g.qty) : 0;
       g.profit = g.revenue - g.cost;
       g.margin = g.revenue > 0 ? (g.profit / g.revenue * 100) : 0;
       // Müşteri listesi
@@ -510,6 +578,7 @@ export default function Dashboard() {
         .map(([name, d]) => ({ name, qty: d.qty, revenue: d.revenue }))
         .sort((a, b) => b.revenue - a.revenue);
     });
+
     const productSorted = Object.values(productGrouped).sort((a, b) => b.revenue - a.revenue);
     const totalRevenue = productSorted.reduce((s, p) => s + p.revenue, 0);
     const totalCost = productSorted.reduce((s, p) => s + p.cost, 0);
@@ -577,6 +646,9 @@ export default function Dashboard() {
               color: r => r.orderNo ? '#3b82f6' : '#94a3b8' },
             { label: 'Müşteri', key: 'customer', render: r => r.customer || '—' },
             { label: 'Miktar', key: 'qty', align: 'right', total: true, render: r => fmtInt(r.qty) },
+            { label: 'B. Maliyet', key: 'unitCost', align: 'right', render: r => r.unitCost > 0 ? `₺${fmt(r.unitCost)}` : '—' },
+            { label: 'Maliyet', key: 'totalCost', align: 'right', total: true, render: r => r.totalCost > 0 ? `₺${fmt(r.totalCost)}` : '—' },
+            { label: 'Satış', key: 'totalSale', align: 'right', total: true, render: r => r.totalSale > 0 ? `₺${fmt(r.totalSale)}` : '—' },
             { label: 'Durum', key: 'statusLabel',
               color: r => r.status === 'completed' ? '#22c55e' : r.status === 'in_progress' ? '#3b82f6' : r.status === 'cancelled' ? '#ef4444' : '#f59e0b' },
             { label: 'Tarih', key: 'date' },
