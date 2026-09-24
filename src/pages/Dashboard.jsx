@@ -6,7 +6,7 @@ import {
   Bell, BellRing, AlertTriangle, CheckCircle2, Clock, ChevronRight, ChevronDown,
   Loader2, RefreshCw, CalendarClock, TrendingUp, BarChart3, Filter, X,
   Receipt, Wallet, DollarSign, Percent, PieChart, ListFilter, User,
-  Calculator, Tag, ArrowDown, ArrowUp, Minus, Eye, Printer,
+  Calculator, Tag, ArrowDown, ArrowUp, Minus, Eye, Printer, Edit2,
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
@@ -21,6 +21,21 @@ const CUR_SYM = { TRY: '₺', USD: '$', EUR: '€', GBP: '£' };
 /* ─── Helpers ─────────────────────────────────────────────────────────────── */
 const fmt = (n) => n != null ? Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0,00';
 const fmtInt = (n) => n != null ? Number(n).toLocaleString('tr-TR') : '0';
+
+// Tag parser & setter for manual cost in invoice / order notes: e.g. [MANUAL_COST: 1500]
+const parseManualCost = (notes) => {
+  if (!notes || typeof notes !== 'string') return null;
+  const m = notes.match(/\[MANUAL_COST:\s*([\d.]+)\s*\]/);
+  return m ? parseFloat(m[1]) : null;
+};
+
+const setManualCostInNotes = (notes, amount) => {
+  const current = (notes || '').replace(/\[MANUAL_COST:\s*[\d.]+\s*\]/g, '').trim();
+  if (amount == null || isNaN(amount) || amount <= 0) {
+    return current || null;
+  }
+  return current ? `${current} [MANUAL_COST: ${amount}]` : `[MANUAL_COST: ${amount}]`;
+};
 
 const MONTHS = [
   'Ocak','Şubat','Mart','Nisan','Mayıs','Haziran',
@@ -168,6 +183,17 @@ export default function Dashboard() {
   const [personOpen, setPersonOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // Manual cost overrides: { [id_or_number]: amount }
+  const [manualCosts, setManualCosts] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('ays_manual_costs') || '{}');
+    } catch (_) {
+      return {};
+    }
+  });
+  const [costModal, setCostModal] = useState({ open: false });
+  const [savingCost, setSavingCost] = useState(false);
+
   // Data
   const [orders, setOrders] = useState([]);
   const [orderItems, setOrderItems] = useState([]);
@@ -199,17 +225,17 @@ export default function Dashboard() {
     try {
       const [ordRes, oiRes, invInRes, invOutRes, custRes, suppRes, itmRes, recRes, riRes, woRes] = await Promise.all([
         supabase.from('orders')
-          .select('id, order_number, customer_id, customer_name, customer_vkntckn, status, currency, subtotal, tax_total, grand_total, is_invoiced, created_at')
+          .select('id, order_number, customer_id, customer_name, customer_vkntckn, status, currency, subtotal, tax_total, grand_total, is_invoiced, created_at, notes, invoice_id')
           .gte('created_at', startDate).lte('created_at', endDate)
           .not('status', 'eq', 'cancelled'),
         supabase.from('order_items')
           .select('id, order_id, item_id, item_name, item_type, quantity, unit, unit_price, tax_rate, notes, cost_at_sale, cost_currency, cost_details, custom_recipe_items, recipe_id, recipe_key, recipe_note'),
         supabase.from('invoices')
-          .select('id, invoice_id, cari_name, vkntckn, amount, tax_exclusive_amount, tax_total, currency, exchange_rate, status, issue_date, is_iade')
+          .select('id, invoice_id, cari_name, vkntckn, amount, tax_exclusive_amount, tax_total, currency, exchange_rate, status, issue_date, is_iade, notes')
           .eq('type', 'inbox')
           .gte('issue_date', startDate.slice(0, 10)).lte('issue_date', endDate.slice(0, 10)),
         supabase.from('invoices')
-          .select('id, invoice_id, cari_name, vkntckn, amount, tax_exclusive_amount, tax_total, currency, exchange_rate, status, issue_date, is_iade')
+          .select('id, invoice_id, cari_name, vkntckn, amount, tax_exclusive_amount, tax_total, currency, exchange_rate, status, issue_date, is_iade, notes')
           .eq('type', 'outbox')
           .gte('issue_date', startDate.slice(0, 10)).lte('issue_date', endDate.slice(0, 10)),
         supabase.from('customers').select('id, name, vkntckn, is_faturasiz'),
@@ -219,7 +245,8 @@ export default function Dashboard() {
         supabase.from('recipe_items').select('id, recipe_id, item_id, item_name, quantity, unit'),
         supabase.from('work_orders')
           .select('id, item_id, item_name, order_id, quantity, status, created_at, custom_recipe_items, recipe_id, notes')
-          .gte('created_at', startDate).lte('created_at', endDate),
+          .order('created_at', { ascending: false })
+          .limit(500),
       ]);
 
       setOrders(ordRes.data || []);
@@ -235,6 +262,24 @@ export default function Dashboard() {
       setRecipes(recRes.data || []);
       setRecipeItems(riRes.data || []);
       setWorkOrders(woRes.data || []);
+
+      // Merge manual costs from DB notes into manualCosts state
+      const dbManuals = {};
+      (invOutRes.data || []).forEach(inv => {
+        const mc = parseManualCost(inv.notes);
+        if (mc != null) {
+          dbManuals[inv.id] = mc;
+          if (inv.invoice_id) dbManuals[inv.invoice_id] = mc;
+        }
+      });
+      (ordRes.data || []).forEach(o => {
+        const mc = parseManualCost(o.notes);
+        if (mc != null) {
+          dbManuals[o.id] = mc;
+          if (o.order_number) dbManuals[o.order_number] = mc;
+        }
+      });
+      setManualCosts(prev => ({ ...dbManuals, ...prev }));
     } catch (e) {
       console.error('[Dashboard] fetch error:', e);
     } finally {
@@ -281,10 +326,10 @@ export default function Dashboard() {
   }, [filteredOrders, orderItems]);
 
   // Helper: is item a recipe product
-  const isRecipeProduct = (itemId) => !!recipeMap[itemId];
+  const isRecipeProduct = useCallback((itemId) => !!recipeMap[itemId], [recipeMap]);
 
   // Helper: cost of a recipe product (sum of raw materials * purchase_price, converted to TRY + other_costs)
-  const recipeCost = (itemId) => {
+  const recipeCost = useCallback((itemId) => {
     const recs = recipeMap[itemId];
     if (!recs || recs.length === 0) return 0;
     const defaultRec = recs.find(r => r.is_default) || recs[0];
@@ -301,10 +346,30 @@ export default function Dashboard() {
       });
     }
     return total;
-  };
+  }, [recipeMap, recipeItems, itemMap, convert]);
+
+  // Helper: cost of a specific recipe by ID
+  const getRecipeCostById = useCallback((recipeId) => {
+    if (!recipeId) return 0;
+    const rec = recipes.find(r => r.id === recipeId);
+    if (!rec) return 0;
+    const rItems = recipeItems.filter(ri => ri.recipe_id === rec.id);
+    let total = rItems.reduce((sum, ri) => {
+      const raw = itemMap[ri.item_id];
+      const rawCost = (ri.quantity || 0) * (raw?.purchase_price || 0);
+      const rawCur = raw?.base_currency || 'TRY';
+      return sum + convert(rawCost, rawCur, 'TRY');
+    }, 0);
+    if (rec.other_costs && Array.isArray(rec.other_costs)) {
+      rec.other_costs.forEach(oc => {
+        total += convert(Number(oc.amount || 0), oc.currency || 'TRY', 'TRY');
+      });
+    }
+    return total;
+  }, [recipes, recipeItems, itemMap, convert]);
 
   // Helper: calculate cost from custom_recipe_items or cost_details array
-  const calcCustomRecipeCost = (items) => {
+  const calcCustomRecipeCost = useCallback((items) => {
     if (!items) return 0;
     let list = items;
     if (typeof list === 'string') {
@@ -312,17 +377,21 @@ export default function Dashboard() {
     }
     if (!Array.isArray(list)) return 0;
     return list.reduce((sum, ri) => {
-      let price = Number(ri.purchase_price ?? ri.unit_cost ?? 0);
+      let price = Number(ri.purchase_price ?? ri.unit_cost ?? ri.cost ?? ri.unit_price ?? ri.price ?? 0);
       let cur = ri.base_currency || ri.currency || 'TRY';
-      if (ri.item_id && itemMap[ri.item_id]) {
-        const itm = itemMap[ri.item_id];
+      let itm = ri.item_id ? itemMap[ri.item_id] : null;
+      if (!itm && ri.item_name) {
+        const norm = trNorm(ri.item_name);
+        itm = Object.values(itemMap).find(x => trNorm(x.name) === norm);
+      }
+      if (itm) {
         if (price <= 0) price = Number(itm.purchase_price || 0);
         if (!ri.base_currency && !ri.currency) cur = itm.base_currency || 'TRY';
       }
-      const qty = Number(ri.quantity ?? ri.qty ?? 1);
+      const qty = Number(ri.quantity ?? ri.qty ?? ri.amount ?? 1);
       return sum + convert(price * qty, cur, 'TRY');
     }, 0);
-  };
+  }, [itemMap, convert]);
 
   // Work orders by order_id lookup map
   const woByOrder = useMemo(() => {
@@ -340,14 +409,20 @@ export default function Dashboard() {
     if (oi.item_id && isRecipeProduct(oi.item_id)) return true;
     if (oi.custom_recipe_items && (Array.isArray(oi.custom_recipe_items) ? oi.custom_recipe_items.length > 0 : true)) return true;
     if (oi.recipe_id || oi.recipe_key || oi.recipe_note) return true;
+    const normOiName = oi.item_name ? trNorm(oi.item_name) : '';
     const matchWo = (woByOrder[oi.order_id] || []).find(w => 
       (oi.item_id && w.item_id === oi.item_id) ||
-      (w.item_name && oi.item_name && w.item_name.trim().toLowerCase() === oi.item_name.trim().toLowerCase())
+      (normOiName && w.item_name && trNorm(w.item_name) === normOiName)
     );
     if (matchWo) return true;
     if (oi.cost_details) return true;
+    if (normOiName) {
+      const itm = Object.values(itemMap).find(x => trNorm(x.name) === normOiName);
+      if (itm && (isRecipeProduct(itm.id) || itm.has_bom)) return true;
+    }
+    if (oi.item_type === 'product') return true;
     return false;
-  }, [isRecipeProduct, woByOrder]);
+  }, [isRecipeProduct, woByOrder, itemMap]);
 
   // Helper: calculate unit cost for any order item
   const getItemUnitCost = useCallback((oi) => {
@@ -356,41 +431,113 @@ export default function Dashboard() {
       const c = calcCustomRecipeCost(oi.custom_recipe_items);
       if (c > 0) return c;
     }
+    const normOiName = oi.item_name ? trNorm(oi.item_name) : '';
     const matchWo = (woByOrder[oi.order_id] || []).find(w => 
       (oi.item_id && w.item_id === oi.item_id) ||
-      (w.item_name && oi.item_name && w.item_name.trim().toLowerCase() === oi.item_name.trim().toLowerCase())
+      (normOiName && w.item_name && trNorm(w.item_name) === normOiName)
     );
     if (matchWo?.custom_recipe_items) {
       const c = calcCustomRecipeCost(matchWo.custom_recipe_items);
       if (c > 0) return c;
     }
-    if (oi.item_id && isRecipeProduct(oi.item_id)) {
-      return recipeCost(oi.item_id);
+    if (matchWo?.recipe_id) {
+      const c = getRecipeCostById(matchWo.recipe_id);
+      if (c > 0) return c;
+    }
+    if (oi.recipe_id) {
+      const c = getRecipeCostById(oi.recipe_id);
+      if (c > 0) return c;
     }
     if (oi.cost_details) {
       const c = calcCustomRecipeCost(oi.cost_details);
       if (c > 0) return c;
     }
-    if (oi.item_id && itemMap[oi.item_id]) {
-      const itm = itemMap[oi.item_id];
-      return convert(itm.purchase_price || 0, itm.base_currency || 'TRY', 'TRY');
+    if (oi.item_id && isRecipeProduct(oi.item_id)) {
+      const c = recipeCost(oi.item_id);
+      if (c > 0) return c;
+    }
+    let itm = oi.item_id ? itemMap[oi.item_id] : null;
+    if (!itm && normOiName) {
+      itm = Object.values(itemMap).find(x => trNorm(x.name) === normOiName);
+    }
+    if (itm) {
+      if (isRecipeProduct(itm.id)) {
+        const c = recipeCost(itm.id);
+        if (c > 0) return c;
+      }
+      if (Number(itm.purchase_price) > 0) {
+        return convert(Number(itm.purchase_price), itm.base_currency || 'TRY', 'TRY');
+      }
     }
     return 0;
-  }, [woByOrder, isRecipeProduct, recipeCost, itemMap, convert]);
+  }, [woByOrder, isRecipeProduct, recipeCost, getRecipeCostById, calcCustomRecipeCost, itemMap, convert]);
 
-  // Helper: calculate total cost for an order
+  // Helper: calculate total cost for an order (factoring in manual cost override)
   const getOrderCost = useCallback((orderId) => {
+    const ord = orders.find(o => o.id === orderId);
+    const manual = manualCosts[orderId] ?? (ord?.order_number ? manualCosts[ord.order_number] : null) ?? parseManualCost(ord?.notes);
+    if (manual != null && Number(manual) > 0) return Number(manual);
+
     const ois = orderItems.filter(oi => oi.order_id === orderId);
     return ois.reduce((sum, oi) => {
       const qty = Number(oi.quantity || 0);
       return sum + (getItemUnitCost(oi) * qty);
     }, 0);
-  }, [orderItems, getItemUnitCost]);
+  }, [orders, manualCosts, orderItems, getItemUnitCost]);
 
   // Helper: calculate total cost for a list of orders
   const calcOrdersCost = useCallback((ords) => {
     return ords.reduce((sum, o) => sum + getOrderCost(o.id), 0);
   }, [getOrderCost]);
+
+  // Handle saving manual cost override
+  const handleSaveCost = useCallback(async (target, amount) => {
+    setSavingCost(true);
+    try {
+      const numAmount = Number(amount || 0);
+      
+      // Update local state and localStorage
+      setManualCosts(prev => {
+        const next = { ...prev };
+        if (numAmount > 0) {
+          if (target.id) next[target.id] = numAmount;
+          if (target.invoiceNo) next[target.invoiceNo] = numAmount;
+          if (target.orderNo) next[target.orderNo] = numAmount;
+        } else {
+          if (target.id) delete next[target.id];
+          if (target.invoiceNo) delete next[target.invoiceNo];
+          if (target.orderNo) delete next[target.orderNo];
+        }
+        try {
+          localStorage.setItem('ays_manual_costs', JSON.stringify(next));
+        } catch (_) {}
+        return next;
+      });
+
+      // Persist to Supabase
+      if (target.isInvoice || target.invoiceNo) {
+        const inv = invoicesOut.find(i => i.id === target.id || (target.invoiceNo && i.invoice_id === target.invoiceNo));
+        if (inv) {
+          const newNotes = setManualCostInNotes(inv.notes, numAmount);
+          await supabase.from('invoices').update({ notes: newNotes }).eq('id', inv.id);
+          setInvoicesOut(prev => prev.map(i => i.id === inv.id ? { ...i, notes: newNotes } : i));
+        }
+      }
+      
+      if (target.orderNo || !target.isInvoice) {
+        const ord = orders.find(o => o.id === target.id || (target.orderNo && o.order_number === target.orderNo));
+        if (ord) {
+          const newNotes = setManualCostInNotes(ord.notes, numAmount);
+          await supabase.from('orders').update({ notes: newNotes }).eq('id', ord.id);
+          setOrders(prev => prev.map(o => o.id === ord.id ? { ...o, notes: newNotes } : o));
+        }
+      }
+    } catch (err) {
+      console.error('Error saving manual cost:', err);
+    } finally {
+      setSavingCost(false);
+    }
+  }, [invoicesOut, orders]);
 
   // ── RENDER MODES ──────────────────────────────────────────────────────────
 
@@ -728,41 +875,116 @@ export default function Dashboard() {
     );
   };
 
-  const renderFaturali = () => {
-    // Giden faturalar (iptal/taslak hariç, gerçek faturalar)
+  // ── Smart Matcher: Invoices & Invoiced Orders ────────────────────────────
+  const faturaliMatchedData = useMemo(() => {
     const validInvoicesOut = invoicesOut.filter(inv => inv.cari_name && inv.status !== 'cancelled' && inv.status !== 'draft');
-    // Faturalı siparişler
     const invOrders = filteredOrders.filter(o => o.is_invoiced);
 
-    // Fatura → sipariş eşleştirmesi (cari_name / vkntckn üzerinden)
-    const rows = [];
     const matchedOrderIds = new Set();
     const matchedInvIds = new Set();
+    const invoiceOrderMap = {};
 
-    // 1) Her faturaya en yakın siparişi eşle
+    // 1) Direct invoice_id link on order
     validInvoicesOut.forEach(inv => {
-      let matchedOrder = null;
-      if (inv.vkntckn) {
-        matchedOrder = invOrders.find(o =>
-          !matchedOrderIds.has(o.id) && o.customer_vkntckn === inv.vkntckn
-        );
-      }
-      if (!matchedOrder) {
-        const invName = (inv.cari_name || '').toLowerCase().trim();
-        matchedOrder = invOrders.find(o =>
-          !matchedOrderIds.has(o.id) && (o.customer_name || '').toLowerCase().trim() === invName
-        );
-      }
-      if (matchedOrder) {
-        matchedOrderIds.add(matchedOrder.id);
+      const directOrder = invOrders.find(o =>
+        !matchedOrderIds.has(o.id) && (
+          (o.invoice_id && (o.invoice_id === inv.id || o.invoice_id === inv.invoice_id))
+        )
+      );
+      if (directOrder) {
+        matchedOrderIds.add(directOrder.id);
         matchedInvIds.add(inv.id);
+        invoiceOrderMap[inv.id] = directOrder;
       }
+    });
+
+    // 2) Customer VKN / Name matching with exact/close amount and date proximity scoring
+    validInvoicesOut.forEach(inv => {
+      if (invoiceOrderMap[inv.id]) return;
+
+      const invAmt = Number(inv.amount || 0);
+      const invMatrah = Number(inv.tax_exclusive_amount || 0);
+      const invVkn = (inv.vkntckn || '').replace(/\s+/g, '');
+      const invName = trNorm(inv.cari_name || '');
+      const invDate = inv.issue_date ? new Date(inv.issue_date).getTime() : 0;
+
+      const cands = invOrders.filter(o => {
+        if (matchedOrderIds.has(o.id)) return false;
+        const oVkn = (o.customer_vkntckn || '').replace(/\s+/g, '');
+        const oName = trNorm(o.customer_name || '');
+        const vknMatch = invVkn && oVkn && (invVkn === oVkn);
+        const nameMatch = invName && oName && (invName.includes(oName) || oName.includes(invName));
+        return vknMatch || nameMatch;
+      });
+
+      if (cands.length === 0) return;
+
+      let bestCand = null;
+      let bestScore = -999999;
+
+      cands.forEach(cand => {
+        const candTotal = Number(cand.grand_total || 0);
+        const candMatrah = Number(cand.subtotal || 0);
+        const candDate = cand.created_at ? new Date(cand.created_at).getTime() : 0;
+
+        let score = 0;
+        const totalDiff = Math.abs(candTotal - invAmt);
+        const matrahDiff = Math.abs(candMatrah - invMatrah);
+
+        if (totalDiff < 2) score += 1000;
+        else if (matrahDiff < 2) score += 950;
+        else {
+          const maxAmt = Math.max(candTotal, invAmt, 1);
+          const pctDiff = (totalDiff / maxAmt) * 100;
+          score += Math.max(0, 50 - pctDiff);
+        }
+
+        if (invDate > 0 && candDate > 0) {
+          const dayDiff = Math.abs(invDate - candDate) / (1000 * 60 * 60 * 24);
+          if (dayDiff <= 3) score += 50;
+          else if (dayDiff <= 7) score += 30;
+          else if (dayDiff <= 15) score += 15;
+          else if (dayDiff <= 30) score += 5;
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestCand = cand;
+        }
+      });
+
+      if (bestCand && bestScore >= 40) {
+        matchedOrderIds.add(bestCand.id);
+        matchedInvIds.add(inv.id);
+        invoiceOrderMap[inv.id] = bestCand;
+      }
+    });
+
+    const rows = [];
+
+    // Add invoice rows
+    validInvoicesOut.forEach(inv => {
+      const matchedOrder = invoiceOrderMap[inv.id];
       const total = Number(inv.amount || 0);
       const tax = Number(inv.tax_total || 0);
       const matrah = Number(inv.tax_exclusive_amount || (total - tax));
-      const cost = matchedOrder ? getOrderCost(matchedOrder.id) : 0;
+
+      const manual = manualCosts[inv.id] ?? (inv.invoice_id ? manualCosts[inv.invoice_id] : null) ?? parseManualCost(inv.notes);
+      let cost = 0;
+      let isManual = false;
+      let hasCost = false;
+
+      if (manual != null && Number(manual) > 0) {
+        cost = Number(manual);
+        isManual = true;
+        hasCost = true;
+      } else if (matchedOrder) {
+        cost = getOrderCost(matchedOrder.id);
+        hasCost = cost > 0;
+      }
+
       const profit = matrah - cost;
-      const margin = matrah > 0 ? (profit / matrah * 100) : 0;
+      const margin = (hasCost && matrah > 0) ? (profit / matrah * 100) : null;
       const ois = matchedOrder ? orderItems.filter(oi => oi.order_id === matchedOrder.id) : [];
 
       rows.push({
@@ -776,23 +998,38 @@ export default function Dashboard() {
         cost,
         profit,
         margin,
-        hasCost: !!matchedOrder,
+        hasCost,
+        isManual,
         items: ois,
         source: matchedOrder ? 'linked' : 'invoice_only',
         date: inv.issue_date || '',
       });
     });
 
-    // 2) Eşleşmemiş faturalı siparişleri ekle
+    // Add unmatched invoiced orders
     invOrders.forEach(o => {
       if (matchedOrderIds.has(o.id)) return;
       const cur = o.currency || 'TRY';
       const total = convert(Number(o.grand_total || 0), cur, 'TRY');
       const tax = convert(Number(o.tax_total || 0), cur, 'TRY');
       const matrah = convert(Number(o.subtotal || (total - tax)), cur, 'TRY');
-      const cost = getOrderCost(o.id);
+
+      const manual = manualCosts[o.id] ?? (o.order_number ? manualCosts[o.order_number] : null) ?? parseManualCost(o.notes);
+      let cost = 0;
+      let isManual = false;
+      let hasCost = false;
+
+      if (manual != null && Number(manual) > 0) {
+        cost = Number(manual);
+        isManual = true;
+        hasCost = true;
+      } else {
+        cost = getOrderCost(o.id);
+        hasCost = cost > 0;
+      }
+
       const profit = matrah - cost;
-      const margin = matrah > 0 ? (profit / matrah * 100) : 0;
+      const margin = (hasCost && matrah > 0) ? (profit / matrah * 100) : null;
       const ois = orderItems.filter(oi => oi.order_id === o.id);
 
       rows.push({
@@ -806,7 +1043,8 @@ export default function Dashboard() {
         cost,
         profit,
         margin,
-        hasCost: true,
+        hasCost,
+        isManual,
         items: ois,
         source: 'order_only',
         date: o.created_at ? o.created_at.slice(0, 10) : '',
@@ -819,6 +1057,20 @@ export default function Dashboard() {
     const totalCost = sorted.reduce((s, r) => s + r.cost, 0);
     const totalNetProfit = totalMatrah - totalCost;
     const overallMargin = totalMatrah > 0 ? (totalNetProfit / totalMatrah * 100) : 0;
+
+    return {
+      validInvoicesOut,
+      rows: sorted,
+      totalMatrah,
+      totalTax,
+      totalCost,
+      totalNetProfit,
+      overallMargin,
+    };
+  }, [invoicesOut, filteredOrders, manualCosts, getOrderCost, orderItems, convert]);
+
+  const renderFaturali = () => {
+    const { validInvoicesOut, rows, totalMatrah, totalTax, totalCost, totalNetProfit, overallMargin } = faturaliMatchedData;
 
     return (
       <div className="space-y-4">
@@ -842,16 +1094,66 @@ export default function Dashboard() {
             { label: 'Tarih', key: 'date' },
             { label: 'Matrah', key: 'matrah', align: 'right', total: true, render: r => `₺${fmt(r.matrah)}` },
             { label: 'KDV', key: 'tax', align: 'right', total: true, render: r => `₺${fmt(r.tax)}` },
-            { label: 'Maliyet', key: 'cost', align: 'right', total: true, render: r => `₺${fmt(r.cost)}` },
+            { label: 'Maliyet', key: 'cost', align: 'right', total: true,
+              render: r => (
+                <div className="inline-flex items-center justify-end gap-1.5 w-full">
+                  {r.cost > 0 ? (
+                    <span className={r.isManual ? "font-semibold text-blue-500" : ""}>
+                      ₺{fmt(r.cost)}
+                      {r.isManual && (
+                        <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-blue-500/10 text-blue-500 font-bold" title="Manuel Maliyet">M</span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="text-amber-500 font-medium text-[11px]">₺0,00</span>
+                  )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCostModal({
+                        open: true,
+                        id: r.id,
+                        cari: r.cari,
+                        invoiceNo: r.faturaNo,
+                        orderNo: r.siparisNo,
+                        matrah: r.matrah,
+                        total: r.total,
+                        currentCost: r.cost > 0 ? r.cost : '',
+                        inputCost: r.cost > 0 ? String(r.cost) : '',
+                        isInvoice: !!r.faturaNo || r.source === 'linked' || r.source === 'invoice_only',
+                      });
+                    }}
+                    title={r.cost > 0 ? "Maliyeti Düzenle" : "Maliyet Gir"}
+                    className={`p-1 rounded transition-colors ${
+                      r.cost === 0
+                        ? "bg-amber-500/15 text-amber-500 hover:bg-amber-500/25 ring-1 ring-amber-500/30"
+                        : "hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    }`}
+                  >
+                    <Edit2 size={12} />
+                  </button>
+                </div>
+              )
+            },
             { label: 'Kâr', key: 'profit', align: 'right', total: true,
-              render: r => `₺${fmt(r.profit)}`,
-              color: r => r.profit >= 0 ? '#22c55e' : '#ef4444' },
+              render: r => {
+                if (!r.hasCost) {
+                  return <span className="text-amber-500/80 text-[11px] font-medium">Maliyet Gir</span>;
+                }
+                return `₺${fmt(r.profit)}`;
+              },
+              color: r => !r.hasCost ? '#f59e0b' : (r.profit >= 0 ? '#22c55e' : '#ef4444') },
             { label: 'Marj', key: 'margin', align: 'right',
-              render: r => `%${fmt(r.margin)}`,
-              color: r => r.margin >= 0 ? '#22c55e' : '#ef4444' },
+              render: r => {
+                if (r.margin === null || !r.hasCost) {
+                  return <span className="text-amber-500/80 text-[11px] font-medium">—</span>;
+                }
+                return `%${fmt(r.margin)}`;
+              },
+              color: r => (r.margin === null || !r.hasCost) ? '#f59e0b' : (r.margin >= 0 ? '#22c55e' : '#ef4444') },
             { label: 'Toplam', key: 'total', align: 'right', total: true, render: r => `₺${fmt(r.total)}` },
           ]}
-          rows={sorted}
+          rows={rows}
           expandable={r => r.items && r.items.length > 0}
           renderExpand={r => (
             <div className="px-4 py-2 space-y-1" style={{ background: isDark ? 'rgba(16,185,129,0.04)' : 'rgba(16,185,129,0.02)' }}>
@@ -888,9 +1190,12 @@ export default function Dashboard() {
     const rows = noInvOrders.map(o => {
       const cur = o.currency || 'TRY';
       const revenue = convert(Number(o.grand_total || 0), cur, 'TRY');
-      const cost = getOrderCost(o.id);
+      const manual = manualCosts[o.id] ?? (o.order_number ? manualCosts[o.order_number] : null) ?? parseManualCost(o.notes);
+      const isManual = manual != null && Number(manual) > 0;
+      const cost = isManual ? Number(manual) : getOrderCost(o.id);
+      const hasCost = cost > 0;
       const profit = revenue - cost;
-      const margin = revenue > 0 ? (profit / revenue * 100) : 0;
+      const margin = (hasCost && revenue > 0) ? (profit / revenue * 100) : null;
       const ois = orderItems.filter(oi => oi.order_id === o.id);
       const itemCount = ois.reduce((s, oi) => s + Number(oi.quantity || 0), 0);
 
@@ -903,6 +1208,8 @@ export default function Dashboard() {
         cost,
         profit,
         margin,
+        hasCost,
+        isManual,
         items: ois,
         date: o.created_at ? o.created_at.slice(0, 10) : '',
       };
@@ -931,14 +1238,63 @@ export default function Dashboard() {
               render: r => r.orderNo || '—',
               color: r => r.orderNo ? '#3b82f6' : '#94a3b8' },
             { label: 'Miktar', key: 'itemCount', align: 'right', total: true, render: r => fmtInt(r.itemCount) },
-            { label: 'Maliyet', key: 'cost', align: 'right', total: true, render: r => `₺${fmt(r.cost)}` },
+            { label: 'Maliyet', key: 'cost', align: 'right', total: true,
+              render: r => (
+                <div className="inline-flex items-center justify-end gap-1.5 w-full">
+                  {r.cost > 0 ? (
+                    <span className={r.isManual ? "font-semibold text-blue-500" : ""}>
+                      ₺{fmt(r.cost)}
+                      {r.isManual && (
+                        <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-blue-500/10 text-blue-500 font-bold" title="Manuel Maliyet">M</span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="text-amber-500 font-medium text-[11px]">₺0,00</span>
+                  )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCostModal({
+                        open: true,
+                        id: r.id,
+                        cari: r.customer,
+                        orderNo: r.orderNo,
+                        matrah: r.revenue,
+                        total: r.revenue,
+                        currentCost: r.cost > 0 ? r.cost : '',
+                        inputCost: r.cost > 0 ? String(r.cost) : '',
+                        isInvoice: false,
+                      });
+                    }}
+                    title={r.cost > 0 ? "Maliyeti Düzenle" : "Maliyet Gir"}
+                    className={`p-1 rounded transition-colors ${
+                      r.cost === 0
+                        ? "bg-amber-500/15 text-amber-500 hover:bg-amber-500/25 ring-1 ring-amber-500/30"
+                        : "hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                    }`}
+                  >
+                    <Edit2 size={12} />
+                  </button>
+                </div>
+              )
+            },
             { label: 'Satış', key: 'revenue', align: 'right', total: true, render: r => `₺${fmt(r.revenue)}` },
             { label: 'Kâr', key: 'profit', align: 'right', total: true,
-              render: r => `₺${fmt(r.profit)}`,
-              color: r => r.profit >= 0 ? '#22c55e' : '#ef4444' },
+              render: r => {
+                if (!r.hasCost) {
+                  return <span className="text-amber-500/80 text-[11px] font-medium">Maliyet Gir</span>;
+                }
+                return `₺${fmt(r.profit)}`;
+              },
+              color: r => !r.hasCost ? '#f59e0b' : (r.profit >= 0 ? '#22c55e' : '#ef4444') },
             { label: 'Marj', key: 'margin', align: 'right',
-              render: r => `%${fmt(r.margin)}`,
-              color: r => r.margin >= 0 ? '#22c55e' : '#ef4444' },
+              render: r => {
+                if (r.margin === null || !r.hasCost) {
+                  return <span className="text-amber-500/80 text-[11px] font-medium">—</span>;
+                }
+                return `%${fmt(r.margin)}`;
+              },
+              color: r => (r.margin === null || !r.hasCost) ? '#f59e0b' : (r.margin >= 0 ? '#22c55e' : '#ef4444') },
             { label: 'Tarih', key: 'date' },
           ]}
           rows={sorted}
@@ -1038,25 +1394,42 @@ export default function Dashboard() {
   };
 
   const renderKar = () => {
-    const faturaliOrders = filteredOrders.filter(o => o.is_invoiced);
-    const faturasizOrders = filteredOrders.filter(o => !o.is_invoiced);
-
-    // Faturalı: Ciro (KDV Hariç matrah), Maliyet, KDV, Net Kâr
-    const faturaliRevenue = faturaliOrders.reduce((s, o) => {
-      const cur = o.currency || 'TRY';
-      const matrah = Number(o.subtotal || (Number(o.grand_total || 0) - Number(o.tax_total || 0)));
-      return s + convert(matrah, cur, 'TRY');
-    }, 0);
-    const faturaliTax = faturaliOrders.reduce((s, o) => convert(Number(o.tax_total || 0), o.currency || 'TRY', 'TRY'), 0);
-    const faturaliCost = calcOrdersCost(faturaliOrders);
-    const faturaliNet = faturaliRevenue - faturaliCost;
-    const faturaliMargin = faturaliRevenue > 0 ? (faturaliNet / faturaliRevenue * 100) : 0;
+    // Exact matched faturalı figures from smart matcher
+    const { rows: faturaliRows, totalMatrah: faturaliRevenue, totalTax: faturaliTax, totalCost: faturaliCost, totalNetProfit: faturaliNet, overallMargin: faturaliMargin } = faturaliMatchedData;
 
     // Faturasız: Ciro, Maliyet, Net Kâr
-    const faturasizRevenue = faturasizOrders.reduce((s, o) => {
-      return s + convert(Number(o.grand_total || 0), o.currency || 'TRY', 'TRY');
-    }, 0);
-    const faturasizCost = calcOrdersCost(faturasizOrders);
+    const faturasizOrders = filteredOrders.filter(o => !o.is_invoiced);
+    const faturasizRows = faturasizOrders.map(o => {
+      const cur = o.currency || 'TRY';
+      const rev = convert(Number(o.grand_total || 0), cur, 'TRY');
+      const manual = manualCosts[o.id] ?? (o.order_number ? manualCosts[o.order_number] : null) ?? parseManualCost(o.notes);
+      const isManual = manual != null && Number(manual) > 0;
+      const cost = isManual ? Number(manual) : getOrderCost(o.id);
+      const hasCost = cost > 0;
+      const profit = rev - cost;
+      const margin = (hasCost && rev > 0) ? (profit / rev * 100) : null;
+      const ois = orderItems.filter(oi => oi.order_id === o.id);
+
+      return {
+        id: o.id,
+        orderNo: o.order_number || '',
+        faturaNo: '',
+        customer: o.customer_name || 'Bilinmeyen',
+        typeLabel: '📄 Faturasız',
+        isInv: false,
+        revenue: rev,
+        cost,
+        profit,
+        margin,
+        hasCost,
+        isManual,
+        items: ois,
+        date: o.created_at ? o.created_at.slice(0, 10) : '',
+      };
+    });
+
+    const faturasizRevenue = faturasizRows.reduce((s, r) => s + r.revenue, 0);
+    const faturasizCost = faturasizRows.reduce((s, r) => s + r.cost, 0);
     const faturasizNet = faturasizRevenue - faturasizCost;
     const faturasizMargin = faturasizRevenue > 0 ? (faturasizNet / faturasizRevenue * 100) : 0;
 
@@ -1070,32 +1443,26 @@ export default function Dashboard() {
       { label: 'Faturasız Satış', revenue: faturasizRevenue, cost: faturasizCost, profit: faturasizNet, margin: faturasizMargin },
     ];
 
-    // Sipariş bazlı ayrıntılı döküm
-    const orderRows = filteredOrders.map(o => {
-      const cur = o.currency || 'TRY';
-      const isInv = o.is_invoiced;
-      const rev = isInv 
-        ? convert(Number(o.subtotal || (Number(o.grand_total || 0) - Number(o.tax_total || 0))), cur, 'TRY')
-        : convert(Number(o.grand_total || 0), cur, 'TRY');
-      const cost = getOrderCost(o.id);
-      const profit = rev - cost;
-      const margin = rev > 0 ? (profit / rev * 100) : 0;
-      const ois = orderItems.filter(oi => oi.order_id === o.id);
+    // Unified order & invoice rows in Kâr tab
+    const mappedFaturali = faturaliRows.map(r => ({
+      id: r.id,
+      orderNo: r.siparisNo || r.faturaNo || '—',
+      faturaNo: r.faturaNo,
+      siparisNo: r.siparisNo,
+      customer: r.cari,
+      typeLabel: '🧾 Faturalı',
+      isInv: true,
+      revenue: r.matrah,
+      cost: r.cost,
+      profit: r.profit,
+      margin: r.margin,
+      hasCost: r.hasCost,
+      isManual: r.isManual,
+      items: r.items,
+      date: r.date,
+    }));
 
-      return {
-        id: o.id,
-        orderNo: o.order_number || '',
-        customer: o.customer_name || 'Bilinmeyen',
-        typeLabel: isInv ? '🧾 Faturalı' : '📄 Faturasız',
-        isInv,
-        revenue: rev,
-        cost,
-        profit,
-        margin,
-        items: ois,
-        date: o.created_at ? o.created_at.slice(0, 10) : '',
-      };
-    }).sort((a, b) => b.revenue - a.revenue);
+    const combinedOrderRows = [...mappedFaturali, ...faturasizRows].sort((a, b) => b.revenue - a.revenue);
 
     return (
       <div className="space-y-6">
@@ -1129,27 +1496,77 @@ export default function Dashboard() {
         {/* Sipariş Bazlı Kâr Tablosu */}
         <div>
           <h4 className="text-sm font-bold mb-3 flex items-center gap-2" style={{ color: c.text }}>
-            <TrendingUp size={15} style={{ color: '#22c55e' }} /> Sipariş Bazında Kâr Analizi
+            <TrendingUp size={15} style={{ color: '#22c55e' }} /> Sipariş & Fatura Bazında Kâr Analizi
           </h4>
-          <ReportTable isDark={isDark} emptyText="Bu ay sipariş kaydı yok"
+          <ReportTable isDark={isDark} emptyText="Bu ay sipariş / fatura kaydı yok"
             columns={[
-              { label: 'Sipariş No', key: 'orderNo', bold: true,
+              { label: 'Kayıt / Sipariş No', key: 'orderNo', bold: true,
                 render: r => r.orderNo || '—',
-                color: r => r.orderNo ? '#3b82f6' : '#94a3b8' },
-              { label: 'Müşteri', key: 'customer' },
+                color: r => r.isInv ? '#10b981' : '#3b82f6' },
+              { label: 'Müşteri / Cari', key: 'customer' },
               { label: 'Tür', key: 'typeLabel',
                 color: r => r.isInv ? '#10b981' : '#ef4444' },
-              { label: 'Ciro', key: 'revenue', align: 'right', total: true, render: r => `₺${fmt(r.revenue)}` },
-              { label: 'Maliyet', key: 'cost', align: 'right', total: true, render: r => `₺${fmt(r.cost)}` },
+              { label: 'Ciro / Matrah', key: 'revenue', align: 'right', total: true, render: r => `₺${fmt(r.revenue)}` },
+              { label: 'Maliyet', key: 'cost', align: 'right', total: true,
+                render: r => (
+                  <div className="inline-flex items-center justify-end gap-1.5 w-full">
+                    {r.cost > 0 ? (
+                      <span className={r.isManual ? "font-semibold text-blue-500" : ""}>
+                        ₺{fmt(r.cost)}
+                        {r.isManual && (
+                          <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-blue-500/10 text-blue-500 font-bold" title="Manuel Maliyet">M</span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="text-amber-500 font-medium text-[11px]">₺0,00</span>
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCostModal({
+                          open: true,
+                          id: r.id,
+                          cari: r.customer,
+                          invoiceNo: r.faturaNo,
+                          orderNo: r.siparisNo,
+                          matrah: r.revenue,
+                          total: r.revenue,
+                          currentCost: r.cost > 0 ? r.cost : '',
+                          inputCost: r.cost > 0 ? String(r.cost) : '',
+                          isInvoice: r.isInv,
+                        });
+                      }}
+                      title={r.cost > 0 ? "Maliyeti Düzenle" : "Maliyet Gir"}
+                      className={`p-1 rounded transition-colors ${
+                        r.cost === 0
+                          ? "bg-amber-500/15 text-amber-500 hover:bg-amber-500/25 ring-1 ring-amber-500/30"
+                          : "hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                      }`}
+                    >
+                      <Edit2 size={12} />
+                    </button>
+                  </div>
+                )
+              },
               { label: 'Net Kâr', key: 'profit', align: 'right', total: true,
-                render: r => `₺${fmt(r.profit)}`,
-                color: r => r.profit >= 0 ? '#22c55e' : '#ef4444' },
+                render: r => {
+                  if (!r.hasCost) {
+                    return <span className="text-amber-500/80 text-[11px] font-medium">Maliyet Gir</span>;
+                  }
+                  return `₺${fmt(r.profit)}`;
+                },
+                color: r => !r.hasCost ? '#f59e0b' : (r.profit >= 0 ? '#22c55e' : '#ef4444') },
               { label: 'Marj', key: 'margin', align: 'right',
-                render: r => `%${fmt(r.margin)}`,
-                color: r => r.margin >= 0 ? '#22c55e' : '#ef4444' },
+                render: r => {
+                  if (r.margin === null || !r.hasCost) {
+                    return <span className="text-amber-500/80 text-[11px] font-medium">—</span>;
+                  }
+                  return `%${fmt(r.margin)}`;
+                },
+                color: r => (r.margin === null || !r.hasCost) ? '#f59e0b' : (r.margin >= 0 ? '#22c55e' : '#ef4444') },
               { label: 'Tarih', key: 'date' },
             ]}
-            rows={orderRows}
+            rows={combinedOrderRows}
             expandable={r => r.items && r.items.length > 0}
             renderExpand={r => (
               <div className="px-4 py-2 space-y-1" style={{ background: isDark ? 'rgba(59,130,246,0.04)' : 'rgba(59,130,246,0.02)' }}>
@@ -1399,6 +1816,142 @@ export default function Dashboard() {
             currentColor={currentColor}
             onClose={() => setCalcOpen(false)}
           />
+        )}
+        {costModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+            <div className="w-full max-w-md rounded-2xl border p-6 shadow-2xl relative"
+              style={{
+                background: isDark ? '#1e293b' : '#ffffff',
+                borderColor: isDark ? 'rgba(148,163,184,0.15)' : '#e2e8f0',
+                color: isDark ? '#f1f5f9' : '#0f172a',
+              }}>
+              <button
+                onClick={() => setCostModal({ open: false })}
+                className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                <X size={18} />
+              </button>
+
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-500">
+                  <Edit2 size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold">Maliyet Belirle / Düzenle</h3>
+                  <p className="text-xs text-slate-400">Manuel maliyet girişi ve kâr marjı güncelleme</p>
+                </div>
+              </div>
+
+              <div className="rounded-xl p-3.5 mb-4 space-y-1.5 text-xs border"
+                style={{
+                  background: isDark ? 'rgba(15,23,42,0.4)' : '#f8fafc',
+                  borderColor: isDark ? 'rgba(148,163,184,0.1)' : '#e2e8f0',
+                }}>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Cari:</span>
+                  <span className="font-semibold">{costModal.cari || '—'}</span>
+                </div>
+                {costModal.invoiceNo && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Fatura No:</span>
+                    <span className="font-mono text-emerald-500 font-semibold">{costModal.invoiceNo}</span>
+                  </div>
+                )}
+                {costModal.orderNo && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Sipariş No:</span>
+                    <span className="font-mono text-blue-500 font-semibold">{costModal.orderNo}</span>
+                  </div>
+                )}
+                <div className="flex justify-between pt-1 border-t border-slate-200 dark:border-slate-800">
+                  <span className="text-slate-400">Tutar / Matrah:</span>
+                  <span className="font-bold text-sm">₺{fmt(costModal.matrah || costModal.total || 0)}</span>
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Toplam Maliyet Tutarı (₺)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-slate-400">₺</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    autoFocus
+                    value={costModal.inputCost}
+                    onChange={(e) => setCostModal(prev => ({ ...prev, inputCost: e.target.value }))}
+                    placeholder="0.00"
+                    className="w-full pl-8 pr-4 py-2.5 rounded-xl border font-semibold text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                    style={{
+                      background: isDark ? 'rgba(15,23,42,0.6)' : '#ffffff',
+                      borderColor: isDark ? 'rgba(148,163,184,0.2)' : '#cbd5e1',
+                      color: isDark ? '#f1f5f9' : '#0f172a',
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Canlı Kâr ve Marj Önizleme */}
+              {(() => {
+                const inputVal = parseFloat(costModal.inputCost) || 0;
+                const rev = costModal.matrah || costModal.total || 0;
+                const profit = rev - inputVal;
+                const margin = (rev > 0 && inputVal > 0) ? (profit / rev * 100) : null;
+                return (
+                  <div className="rounded-xl p-3 mb-5 text-xs flex items-center justify-between border bg-blue-500/5 border-blue-500/15">
+                    <div>
+                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Hesaplanan Kâr</span>
+                      <span className={`font-bold text-sm ${profit >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                        ₺{fmt(profit)}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Kâr Marjı</span>
+                      <span className={`font-bold text-sm ${margin != null ? (margin >= 0 ? 'text-emerald-500' : 'text-red-500') : 'text-slate-400'}`}>
+                        {margin != null ? `%${fmt(margin)}` : '—'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div className="flex items-center justify-between gap-3">
+                {costModal.currentCost > 0 && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await handleSaveCost(costModal, 0);
+                      setCostModal({ open: false });
+                    }}
+                    className="text-xs text-red-400 hover:text-red-500 font-semibold px-2 py-1">
+                    Maliyeti Sıfırla
+                  </button>
+                )}
+                <div className="flex items-center gap-2 ml-auto">
+                  <button
+                    type="button"
+                    onClick={() => setCostModal({ open: false })}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400">
+                    Vazgeç
+                  </button>
+                  <button
+                    type="button"
+                    disabled={savingCost}
+                    onClick={async () => {
+                      const val = parseFloat(costModal.inputCost);
+                      if (isNaN(val) || val < 0) return;
+                      await handleSaveCost(costModal, val);
+                      setCostModal({ open: false });
+                    }}
+                    className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 transition shadow-lg shadow-blue-500/20 disabled:opacity-50 flex items-center gap-1.5">
+                    {savingCost ? <Loader2 size={13} className="animate-spin" /> : null}
+                    Kaydet
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
       </AnimatePresence>
     </div>
