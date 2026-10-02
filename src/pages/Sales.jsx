@@ -696,6 +696,22 @@ function OrderForm({ order, customers, allItems, setAllItems, allRecipes = [], o
         // Helper: birim maliyet hesapla (TRY cinsinden)
         const calcCostAtSale = (l) => {
           const itm = allItems.find(i => i.id === l.item_id);
+
+          // Kayıtsız (ad-hoc) reçeteli ürün — custom_recipe_items varsa direkt hesapla
+          if (!itm && l.custom_recipe_items && l.custom_recipe_items.length > 0) {
+            const details = l.custom_recipe_items.map(ri => {
+              const raw = ri.item_id ? allItems.find(i => i.id === ri.item_id) : null;
+              // Önce ri.purchase_price, yoksa stok fiyatı
+              const rawPrice = Number(ri.purchase_price ?? ri.unit_cost ?? ri.cost ?? 0) || (raw?.purchase_price || 0);
+              const rawCur = ri.base_currency || ri.currency || raw?.base_currency || 'TRY';
+              const rawRate = rawCur === 'TRY' ? 1 : (fxRates[rawCur] || 1);
+              const costTRY = rawPrice * rawRate * (ri.quantity || 1);
+              return { item_id: ri.item_id, item_name: ri.item_name || raw?.name, qty: ri.quantity, unit_cost: rawPrice, currency: rawCur, rate: rawRate, cost_try: costTRY };
+            });
+            const totalCost = details.reduce((s, d) => s + d.cost_try, 0);
+            return { cost: totalCost, currency: 'TRY', details };
+          }
+
           if (!itm) return { cost: 0, currency: 'TRY', details: null };
 
           // Reçeteli ürün — hammadde maliyetlerini topla
@@ -706,14 +722,27 @@ function OrderForm({ order, customers, allItems, setAllItems, allRecipes = [], o
               : recs.find(r => r.is_default) || recs[0];
             const components = l.custom_recipe_items || (rec.recipe_items || []);
             const details = components.map(ri => {
-              const raw = allItems.find(i => i.id === ri.item_id);
-              const rawPrice = raw?.purchase_price || 0;
-              const rawCur = raw?.base_currency || 'TRY';
+              const raw = ri.item_id ? allItems.find(i => i.id === ri.item_id) : null;
+              // Önce ri.purchase_price (özel reçete/gider kalemleri), yoksa stok fiyatı
+              const rawPrice = Number(ri.purchase_price ?? ri.unit_cost ?? ri.cost ?? 0) || (raw?.purchase_price || 0);
+              const rawCur = ri.base_currency || ri.currency || raw?.base_currency || 'TRY';
               const rawRate = rawCur === 'TRY' ? 1 : (fxRates[rawCur] || 1);
               const costTRY = rawPrice * rawRate * (ri.quantity || 1);
               return { item_id: ri.item_id, item_name: ri.item_name || raw?.name, qty: ri.quantity, unit_cost: rawPrice, currency: rawCur, rate: rawRate, cost_try: costTRY };
             });
-            const totalCost = details.reduce((s, d) => s + d.cost_try, 0);
+            let totalCost = details.reduce((s, d) => s + d.cost_try, 0);
+
+            // Standart reçete kullanılıyorsa (custom_recipe_items yoksa) other_costs ekle (İşçilik, Boya, Genel gider vb.)
+            if (!l.custom_recipe_items && rec.other_costs && Array.isArray(rec.other_costs)) {
+              rec.other_costs.forEach(oc => {
+                const ocAmount = Number(oc.amount || 0);
+                const ocCur = oc.currency || 'TRY';
+                const ocRate = ocCur === 'TRY' ? 1 : (fxRates[ocCur] || 1);
+                totalCost += ocAmount * ocRate;
+                details.push({ item_id: null, item_name: oc.type || 'Diğer Gider', qty: 1, unit_cost: ocAmount, currency: ocCur, rate: ocRate, cost_try: ocAmount * ocRate });
+              });
+            }
+
             return { cost: totalCost, currency: 'TRY', details };
           }
 

@@ -424,13 +424,39 @@ export default function Dashboard() {
     return false;
   }, [isRecipeProduct, woByOrder, itemMap]);
 
+  // Helper: get other_costs total for a recipe (İşçilik, Boya, Genel gider vb.)
+  const getRecipeOtherCosts = useCallback((recipeId, itemId) => {
+    let rec = null;
+    if (recipeId) {
+      rec = recipes.find(r => r.id === recipeId);
+    }
+    if (!rec && itemId) {
+      const recs = recipeMap[itemId];
+      if (recs && recs.length > 0) rec = recs.find(r => r.is_default) || recs[0];
+    }
+    if (!rec || !rec.other_costs || !Array.isArray(rec.other_costs)) return 0;
+    return rec.other_costs.reduce((sum, oc) => sum + convert(Number(oc.amount || 0), oc.currency || 'TRY', 'TRY'), 0);
+  }, [recipes, recipeMap, convert]);
+
   // Helper: calculate unit cost for any order item
   const getItemUnitCost = useCallback((oi) => {
-    if (Number(oi.cost_at_sale) > 0) return Number(oi.cost_at_sale);
+    // custom_recipe_items zaten other_costs'u içerir (cloneRecipeData embedded them)
     if (oi.custom_recipe_items) {
       const c = calcCustomRecipeCost(oi.custom_recipe_items);
       if (c > 0) return c;
     }
+
+    // cost_at_sale varsa kullan, ama eski kayıtlarda other_costs (İşçilik, Genel gider) eksik olabilir — ekle
+    if (Number(oi.cost_at_sale) > 0) {
+      let cost = Number(oi.cost_at_sale);
+      // Eğer bu bir reçeteli ürünse ve custom_recipe_items yoksa, other_costs eksik olabilir
+      if (!oi.custom_recipe_items) {
+        const otherCosts = getRecipeOtherCosts(oi.recipe_id, oi.item_id);
+        if (otherCosts > 0) cost += otherCosts;
+      }
+      return cost;
+    }
+
     const normOiName = oi.item_name ? trNorm(oi.item_name) : '';
     const matchWo = (woByOrder[oi.order_id] || []).find(w => 
       (oi.item_id && w.item_id === oi.item_id) ||
@@ -470,7 +496,7 @@ export default function Dashboard() {
       }
     }
     return 0;
-  }, [woByOrder, isRecipeProduct, recipeCost, getRecipeCostById, calcCustomRecipeCost, itemMap, convert]);
+  }, [woByOrder, isRecipeProduct, recipeCost, getRecipeCostById, getRecipeOtherCosts, calcCustomRecipeCost, itemMap, convert]);
 
   // Helper: calculate total cost for an order (factoring in manual cost override)
   const getOrderCost = useCallback((orderId) => {
