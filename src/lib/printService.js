@@ -165,17 +165,25 @@ function getShareScript(title) {
         btn.textContent = '⏳ Hazırlanıyor...';
         btn.disabled = true;
         try {
-          // Kütüphanelerin yüklenmesini bekle (max 15sn)
+          // Kütüphanelerin yüklenmesini bekle (max 8sn — daha kısa timeout)
           var waited = 0;
-          while ((!window.html2canvas || !window.jspdf) && waited < 15000) {
+          while ((!window.html2canvas || !window.jspdf) && waited < 8000) {
             await new Promise(function(r) { setTimeout(r, 200); });
             waited += 200;
           }
-          if (!window.html2canvas) throw new Error('html2canvas yüklenemedi');
-          if (!window.jspdf) throw new Error('jsPDF yüklenemedi');
+
+          // CDN yüklenmediyse fallback: doğrudan yazdır
+          if (!window.html2canvas || !window.jspdf) {
+            if (confirm('PDF oluşturulamadı (kütüphane yüklenemedi).\\nYazdırma diyaloğunu açmak ister misiniz?')) {
+              window.print();
+            }
+            return;
+          }
 
           var el = document.querySelector('.print-container');
+          btn.textContent = '📸 Görsel alınıyor...';
           var canvas = await window.html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+          btn.textContent = '📄 PDF oluşturuluyor...';
           var pdf = new window.jspdf.jsPDF('p', 'mm', 'a4');
           var pw = 210, ph = 297;
           var imgW = pw, imgH = (canvas.height * imgW) / canvas.width;
@@ -185,9 +193,21 @@ function getShareScript(title) {
           var blob = pdf.output('blob');
           var fileName = '${safeT}.pdf';
           var file = new File([blob], fileName, { type: 'application/pdf' });
-          if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-            await navigator.share({ title: '${safeT}', files: [file] });
-          } else {
+
+          // Web Share API — popup pencereden çalışmayabilir, try/catch ile koru
+          var shared = false;
+          try {
+            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+              btn.textContent = '📤 Paylaşılıyor...';
+              await navigator.share({ title: '${safeT}', files: [file] });
+              shared = true;
+            }
+          } catch(shareErr) {
+            console.warn('Share API hatası (popup kısıtlaması olabilir):', shareErr);
+          }
+
+          // Share API çalışmadıysa doğrudan indir
+          if (!shared) {
             var link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
             link.download = fileName;
