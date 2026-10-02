@@ -228,8 +228,8 @@ function getShareScript(title) {
 
 // ─── Yazdırma Penceresi ─────────────────────────────────────────────────────
 export function printHTML(html, title = 'Yazdır') {
-  const printWindow = window.open('', '_blank', 'width=800,height=600');
-  if (!printWindow) { alert('Popup engelleyici yazdırma penceresini engelledi!'); return; }
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) { alert('Tarayıcı yeni sekme açmayı engelledi! Lütfen popup engelleyiciyi kontrol edin.'); return; }
   const safeTitle = (title || 'Belge').replace(/'/g, '');
   printWindow.document.write(`
     <!DOCTYPE html>
