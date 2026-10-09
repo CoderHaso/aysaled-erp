@@ -171,11 +171,12 @@ function IsleWizard({ inv, allItems, supabase, onClose, onDone }) {
   const { effectiveMode } = useTheme();
   const isDark = effectiveMode === 'dark';
   const fmtN = (n) => Number(n || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2 });
-  // outbox = giden fatura (biz kestik) → biz alacağız → Alacak (borc field)
-  // inbox  = gelen fatura (bize kesildi) → biz vereceğiz → Verecek (alacak field)
+  // outbox = giden fatura (biz kestik) → müşteriden alacağımız var → borc alanına yaz
+  // inbox  = gelen fatura (bize kesildi) → tedarikçiye vereceğimiz var → borc alanına yaz
+  // NOT: "borc" alanı = Alacak(müşteri) / Verecek(tedarikçi) tutarı, "alacak" alanı = Alınan/Verilen (ödeme) tutarı
   const isOutbox = inv.type === 'outbox';
-  const defaultBorc   = isOutbox ? (inv.amount || 0) : 0; // giden → Alacak
-  const defaultAlacak = isOutbox ? 0 : (inv.amount || 0); // gelen → Verecek
+  const defaultBorc   = inv.amount || 0;   // her iki durumda da fatura tutarı borc'a yazılır
+  const defaultAlacak = 0;                 // ödeme henüz yapılmadı
 
   const [step, setStep]         = useState(0);
   const [ekle, setEkle]         = useState(true);

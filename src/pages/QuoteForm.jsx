@@ -86,7 +86,8 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, onAddN
 
   const doSelectItem = (item, keepImage = false) => {
     let rawPrice = Number(item.sale_price || item.purchase_price || 0);
-    let cur = item.item_type === 'product' ? (item.sale_currency || 'TRY') : (item.base_currency || 'TRY');
+    // Para birimi: satış fiyatı kullanılıyorsa sale_currency, alış fiyatı kullanılıyorsa base_currency
+    let cur = item.sale_price ? (item.sale_currency || 'TRY') : (item.base_currency || 'TRY');
     let unit_price = convert ? Number(convert(rawPrice, cur, quoteCurrency || 'TRY').toFixed(2)) : Number(rawPrice.toFixed(2));
     
     const total = unit_price * Number(line.quantity || 1);
@@ -208,7 +209,7 @@ function QuoteLine({ line, idx, allItems, onUpdate, onDelete, onAddImage, onAddN
                   <p style={{ fontSize: 10, color: '#9ca3af' }}>{s.item_code || s.sku || ''}{s.power_w ? ` · ${s.power_w}W` : ''}</p>
                 </div>
                 <span style={{ fontSize: 10, fontWeight: 700, color: '#166534', whiteSpace: 'nowrap' }}>
-                  {fmt(s.sale_price || s.purchase_price)} {currSymbol(s.item_type === 'product' ? (s.sale_currency || 'TRY') : (s.base_currency || 'TRY')) || '₺'}
+                  {fmt(s.sale_price || s.purchase_price)} {currSymbol(s.sale_price ? (s.sale_currency || 'TRY') : (s.base_currency || 'TRY')) || '₺'}
                 </span>
               </div>
             ))}

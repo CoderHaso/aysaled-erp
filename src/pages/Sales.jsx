@@ -155,7 +155,8 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
   // fxRates = { USD: 38.5, EUR: 42.1, GBP: 49.0 } — 1 birim yabancı = X TL
   const convertPrice = (item) => {
     const basePrice    = item.sale_price || item.purchase_price || 0;
-    const itemCur      = (item.base_currency || 'TRY').toUpperCase();
+    // Para birimi: satış fiyatı kullanılıyorsa sale_currency, alış fiyatı kullanılıyorsa base_currency
+    const itemCur      = (item.sale_price ? (item.sale_currency || 'TRY') : (item.base_currency || 'TRY')).toUpperCase();
     const targetCur    = (currency || 'TRY').toUpperCase();
     if (itemCur === targetCur) return basePrice; // aynı birim
 
@@ -178,7 +179,7 @@ function LineRow({ line, idx, allItems, allRecipes, currency, onChange, onRemove
   // Stok yeterlilik gösterge formatlayıcı: fiyat + orijinal birim göster
   const fmtItemPrice = (item) => {
     const p   = item.sale_price || item.purchase_price || 0;
-    const cur = item.base_currency || 'TRY';
+    const cur = item.sale_price ? (item.sale_currency || 'TRY') : (item.base_currency || 'TRY');
     const sym = { TRY: '₺', USD: '$', EUR: '€', GBP: '£' }[cur] || cur;
     return `${sym}${p.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
@@ -2147,7 +2148,7 @@ export default function Sales() {
     const [ordRes, custRes, itemRes, recRes, woRes] = await Promise.all([
       supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: false }),
       supabase.from('customers').select('id, name, vkntckn, tax_office, phone, email, address, city, district, country').order('name'),
-      supabase.from('items').select('id, name, item_type, unit, sale_price, purchase_price, stock_count, sku, base_currency, vat_rate, category').order('name'),
+      supabase.from('items').select('id, name, item_type, unit, sale_price, purchase_price, stock_count, sku, base_currency, sale_currency, vat_rate, category').order('name'),
       supabase.from('product_recipes').select('id, product_id, name, tags, other_costs, recipe_items(id, item_id, item_name, quantity, unit)').order('name'),
       supabase.from('work_orders').select('id, order_id, status, production_note, recipe_id, recipe_change_note').order('created_at', { ascending: false }),
     ]);
