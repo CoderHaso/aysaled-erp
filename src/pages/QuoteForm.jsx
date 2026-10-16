@@ -680,7 +680,7 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
 
   const saveNewCustomer = () => {
     if (!custQ.trim()) return;
-    setQuickEntityForm({ name: custQ.trim(), type: 'corporate', vkntckn: '', address: form.address || '', city: '', email: form.email || '', phone: form.phone || '' });
+    setQuickEntityForm({ name: custQ.trim(), vkntckn: '', address: form.address || '', city: '', email: form.email || '', phone: form.phone || '' });
     setShowCustSugg(false);
   };
 
@@ -690,7 +690,6 @@ export default function QuoteForm({ quoteId, onBack, onSaved }) {
     try {
       const { data, error } = await supabase.from('customers').insert({
          name: quickEntityForm.name.trim(),
-         type: quickEntityForm.type || 'corporate',
          vkntckn: quickEntityForm.vkntckn || null,
          city: quickEntityForm.city || null,
          address: quickEntityForm.address || null,
