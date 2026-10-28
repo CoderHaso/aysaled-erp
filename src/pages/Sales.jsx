@@ -2055,6 +2055,7 @@ function InfoChip({ icon: Icon, label, value, color, c }) {
 
 // ─── Ana Satış Sayfası ────────────────────────────────────────────────────────
 export default function Sales() {
+  const { convert: fxCv } = useFxRates(); // Toplam Ciro ₺: sipariş para birimine göre çevrilir
   const { effectiveMode, currentColor } = useTheme();
   const isDark = effectiveMode === 'dark';
   const location = useLocation();
@@ -2451,7 +2452,7 @@ export default function Sales() {
       showToast(e.message, 'error');
     }
   };
-  const totalRevenue = orders.filter(o => o.status === 'completed').reduce((s, o) => s + o.grand_total, 0);
+  const totalRevenue = orders.filter(o => o.status === 'completed').reduce((s, o) => s + fxCv(Number(o.grand_total || 0), o.currency || 'TRY', 'TRY'), 0);
 
   const TABS = [
     { id:'current', label:'Mevcut',  icon: ShoppingCart, count: currentCount, color: currentColor },

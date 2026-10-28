@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabaseClient';
+import { useFxRates } from '../hooks/useFxRates';
 import {
   BarChart, DonutChart, KpiCard, SectionTitle, TopList,
   fmt, fmtK, monthKey, monthLabel, lastNMonths,
@@ -190,15 +191,28 @@ export default function Reports() {
   const [activeTab, setActiveTab] = useState('genel');
 
   // Veri state'leri
-  const [invoices,    setInvoices]    = useState([]);
-  const [orders,      setOrders]      = useState([]);
-  const [quotes,      setQuotes]      = useState([]);
+  const [invoicesRaw,    setInvoices]    = useState([]);
+  const [ordersRaw,    setOrders]      = useState([]);
+  const [quotesRaw,    setQuotes]      = useState([]);
   const [customers,   setCustomers]   = useState([]);
   const [suppliers,   setSuppliers]   = useState([]);
   const [cashTxs,     setCashTxs]     = useState([]);
   const [isEmriRows,  setIsEmriRows]  = useState([]);
   const [cekRows,     setCekRows]     = useState([]);
-  const [hareketRows, setHareketRows] = useState([]);
+  const [hareketRaw,    setHareketRows] = useState([]);
+
+  // PARA BİRİMİ: tüm tutarlar ₺'ye çevrilir (rapor ₺ gösterir). Faturada kayıtlı kur (exchange_rate) varsa o, yoksa güncel kur.
+  const { convert } = useFxRates();
+  const toTRY = (v, cur, rate) => {
+    const n = Number(v || 0);
+    if (!cur || cur === 'TRY') return n;
+    const r = Number(rate);
+    return r > 0 && r !== 1 ? n * r : convert(n, cur, 'TRY');
+  };
+  const invoices = useMemo(() => invoicesRaw.map((i) => ({ ...i, amount: toTRY(i.amount, i.currency, i.exchange_rate), tax_total: toTRY(i.tax_total, i.currency, i.exchange_rate), tax_exclusive_amount: toTRY(i.tax_exclusive_amount, i.currency, i.exchange_rate) })), [invoicesRaw, convert]); // eslint-disable-line react-hooks/exhaustive-deps
+  const orders = useMemo(() => ordersRaw.map((o) => ({ ...o, grand_total: toTRY(o.grand_total, o.currency) })), [ordersRaw, convert]); // eslint-disable-line react-hooks/exhaustive-deps
+  const quotes = useMemo(() => quotesRaw.map((q) => ({ ...q, grand_total: toTRY(q.grand_total, q.currency) })), [quotesRaw, convert]); // eslint-disable-line react-hooks/exhaustive-deps
+  const hareketRows = useMemo(() => hareketRaw.map((h) => ({ ...h, borc: toTRY(h.borc, h.currency), alacak: toTRY(h.alacak, h.currency) })), [hareketRaw, convert]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { start: cutoffStr, months } = useMemo(() => calcDateRange(period), [period]);
 
@@ -210,13 +224,13 @@ export default function Reports() {
       // Fatura sorgusu: her zaman tarih filtresi uygula
       let invQuery = supabase
         .from('invoices')
-        .select('invoice_id,issue_date,amount,currency,status,type,cari_name,vkntckn,tax_total,tax_exclusive_amount')
+        .select('invoice_id,issue_date,amount,currency,exchange_rate,status,type,cari_name,vkntckn,tax_total,tax_exclusive_amount')
         .gte('issue_date', startStr);
       if (endStr) invQuery = invQuery.lte('issue_date', endStr);
 
       const [invR, ordR, qR, custR, suppR, cashR, emriR, cekR, harR] = await Promise.all([
         invQuery,
-        supabase.from('orders').select('id,created_at,grand_total,status,customer_name,customer_id').gte('created_at', startStr + 'T00:00:00Z'),
+        supabase.from('orders').select('id,created_at,grand_total,currency,status,customer_name,customer_id').gte('created_at', startStr + 'T00:00:00Z'),
         supabase.from('quotes').select('id,created_at,grand_total,status,company_name,currency'),
         supabase.from('customers').select('id,name,source,created_at,is_faturasiz'),
         supabase.from('suppliers').select('id,name,source,created_at,is_faturasiz'),

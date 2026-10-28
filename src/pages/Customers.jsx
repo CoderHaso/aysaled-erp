@@ -89,7 +89,7 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
   useEffect(() => {
     if (!customer.id || isNew || !customer.is_faturasiz) return;
     setLoadingOrders(true);
-    supabase.from('orders').select('id,order_number,created_at,grand_total,status,customer_name')
+    supabase.from('orders').select('id,order_number,created_at,grand_total,currency,status,customer_name')
       .eq('customer_id', customer.id)
       .order('created_at', { ascending: false })
       .then(({ data }) => { setOrders(data || []); setLoadingOrders(false); });
@@ -489,7 +489,7 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
                           <p className="text-[10px] text-slate-500 mt-0.5">{fmtD(ord.created_at?.split('T')[0])}</p>
                         </div>
                         <div className="text-right">
-                              <p className="text-sm font-bold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{fmt(ord.grand_total)} ₺</p>
+                              <p className="text-sm font-bold" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>{fmt(ord.grand_total)} {({ USD: '$', EUR: '€', GBP: '£' }[ord.currency] || '₺')}</p>
                           <span className="text-[10px] font-bold" style={{ color: sc }}>{statusLabels[ord.status] || ord.status}</span>
                         </div>
                       </div>
@@ -506,7 +506,7 @@ function CustomerDrawer({ customer, onClose, onSaved, setDialog }) {
                                   prefill: {
                                     direction:   'receivable',
                                     amount:      ord.grand_total,
-                                    currency:    'TRY',
+                                    currency:    ord.currency || 'TRY',
                                     baslik:      `Sipariş: ${ord.order_number || ord.id.slice(0,8)}`,
                                   },
                                 },

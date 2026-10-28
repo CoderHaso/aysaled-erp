@@ -452,6 +452,17 @@ function IsleWizard({ inv, allItems, supabase, onClose, onDone }) {
   );
 }
 
+// Fatura tutarı (sunucu api/invoices-api.js ile AYNI kural): birim fiyat 2 hane, kalem = round2(adet×fiyat), KDV = round2(kalem×oran)
+const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+function calcInvoiceTotal(lines) {
+  let sub = 0; let tax = 0;
+  (lines || []).forEach((l) => {
+    const lt = r2((+l.quantity || 0) * r2(+l.unitPrice || 0));
+    sub += lt; tax += r2(lt * (+l.taxRate || 0) / 100);
+  });
+  return r2(r2(sub) + r2(tax));
+}
+
 // ─── Gerçek Fatura Tablosu ────────────────────────────────────────────────────
 function InvoiceTable({ items, currency = 'TRY' }) {
   const { effectiveMode } = useTheme();
@@ -1174,7 +1185,7 @@ export default function Invoices({ type = 'inbox' }) {
     }
 
     setCreateForm(p => ({ ...p, lines: p.lines.map(line => line.id === lineId
-      ? { ...line, name: item.name, unit: item.unit || 'Adet', unitPrice: finalPrice.toFixed(4), item_code: item.sku || item.item_code }
+      ? { ...line, name: item.name, unit: item.unit || 'Adet', unitPrice: finalPrice.toFixed(2), item_code: item.sku || item.item_code }
       : line
     )}));
     setItemSearch(p => ({ ...p, [lineId]: '' }));
@@ -1301,9 +1312,7 @@ export default function Invoices({ type = 'inbox' }) {
     setCreating(true);
     try {
       const filteredLines = createForm.lines.filter(l => l.name);
-      const subtotal   = filteredLines.reduce((s, l) => s + Number(l.quantity) * Number(l.unitPrice), 0);
-      const taxTotal   = filteredLines.reduce((s, l) => s + Number(l.quantity) * Number(l.unitPrice) * Number(l.taxRate) / 100, 0);
-      const grandTotal = subtotal + taxTotal;
+      const grandTotal = calcInvoiceTotal(filteredLines);
 
       // Tutar yazısını notes'un başına ekle (#Bes Yuz Turk Lirasi# gibi)
       const amountText     = buildAmountWords(grandTotal, createForm.currency);
@@ -2286,7 +2295,7 @@ export default function Invoices({ type = 'inbox' }) {
                   </div>
                   {/* Toplam + Yazıyla */}
                   {(() => {
-                    const total = createForm.lines.reduce((s,l) => s+(+l.quantity||0)*(+l.unitPrice||0)*(1+(+l.taxRate||0)/100), 0);
+                    const total = calcInvoiceTotal(createForm.lines);
                     const currency = createForm.currency;
                     // Turkce sayi yazimi
                     const ONES = ['','Bir','Iki','Uc','Dort','Bes','Alti','Yedi','Sekiz','Dokuz'];

@@ -11,10 +11,11 @@ export function useUnits() {
 
   useEffect(() => {
     fetchUnits();
-    const ch = supabase.channel('units-rt')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'item_units' }, fetchUnits)
-      .subscribe();
-    return () => supabase.removeChannel(ch);
+    // Realtime kapatıldı (Disk IO): yazma olayı ('ax:data') ve sekmeye dönüşte yenile
+    const onData = (e) => { const t = e.detail?.table; if (t === 'item_units' || t === '*') fetchUnits(); };
+    window.addEventListener('ax:data', onData);
+    window.addEventListener('focus', fetchUnits);
+    return () => { window.removeEventListener('ax:data', onData); window.removeEventListener('focus', fetchUnits); };
   }, [fetchUnits]);
 
   const addUnit = async (name) => {

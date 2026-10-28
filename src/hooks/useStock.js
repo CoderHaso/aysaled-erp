@@ -25,18 +25,15 @@ export function useStock() {
 
   useEffect(() => {
     fetchItems();
-    // Realtime: değişiklik olunca cache'i geçersiz kıl ve yenile
-    const channel = supabase
-      .channel('items-realtime')
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'items' },
-        () => {
-          pageCache.invalidate(CACHE_KEY);
-          fetchItems(true);
-        }
-      )
-      .subscribe();
-    return () => supabase.removeChannel(channel);
+    // Realtime (postgres_changes) KAPATILDI: Supabase'te realtime.list_changes sorgusu veritabanı süresinin ~%81'ini tüketiyordu
+    // (Disk IO uyarısı). Yerine: bu tarayıcıdaki yazmalar ('ax:data') ve sekmeye geri dönüş (focus, en çok 30 sn'de bir) ile yenile.
+    let last = Date.now();
+    const refresh = () => { pageCache.invalidate(CACHE_KEY); fetchItems(true); last = Date.now(); };
+    const onData = (e) => { const t = e.detail?.table; if (t === 'items' || t === '*') refresh(); };
+    const onFocus = () => { if (Date.now() - last > 30000) refresh(); };
+    window.addEventListener('ax:data', onData);
+    window.addEventListener('focus', onFocus);
+    return () => { window.removeEventListener('ax:data', onData); window.removeEventListener('focus', onFocus); };
   }, [fetchItems]);
 
   // ── CRUD ─────────────────────────────────────────────────────────────────

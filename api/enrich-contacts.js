@@ -126,6 +126,14 @@ async function tryGibAddress(client, vkn) {
  *
  * Body: { limit: 10, type: 'customers'|'suppliers'|'both' }
  */
+// raw_detail'in ~%96'sı faturaya gömülü belge eki (AdditionalDocumentReference); uygulama hiçbir yerde kullanmıyor.
+// Veritabanı boyutunu (ücretsiz plan 500 MB) korumak için saklamadan önce çıkarılır.
+function slimDetail(inv) {
+  if (!inv || typeof inv !== 'object') return inv;
+  const { AdditionalDocumentReference: _a, 'cac:AdditionalDocumentReference': _b, ...rest } = inv;
+  return rest;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -255,7 +263,7 @@ async function processJob(client, job, contacts, results, isFallback) {
             if (invoice) {
               // raw_detail'i sakla (sonraki seferde Katman 1 çalışsın)
               await supabase.from('invoices')
-                .update({ raw_detail: invoice, updated_at: now })
+                .update({ raw_detail: slimDetail(invoice), updated_at: now })
                 .eq('invoice_id', invAny.invoice_id).eq('type', job.invoiceType);
 
               const partyNode = invoice[job.partyKey] ?? invoice[`cac:${job.partyKey}`];

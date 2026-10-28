@@ -215,6 +215,19 @@ export default function Dashboard() {
     subBg: isDark ? 'rgba(30,41,59,0.6)' : '#f1f5f9',
   };
 
+  // PARA BİRİMİ: sipariş kalemleri sipariş para biriminde, faturalar kendi para biriminde (exchange_rate = ₺ karşılığı) tutulur.
+  // Rapor ₺ gösterdiği için her toplama girmeden önce ₺'ye çevrilir (aksi halde 1,9 $ → 1,9 ₺ gibi yanlış okunur).
+  const orderCurMap = useMemo(() => { const m = {}; orders.forEach((o) => { m[o.id] = o.currency || 'TRY'; }); return m; }, [orders]);
+  const ordTRY = (o, v) => convert(Number(v || 0), o?.currency || 'TRY', 'TRY');
+  const oiCur = (oi) => orderCurMap[oi.order_id] || 'TRY';
+  const oiTRY = (oi, v) => convert(Number(v || 0), oiCur(oi), 'TRY');
+  const invTRY = (inv, v) => {
+    const cur = inv?.currency || 'TRY';
+    if (cur === 'TRY') return Number(v || 0);
+    const r = Number(inv.exchange_rate);
+    return r > 0 && r !== 1 ? Number(v || 0) * r : convert(Number(v || 0), cur, 'TRY');
+  };
+
   // Date range for selected month
   const startDate = useMemo(() => new Date(year, month, 1).toISOString(), [year, month]);
   const endDate = useMemo(() => new Date(year, month + 1, 0, 23, 59, 59).toISOString(), [year, month]);
@@ -439,6 +452,19 @@ export default function Dashboard() {
   }, [recipes, recipeMap, convert]);
 
   // Helper: calculate unit cost for any order item
+  // cost_at_sale bazı kayıtlarda ₺, bazılarında döviz (cost_currency) cinsinden saklanmış (kur o an yüklenmediyse ham fiyat yazılmış).
+  // Ayırt etme: ürünün alış fiyatına oranı kura yakınsa ₺, 1'e yakınsa ham dövizdir → yalnızca o zaman ₺'ye çevrilir.
+  const costAtSaleTRY = useCallback((oi) => {
+    const cost = Number(oi.cost_at_sale || 0);
+    const cc = oi.cost_currency || 'TRY';
+    if (!(cost > 0) || cc === 'TRY') return cost;
+    const itm = oi.item_id ? itemMap[oi.item_id] : null;
+    const pp = Number(itm?.purchase_price || 0);
+    const rate = convert(1, cc, 'TRY');
+    if (pp > 0 && rate > 1 && cost / pp < rate * 0.6) return convert(cost, cc, 'TRY');
+    return cost;
+  }, [itemMap, convert]);
+
   const getItemUnitCost = useCallback((oi) => {
     // custom_recipe_items zaten other_costs'u içerir (cloneRecipeData embedded them)
     if (oi.custom_recipe_items) {
@@ -448,7 +474,7 @@ export default function Dashboard() {
 
     // cost_at_sale varsa kullan, ama eski kayıtlarda other_costs (İşçilik, Genel gider) eksik olabilir — ekle
     if (Number(oi.cost_at_sale) > 0) {
-      let cost = Number(oi.cost_at_sale);
+      let cost = costAtSaleTRY(oi);
       // Eğer bu bir reçeteli ürünse ve custom_recipe_items yoksa, other_costs eksik olabilir
       if (!oi.custom_recipe_items) {
         const otherCosts = getRecipeOtherCosts(oi.recipe_id, oi.item_id);
@@ -496,7 +522,7 @@ export default function Dashboard() {
       }
     }
     return 0;
-  }, [woByOrder, isRecipeProduct, recipeCost, getRecipeCostById, getRecipeOtherCosts, calcCustomRecipeCost, itemMap, convert]);
+  }, [woByOrder, isRecipeProduct, recipeCost, getRecipeCostById, getRecipeOtherCosts, calcCustomRecipeCost, itemMap, convert, costAtSaleTRY]);
 
   // Helper: calculate total cost for an order (factoring in manual cost override)
   const getOrderCost = useCallback((orderId) => {
@@ -568,24 +594,24 @@ export default function Dashboard() {
   // ── RENDER MODES ──────────────────────────────────────────────────────────
 
   const renderOzet = () => {
-    const totalSales = filteredOrders.reduce((s, o) => s + Number(o.grand_total || 0), 0);
-    const totalTax = filteredOrders.reduce((s, o) => s + Number(o.tax_total || 0), 0);
+    const totalSales = filteredOrders.reduce((s, o) => s + ordTRY(o, o.grand_total), 0);
+    const totalTax = filteredOrders.reduce((s, o) => s + ordTRY(o, o.tax_total), 0);
     const orderCount = filteredOrders.length;
     const invoicedCount = filteredOrders.filter(o => o.is_invoiced).length;
     const noInvoiceCount = orderCount - invoicedCount;
     const productItems = filteredOrderItems.filter(oi => oi.item_type === 'product' || isRecipeProduct(oi.item_id));
     const rawItems = filteredOrderItems.filter(oi => oi.item_type === 'raw' || oi.item_type === 'rawmaterial');
-    const gelenKdv = invoicesIn.reduce((s, inv) => s + Number(inv.tax_total || 0), 0);
-    const gidenKdv = invoicesOut.reduce((s, inv) => s + Number(inv.tax_total || 0), 0);
+    const gelenKdv = invoicesIn.reduce((s, inv) => s + invTRY(inv, inv.tax_total), 0);
+    const gidenKdv = invoicesOut.reduce((s, inv) => s + invTRY(inv, inv.tax_total), 0);
 
     return (
       <>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <StatCard label="Toplam Satış" value={`₺${fmt(totalSales)}`} icon={ShoppingCart} color="#3b82f6" isDark={isDark}
             sub={`${orderCount} sipariş`} />
-          <StatCard label="Faturalı" value={fmtInt(invoicedCount)} sub={`₺${fmt(filteredOrders.filter(o => o.is_invoiced).reduce((s,o) => s + Number(o.grand_total || 0), 0))}`}
+          <StatCard label="Faturalı" value={fmtInt(invoicedCount)} sub={`₺${fmt(filteredOrders.filter(o => o.is_invoiced).reduce((s,o) => s + ordTRY(o, o.grand_total), 0))}`}
             icon={Receipt} color="#10b981" isDark={isDark} />
-          <StatCard label="Faturasız" value={fmtInt(noInvoiceCount)} sub={`₺${fmt(filteredOrders.filter(o => !o.is_invoiced).reduce((s,o) => s + Number(o.grand_total || 0), 0))}`}
+          <StatCard label="Faturasız" value={fmtInt(noInvoiceCount)} sub={`₺${fmt(filteredOrders.filter(o => !o.is_invoiced).reduce((s,o) => s + ordTRY(o, o.grand_total), 0))}`}
             icon={FileText} color="#ef4444" isDark={isDark} />
           <StatCard label="KDV (Gelen-Giden)" value={`₺${fmt(gelenKdv - gidenKdv)}`}
             sub={`Gelen: ₺${fmt(gelenKdv)} · Giden: ₺${fmt(gidenKdv)}`}
@@ -643,7 +669,7 @@ export default function Dashboard() {
               realType,
               stockSource,
               qty: Number(oi.quantity || 0),
-              revenue: Number(oi.quantity || 0) * Number(oi.unit_price || 0),
+              revenue: oiTRY(oi, Number(oi.quantity || 0) * Number(oi.unit_price || 0)),
             };
           });
           const sorted = rows.sort((a, b) => b.revenue - a.revenue);
@@ -866,10 +892,10 @@ export default function Dashboard() {
         recordedCost: 0, hasRecordedCost: false,
       };
       grouped[key].qty += Number(oi.quantity || 0);
-      grouped[key].revenue += Number(oi.quantity || 0) * Number(oi.unit_price || 0);
+      grouped[key].revenue += oiTRY(oi, Number(oi.quantity || 0) * Number(oi.unit_price || 0));
       // Use cost_at_sale if recorded
       if (oi.cost_at_sale > 0) {
-        grouped[key].recordedCost += oi.cost_at_sale * Number(oi.quantity || 0);
+        grouped[key].recordedCost += costAtSaleTRY(oi) * Number(oi.quantity || 0);
         grouped[key].hasRecordedCost = true;
       }
     });
@@ -928,8 +954,8 @@ export default function Dashboard() {
     validInvoicesOut.forEach(inv => {
       if (invoiceOrderMap[inv.id]) return;
 
-      const invAmt = Number(inv.amount || 0);
-      const invMatrah = Number(inv.tax_exclusive_amount || 0);
+      const invAmt = invTRY(inv, inv.amount);
+      const invMatrah = invTRY(inv, inv.tax_exclusive_amount);
       const invVkn = (inv.vkntckn || '').replace(/\s+/g, '');
       const invName = trNorm(inv.cari_name || '');
       const invDate = inv.issue_date ? new Date(inv.issue_date).getTime() : 0;
@@ -949,8 +975,8 @@ export default function Dashboard() {
       let bestScore = -999999;
 
       cands.forEach(cand => {
-        const candTotal = Number(cand.grand_total || 0);
-        const candMatrah = Number(cand.subtotal || 0);
+        const candTotal = ordTRY(cand, cand.grand_total);
+        const candMatrah = ordTRY(cand, cand.subtotal);
         const candDate = cand.created_at ? new Date(cand.created_at).getTime() : 0;
 
         let score = 0;
@@ -991,9 +1017,9 @@ export default function Dashboard() {
     // Add invoice rows
     validInvoicesOut.forEach(inv => {
       const matchedOrder = invoiceOrderMap[inv.id];
-      const total = Number(inv.amount || 0);
-      const tax = Number(inv.tax_total || 0);
-      const matrah = Number(inv.tax_exclusive_amount || (total - tax));
+      const total = invTRY(inv, inv.amount);
+      const tax = invTRY(inv, inv.tax_total);
+      const matrah = invTRY(inv, inv.tax_exclusive_amount) || (total - tax);
 
       const manual = manualCosts[inv.id] ?? (inv.invoice_id ? manualCosts[inv.invoice_id] : null) ?? parseManualCost(inv.notes);
       let cost = 0;
@@ -1187,7 +1213,7 @@ export default function Dashboard() {
               {r.items.map((oi, ii) => {
                 const uCost = getItemUnitCost(oi);
                 const qty = Number(oi.quantity || 0);
-                const uPrice = Number(oi.unit_price || 0);
+                const uPrice = oiTRY(oi, oi.unit_price);
                 const lineCost = uCost * qty;
                 const lineRev = uPrice * qty;
                 const lineProfit = lineRev - lineCost;
@@ -1331,7 +1357,7 @@ export default function Dashboard() {
               {r.items.map((oi, ii) => {
                 const uCost = getItemUnitCost(oi);
                 const qty = Number(oi.quantity || 0);
-                const uPrice = Number(oi.unit_price || 0);
+                const uPrice = oiTRY(oi, oi.unit_price);
                 const lineCost = uCost * qty;
                 const lineRev = uPrice * qty;
                 const lineProfit = lineRev - lineCost;
@@ -1364,9 +1390,9 @@ export default function Dashboard() {
       const k = inv.cari_name;
       if (!gelenByMonth[k]) gelenByMonth[k] = { name: k, count: 0, taxExcl: 0, tax: 0, total: 0 };
       gelenByMonth[k].count++;
-      gelenByMonth[k].taxExcl += Number(inv.tax_exclusive_amount || 0);
-      gelenByMonth[k].tax += Number(inv.tax_total || 0);
-      gelenByMonth[k].total += Number(inv.amount || 0);
+      gelenByMonth[k].taxExcl += invTRY(inv, inv.tax_exclusive_amount);
+      gelenByMonth[k].tax += invTRY(inv, inv.tax_total);
+      gelenByMonth[k].total += invTRY(inv, inv.amount);
     });
     // Giden fatura (satış) KDV
     const gidenByMonth = {};
@@ -1374,12 +1400,12 @@ export default function Dashboard() {
       const k = inv.cari_name;
       if (!gidenByMonth[k]) gidenByMonth[k] = { name: k, count: 0, taxExcl: 0, tax: 0, total: 0 };
       gidenByMonth[k].count++;
-      gidenByMonth[k].taxExcl += Number(inv.tax_exclusive_amount || 0);
-      gidenByMonth[k].tax += Number(inv.tax_total || 0);
-      gidenByMonth[k].total += Number(inv.amount || 0);
+      gidenByMonth[k].taxExcl += invTRY(inv, inv.tax_exclusive_amount);
+      gidenByMonth[k].tax += invTRY(inv, inv.tax_total);
+      gidenByMonth[k].total += invTRY(inv, inv.amount);
     });
-    const totalGelenKdv = validIn.reduce((s, inv) => s + Number(inv.tax_total || 0), 0);
-    const totalGidenKdv = validOut.reduce((s, inv) => s + Number(inv.tax_total || 0), 0);
+    const totalGelenKdv = validIn.reduce((s, inv) => s + invTRY(inv, inv.tax_total), 0);
+    const totalGidenKdv = validOut.reduce((s, inv) => s + invTRY(inv, inv.tax_total), 0);
 
     const cols = [
       { label: 'Cari', key: 'name', bold: true },
@@ -1600,7 +1626,7 @@ export default function Dashboard() {
                 {r.items.map((oi, ii) => {
                   const uCost = getItemUnitCost(oi);
                   const qty = Number(oi.quantity || 0);
-                  const uPrice = Number(oi.unit_price || 0);
+                  const uPrice = oiTRY(oi, oi.unit_price);
                   const lineCost = uCost * qty;
                   const lineRev = uPrice * qty;
                   const lineProfit = lineRev - lineCost;
@@ -1691,10 +1717,10 @@ export default function Dashboard() {
               const key = oi.item_id || oi.item_name;
               if (!grouped[key]) grouped[key] = { name: oi.item_name, qty: 0, revenue: 0 };
               grouped[key].qty += Number(oi.quantity || 0);
-              grouped[key].revenue += Number(oi.quantity || 0) * Number(oi.unit_price || 0);
+              grouped[key].revenue += oiTRY(oi, Number(oi.quantity || 0) * Number(oi.unit_price || 0));
             });
             const topItems = Object.values(grouped).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
-            const totalSales = filteredOrders.reduce((s, o) => s + Number(o.grand_total || 0), 0);
+            const totalSales = filteredOrders.reduce((s, o) => s + ordTRY(o, o.grand_total), 0);
             const invoicedOrders = filteredOrders.filter(o => o.is_invoiced);
             const noInvOrders = filteredOrders.filter(o => !o.is_invoiced);
             printDocument('report', {
@@ -1702,9 +1728,9 @@ export default function Dashboard() {
               total_sales: totalSales,
               order_count: filteredOrders.length,
               invoiced_count: invoicedOrders.length,
-              invoiced_total: invoicedOrders.reduce((s, o) => s + Number(o.grand_total || 0), 0),
+              invoiced_total: invoicedOrders.reduce((s, o) => s + ordTRY(o, o.grand_total), 0),
               non_invoiced_count: noInvOrders.length,
-              non_invoiced_total: noInvOrders.reduce((s, o) => s + Number(o.grand_total || 0), 0),
+              non_invoiced_total: noInvOrders.reduce((s, o) => s + ordTRY(o, o.grand_total), 0),
               net_profit: 0, margin: 0,
               items: topItems,
             }, `Rapor - ${MONTHS[month]} ${year}`);

@@ -101,6 +101,14 @@ async function handleList(body, res) {
   return res.json({ success: true, data: result });
 }
 
+// raw_detail'in ~%96'sı faturaya gömülü belge eki (AdditionalDocumentReference); uygulama hiçbir yerde kullanmıyor.
+// Veritabanı boyutunu (ücretsiz plan 500 MB) korumak için saklamadan önce çıkarılır.
+function slimDetail(inv) {
+  if (!inv || typeof inv !== 'object') return inv;
+  const { AdditionalDocumentReference: _a, 'cac:AdditionalDocumentReference': _b, ...rest } = inv;
+  return rest;
+}
+
 async function handleDetail(body, res) {
   const { invoiceId, documentId, type = 'inbox' } = body;
   if (!invoiceId) return res.status(400).json({ error: 'invoiceId gerekli' });
@@ -125,7 +133,7 @@ async function handleDetail(body, res) {
   const rawLines = invoice['InvoiceLine[]'] || invoice.InvoiceLine || [];
   const line_items = normalizeLines(rawLines).map(parseLine).filter(l => l.name !== '-' || l.quantity > 0);
 
-  await supabase.from('invoices').update({ line_items, raw_detail: invoice, updated_at: new Date().toISOString() })
+  await supabase.from('invoices').update({ line_items, raw_detail: slimDetail(invoice), updated_at: new Date().toISOString() })
     .eq('invoice_id', invoiceId).eq('type', type);
 
   // invoices tablosundaki cari_* sütunlarını da doldur + contact zenginleştir
@@ -183,7 +191,7 @@ async function handleDetail(body, res) {
     }
   } catch (_) { /* contact sync opsiyonel */ }
 
-  return res.json({ success: true, source: 'api', line_items, raw_detail: invoice });
+  return res.json({ success: true, source: 'api', line_items, raw_detail: slimDetail(invoice) });
 }
 
 async function handleView(body, res) {
@@ -245,9 +253,18 @@ async function handleCreate(body, res) {
   if (!cari_name) return res.status(400).json({ error: 'cari_name zorunlu' });
   if (!lines.length) return res.status(400).json({ error: 'En az 1 kalem gerekli' });
 
-  const subtotal = lines.reduce((s, l) => s + (l.quantity || 0) * (l.unitPrice || 0), 0);
-  const taxTotal = lines.reduce((s, l) => s + (l.quantity || 0) * (l.unitPrice || 0) * (l.taxRate || 0) / 100, 0);
-  const grandTotal = subtotal + taxTotal;
+  // TUTAR KURALI (e-Fatura ile birebir): birim fiyat 2 hane, kalem tutarı = round2(adet × fiyat), KDV = round2(kalem × oran),
+  // toplamlar kalemlerin toplamıdır. UBL (SaveAsDraft) bu değerlerle yazıldığı için liste/hareket/fatura aynı tutarı gösterir.
+  const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+  const calcLines = lines.map((l) => {
+    const unitPrice = r2(l.unitPrice || 0);
+    const lineTotal = r2((l.quantity || 0) * unitPrice);
+    const taxAmount = r2(lineTotal * (l.taxRate || 0) / 100);
+    return { unitPrice, lineTotal, taxAmount };
+  });
+  const subtotal = r2(calcLines.reduce((s, c) => s + c.lineTotal, 0));
+  const taxTotal = r2(calcLines.reduce((s, c) => s + c.taxAmount, 0));
+  const grandTotal = r2(subtotal + taxTotal);
 
   // Otomatik fatura no: AYS + YIL + 9 hane seq (MAX ile race-safe)
   const year = new Date().getFullYear();
@@ -288,9 +305,9 @@ async function handleCreate(body, res) {
   const lineItems = lines.map((l, i) => ({
     id: String(i + 1), name: l.name, item_code: l.item_code || null,
     quantity: l.quantity, unit: l.unit || 'Adet',
-    unit_price: l.unitPrice, tax_percent: l.taxRate || 0,
-    tax_amount: (l.quantity || 0) * (l.unitPrice || 0) * (l.taxRate || 0) / 100,
-    line_total: (l.quantity || 0) * (l.unitPrice || 0),
+    unit_price: calcLines[i].unitPrice, tax_percent: l.taxRate || 0,
+    tax_amount: calcLines[i].taxAmount,
+    line_total: calcLines[i].lineTotal,
   }));
 
   // Adres ve AÇIKLAMA bilgilerini ilk satır kalemine gömüyoruz

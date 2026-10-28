@@ -87,6 +87,14 @@ async function pMap(items, fn, concurrency = 3) {
   return results;
 }
 
+// raw_detail'in ~%96'sı faturaya gömülü belge eki (AdditionalDocumentReference); uygulama hiçbir yerde kullanmıyor.
+// Veritabanı boyutunu (ücretsiz plan 500 MB) korumak için saklamadan önce çıkarılır.
+function slimDetail(inv) {
+  if (!inv || typeof inv !== 'object') return inv;
+  const { AdditionalDocumentReference: _a, 'cac:AdditionalDocumentReference': _b, ...rest } = inv;
+  return rest;
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -249,25 +257,47 @@ export default async function handler(req, res) {
     let oldStatusMap = {};
     if (existingIds.length > 0) {
       const { data: oldRows } = await supabase.from('invoices')
-        .select('invoice_id, status, document_id')
+        .select('invoice_id, status, document_id, amount, tax_exclusive_amount, tax_total, currency, envelope_status, is_seen, is_new, is_archived, message, issue_date, cari_name, vkntckn, is_iade')
         .eq('type', type)
         .in('invoice_id', existingIds);
       for (const r of (oldRows || [])) oldStatusMap[r.invoice_id] = r;
+    }
+
+    // Uyumsoft listesinde 'Draft' görünen giden fatura Uyumsoft'ta ZATEN taslak olarak durur: yerelde 'Queued' (Resmileştir bekliyor)
+    // olmalıdır. 'Draft' (Taslak Gönder) yalnızca Uyumsoft'a hiç gönderilmemiş yerel taslaktır ve senkron listesinde görünmez.
+    if (type === 'outbox') {
+      for (const r of basePayload) {
+        if (String(r.status || '').toLowerCase() === 'draft') r.status = 'Queued';
+      }
     }
 
     const newCount = basePayload.filter(r => !existingSet.has(r.invoice_id)).length;
 
     // Batch upsert: 20'şerlik gruplar halinde — raw_data büyük olduğu için
     // tek seferde 100+ kayıt göndermek Supabase statement timeout'a yol açıyor
+    // Disk IO tasarrufu: yalnızca değişen (veya yeni) faturaları yaz — değişmeyen satırlar (büyük raw_data dahil) yeniden yazılmaz
+    const same = (a, b) => String(a ?? '') === String(b ?? '');
+    const num = (a, b) => Math.abs(Number(a || 0) - Number(b || 0)) < 0.005;
+    const toWrite = basePayload.filter((r) => {
+      const o = oldStatusMap[r.invoice_id];
+      if (!o) return true;
+      return !(same(o.status, r.status) && same(o.document_id, r.document_id) && num(o.amount, r.amount)
+        && num(o.tax_exclusive_amount, r.tax_exclusive_amount) && num(o.tax_total, r.tax_total) && same(o.currency, r.currency)
+        && same(o.envelope_status, r.envelope_status) && o.is_seen === r.is_seen && o.is_new === r.is_new
+        && o.is_archived === r.is_archived && same(o.message, r.message) && same(o.cari_name, r.cari_name)
+        && same(o.vkntckn, r.vkntckn) && o.is_iade === r.is_iade
+        && same(String(o.issue_date || '').slice(0, 10), String(r.issue_date || '').slice(0, 10)));
+    });
+    console.log(`[sync] ${toWrite.length}/${basePayload.length} fatura değişmiş, yazılıyor.`);
     const BATCH = 20;
-    for (let b = 0; b < basePayload.length; b += BATCH) {
-      const chunk = basePayload.slice(b, b + BATCH);
+    for (let b = 0; b < toWrite.length; b += BATCH) {
+      const chunk = toWrite.slice(b, b + BATCH);
       const { error: upsertErr } = await supabase
         .from('invoices')
         .upsert(chunk, { onConflict: 'invoice_id,type' });
       if (upsertErr) throw new Error('Supabase upsert: ' + upsertErr.message);
     }
-    console.log(`[sync] ${basePayload.length} fatura kaydedildi.`);
+    console.log(`[sync] ${toWrite.length} fatura kaydedildi.`);
 
     // Status veya document_id değişen faturaların detayını yeniden çek
     const resetIds = basePayload.filter(r => {
@@ -328,7 +358,7 @@ export default async function handler(req, res) {
 
         // invoices tablosunu güncelle
         await supabase.from('invoices').update({
-          raw_detail:        invoice,
+          raw_detail:        slimDetail(invoice),
           detail_fetched_at: now,
           cari_tax_office:   addr.taxOffice,
           cari_address:      addr.address,
